@@ -1,6 +1,6 @@
 {
-    "api_key": "rrCmBL6oNxiKSsvEeO7H6nZPu9sintxexYl3qMzaRZFfkvKDzioVtY0CTaITTs1e",
-    "api_secret": "zMMlW41OxpFRBnr6j4RXHbgsOKdSEzIiqqB6yMDS1AGlud3TfdnmPFZWc9L6AJa7",
+    "api_key": "QQrNC88XhQFdRf6Aal1kCj74A3vw3qKqA1oJnTUqDemMjinvHRoyQzarNIfQwEPS",
+    "api_secret": "uenJ18wT5UMi5apPRT3r8dPguu80ONVKeAcc0s17ntCA4u3NnXBWS2otCXnAQL2Q\n",
     "exchange": "binance",
     "sandbox_mode": true,
     "trading_mode": "future",
@@ -22,6 +22,7 @@
     "risk_per_trade": 0.03,
     "max_total_risk": 0.09,
     "max_positions_per_group": 3,
+    "max_position_percent": 0.3,
     "lookback_period": 20,
     "volume_ma_period": 20,
     "atr_period": 10,

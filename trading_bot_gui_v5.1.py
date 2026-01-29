@@ -73,6 +73,8 @@ class ModernTradingBotGUI(ctk.CTk):
         # 機器人狀態
         self.bot_process = None
         self.is_running = False
+        self.is_connected = False  # 是否已連線
+        self.is_trading = False    # 是否正在交易
 
         # 建立 UI
         self.create_ui()
@@ -88,7 +90,7 @@ class ModernTradingBotGUI(ctk.CTk):
             "trading_mode": "future", "trading_direction": "both", "leverage": 5, "use_hard_stop_loss": True,
             "telegram_enabled": False, "telegram_bot_token": "", "telegram_chat_id": "",
             "symbols": ["BTC/USDT", "ETH/USDT", "SOL/USDT"],
-            "risk_per_trade": 0.02, "max_total_risk": 0.06, "max_positions_per_group": 3,
+            "risk_per_trade": 0.02, "max_total_risk": 0.06, "max_positions_per_group": 3, "max_position_percent": 0.30,
             "lookback_period": 20, "volume_ma_period": 20, "atr_period": 14, "atr_multiplier": 1.5,
             "enable_market_filter": True, "adx_threshold": 15, "atr_spike_multiplier": 2.0, "ema_entanglement_threshold": 0.02,
             "enable_volume_grading": True, "vol_explosive_threshold": 2.5, "vol_strong_threshold": 1.5,
@@ -142,7 +144,7 @@ class ModernTradingBotGUI(ctk.CTk):
 
         title = ctk.CTkLabel(
             logo_frame,
-            text="交易機器人",
+            text="波茶波茶",
             font=ctk.CTkFont(family="Microsoft JhengHei UI", size=28, weight="bold"),
             text_color=self.COLORS['text_main']
         )
@@ -162,7 +164,7 @@ class ModernTradingBotGUI(ctk.CTk):
         subtitle = ctk.CTkLabel(
             logo_frame,
             text="智能演算法交易系統",
-            font=ctk.CTkFont(family="Microsoft JhengHei UI", size=10, weight="bold"),
+            font=ctk.CTkFont(family="Microsoft JhengHei UI", size=12, weight="bold"),
             text_color=self.COLORS['text_dim'],
             justify="left"
         )
@@ -198,11 +200,26 @@ class ModernTradingBotGUI(ctk.CTk):
             hover_color="#00C853",
             text_color=self.COLORS['bg_root'],
             height=42,
-            width=140,
+            width=120,
             corner_radius=8,
             command=self.start_bot
         )
         self.start_btn.pack(side="left", padx=5)
+
+        self.trade_btn = ctk.CTkButton(
+            ctrl_frame,
+            text="▶ 開始交易",
+            font=self.FONTS['body_bold'],
+            fg_color=self.COLORS['primary'],
+            hover_color=self.COLORS['primary_hover'],
+            text_color=self.COLORS['bg_root'],
+            height=42,
+            width=120,
+            corner_radius=8,
+            command=self.start_trading,
+            state="disabled"
+        )
+        self.trade_btn.pack(side="left", padx=5)
 
         self.stop_btn = ctk.CTkButton(
             ctrl_frame,
@@ -214,12 +231,28 @@ class ModernTradingBotGUI(ctk.CTk):
             border_width=1,
             border_color=self.COLORS['danger'],
             height=42,
-            width=140,
+            width=120,
             corner_radius=8,
             command=self.stop_bot,
             state="disabled"
         )
         self.stop_btn.pack(side="left", padx=5)
+
+        # 全部平倉按鈕
+        self.close_all_btn = ctk.CTkButton(
+            ctrl_frame,
+            text="⚠ 全部平倉",
+            font=self.FONTS['body_bold'],
+            fg_color=self.COLORS['warning'],
+            hover_color="#FF8F00",
+            text_color=self.COLORS['bg_root'],
+            height=42,
+            width=120,
+            corner_radius=8,
+            command=self.close_all_positions,
+            state="disabled"
+        )
+        self.close_all_btn.pack(side="left", padx=5)
 
     def create_status_panel(self):
         """建立狀態儀表板 (HUD Style)"""
@@ -484,10 +517,12 @@ class ModernTradingBotGUI(ctk.CTk):
         self.risk_per_trade_var = ctk.DoubleVar(value=0.02)
         self.max_total_risk_var = ctk.DoubleVar(value=0.06)
         self.max_positions_var = ctk.IntVar(value=3)
+        self.max_position_percent_var = ctk.DoubleVar(value=0.30)
 
         self.create_modern_row(card, "單筆風險", self.risk_per_trade_var, "slider", from_=0.01, to=0.10)
         self.create_modern_row(card, "最大總風險", self.max_total_risk_var, "slider", from_=0.01, to=0.20)
         self.create_modern_row(card, "最大持倉數", self.max_positions_var, "slider", from_=1, to=10)
+        self.create_modern_row(card, "單筆最大倉位%", self.max_position_percent_var, "slider", from_=0.10, to=0.50)
 
         # 技術指標
         self.create_section_header(scroll, "技術指標參數", "📈")
@@ -654,6 +689,7 @@ class ModernTradingBotGUI(ctk.CTk):
             self.risk_per_trade_var.set(config.get("risk_per_trade", 0.02))
             self.max_total_risk_var.set(config.get("max_total_risk", 0.06))
             self.max_positions_var.set(config.get("max_positions_per_group", 3))
+            self.max_position_percent_var.set(config.get("max_position_percent", 0.30))
 
             self.lookback_var.set(config.get("lookback_period", 20))
             self.volume_ma_var.set(config.get("volume_ma_period", 20))
@@ -713,6 +749,7 @@ class ModernTradingBotGUI(ctk.CTk):
                 "risk_per_trade": self.risk_per_trade_var.get(),
                 "max_total_risk": self.max_total_risk_var.get(),
                 "max_positions_per_group": self.max_positions_var.get(),
+                "max_position_percent": self.max_position_percent_var.get(),
 
                 "lookback_period": self.lookback_var.get(),
                 "volume_ma_period": self.volume_ma_var.get(),
@@ -754,7 +791,7 @@ class ModernTradingBotGUI(ctk.CTk):
             messagebox.showerror("錯誤", f"儲存配置失敗: {e}")
 
     def start_bot(self):
-        """啟動機器人"""
+        """啟動機器人（連線模式：只獲取帳戶資訊，不執行交易）"""
         if self.is_running:
             return
 
@@ -762,22 +799,25 @@ class ModernTradingBotGUI(ctk.CTk):
         self.save_config()
 
         self.is_running = True
-        self.update_status("運行中", self.COLORS['success'])
+        self.is_connected = False
+        self.is_trading = False
+        self.update_status("連線中", self.COLORS['warning'])
 
         self.start_btn.configure(state="disabled")
         self.stop_btn.configure(state="normal")
 
-        self.log_message("正在啟動交易機器人...", "資訊")
+        self.log_message("正在連線交易所...", "資訊")
 
-        # 在背景執行機器人
+        # 在背景執行機器人（info-only 模式）
         def run_bot():
             try:
                 bot_script = os.path.join(os.path.dirname(__file__), "trading_bot_v5.1_optimized.py")
                 if os.path.exists(bot_script):
                     self.bot_process = subprocess.Popen(
-                        [sys.executable, bot_script],
+                        [sys.executable, bot_script, "--info-only"],
                         stdout=subprocess.PIPE,
                         stderr=subprocess.STDOUT,
+                        stdin=subprocess.PIPE,
                         text=True,
                         bufsize=1
                     )
@@ -785,7 +825,18 @@ class ModernTradingBotGUI(ctk.CTk):
                     for line in iter(self.bot_process.stdout.readline, ''):
                         if not self.is_running:
                             break
-                        self.after(0, lambda l=line: self.log_message(l.strip()))
+                        line = line.strip()
+
+                        # 檢查是否是帳戶資訊 JSON
+                        if line.startswith("__ACCOUNT_INFO_JSON__:"):
+                            json_str = line.replace("__ACCOUNT_INFO_JSON__:", "")
+                            try:
+                                account_info = json.loads(json_str)
+                                self.after(0, lambda info=account_info: self.update_account_info(info))
+                            except json.JSONDecodeError:
+                                pass
+                        else:
+                            self.after(0, lambda l=line: self.log_message(l))
 
                     self.bot_process.wait()
                 else:
@@ -799,14 +850,91 @@ class ModernTradingBotGUI(ctk.CTk):
         self.bot_thread = threading.Thread(target=run_bot, daemon=True)
         self.bot_thread.start()
 
+    def update_account_info(self, account_info: dict):
+        """更新帳戶資訊顯示"""
+        self.is_connected = True
+        self.update_status("已連線", self.COLORS['primary'])
+
+        # 啟用「開始交易」和「全部平倉」按鈕
+        self.trade_btn.configure(state="normal")
+        self.close_all_btn.configure(state="normal")
+
+        # 更新餘額
+        balance = account_info.get('balance', 0)
+        self.status_cards['balance'].configure(text=f"{balance:.2f} USDT")
+
+        # 更新持倉
+        positions = account_info.get('positions', [])
+        max_pos = self.max_positions_var.get() if hasattr(self, 'max_positions_var') else 3
+        self.status_cards['positions'].configure(text=f"{len(positions)} / {max_pos}")
+
+        self.log_message(f"帳戶餘額: {balance:.2f} USDT", "成功")
+        if positions:
+            self.log_message(f"現有持倉: {len(positions)} 個", "資訊")
+            for p in positions:
+                symbol = p.get('symbol', 'N/A')
+                amt = float(p.get('positionAmt', 0))
+                pnl = float(p.get('unRealizedProfit', 0))
+                side = 'LONG' if amt > 0 else 'SHORT'
+                self.log_message(f"  {symbol}: {side} {abs(amt):.4f} | PnL: ${pnl:.2f}", "資訊")
+
+    def start_trading(self):
+        """開始執行交易"""
+        if not self.is_connected or not self.bot_process:
+            self.log_message("請先啟動系統連線", "警告")
+            return
+
+        if self.is_trading:
+            return
+
+        self.is_trading = True
+        self.update_status("交易中", self.COLORS['success'])
+        self.trade_btn.configure(state="disabled")
+
+        self.log_message("發送開始交易指令...", "資訊")
+
+        # 發送開始交易指令到 bot process
+        try:
+            if self.bot_process and self.bot_process.stdin:
+                self.bot_process.stdin.write("__START_TRADING__\n")
+                self.bot_process.stdin.flush()
+                self.log_message("交易已啟動！", "成功")
+        except Exception as e:
+            self.log_message(f"發送交易指令失敗: {e}", "錯誤")
+
+    def close_all_positions(self):
+        """關閉所有倉位"""
+        if not self.is_connected or not self.bot_process:
+            self.log_message("請先啟動系統連線", "警告")
+            return
+
+        # 確認對話框
+        if not messagebox.askyesno("確認全平", "⚠️ 確定要關閉所有倉位嗎？\n此操作不可撤銷！"):
+            return
+
+        try:
+            if self.bot_process and self.bot_process.stdin:
+                self.bot_process.stdin.write("__CLOSE_ALL_POSITIONS__\n")
+                self.bot_process.stdin.flush()
+                self.log_message("🛑 已發送全部平倉指令", "警告")
+        except Exception as e:
+            self.log_message(f"發送平倉指令失敗: {e}", "錯誤")
+
     def stop_bot(self):
         """停止機器人"""
         if not self.is_running:
             return
 
         self.is_running = False
+        self.is_trading = False
 
         if self.bot_process:
+            try:
+                if self.bot_process.stdin:
+                    self.bot_process.stdin.write("__STOP__\n")
+                    self.bot_process.stdin.flush()
+            except:
+                pass
             self.bot_process.terminate()
             self.bot_process = None
 
@@ -816,10 +944,18 @@ class ModernTradingBotGUI(ctk.CTk):
     def on_bot_stopped(self):
         """機器人停止時的處理"""
         self.is_running = False
+        self.is_connected = False
+        self.is_trading = False
         self.update_status("已停止", self.COLORS['danger'])
 
         self.start_btn.configure(state="normal")
+        self.trade_btn.configure(state="disabled")
         self.stop_btn.configure(state="disabled")
+        self.close_all_btn.configure(state="disabled")
+
+        # 重置狀態卡片
+        self.status_cards['balance'].configure(text="-- USDT")
+        self.status_cards['positions'].configure(text="0 / 3")
 
         self.log_message("交易機器人已停止。", "警告")
 

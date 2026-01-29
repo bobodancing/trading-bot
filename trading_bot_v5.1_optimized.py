@@ -48,6 +48,7 @@ class Config:
     RISK_PER_TRADE = 0.01
     MAX_TOTAL_RISK = 0.05
     MAX_POSITIONS_PER_GROUP = 2
+    MAX_POSITION_PERCENT = 0.3  # 單筆倉位最多使用帳戶餘額的 30%（考慮槓桿後）
 
     # 技術指標
     LOOKBACK_PERIOD = 20
@@ -165,6 +166,8 @@ class Config:
                 cls.MAX_TOTAL_RISK = config_data['max_total_risk']
             if 'max_positions_per_group' in config_data:
                 cls.MAX_POSITIONS_PER_GROUP = config_data['max_positions_per_group']
+            if 'max_position_percent' in config_data:
+                cls.MAX_POSITION_PERCENT = config_data['max_position_percent']
 
             # 技術參數
             if 'lookback_period' in config_data:
@@ -879,13 +882,16 @@ class TechnicalAnalysis:
 class PrecisionHandler:
     """交易所精度處理類"""
 
+    # Binance Futures 最小訂單價值為 100 USDT
+    FUTURES_MIN_NOTIONAL = 5
+
     DEFAULT_PRECISIONS = {
-        'BTC/USDT': {'amount': 6, 'price': 2, 'min_amount': 0.00001, 'min_cost': 10},
-        'ETH/USDT': {'amount': 5, 'price': 2, 'min_amount': 0.0001, 'min_cost': 10},
-        'SOL/USDT': {'amount': 2, 'price': 2, 'min_amount': 0.1, 'min_cost': 10},
-        'DOGE/USDT': {'amount': 0, 'price': 5, 'min_amount': 1, 'min_cost': 10},
-        'ADA/USDT': {'amount': 1, 'price': 4, 'min_amount': 1, 'min_cost': 10},
-        'LINK/USDT': {'amount': 2, 'price': 3, 'min_amount': 0.1, 'min_cost': 10},
+        'BTC/USDT': {'amount': 3, 'price': 2, 'min_amount': 0.001, 'min_cost': 5},
+        'ETH/USDT': {'amount': 3, 'price': 2, 'min_amount': 0.001, 'min_cost': 5},
+        'SOL/USDT': {'amount': 0, 'price': 2, 'min_amount': 1, 'min_cost': 5},  # 🔧 修復：SOL 精度為整數
+        'DOGE/USDT': {'amount': 0, 'price': 5, 'min_amount': 1, 'min_cost': 5},
+        'ADA/USDT': {'amount': 0, 'price': 4, 'min_amount': 1, 'min_cost': 5},
+        'LINK/USDT': {'amount': 2, 'price': 3, 'min_amount': 0.01, 'min_cost': 5},
     }
 
     def __init__(self, exchange):
@@ -905,7 +911,43 @@ class PrecisionHandler:
             self.use_default_precision = True
             self.markets = {}
 
+    def get_precision(self, symbol: str) -> int:
+        """獲取交易對的數量精度"""
+        if symbol in self.DEFAULT_PRECISIONS:
+            return self.DEFAULT_PRECISIONS[symbol]['amount']
+        if symbol in self.markets:
+            precision = self.markets[symbol]['precision']['amount']
+            if isinstance(precision, int):
+                return precision
+        return 3  # 默認精度
+
+    def round_amount_up(self, symbol: str, amount: float, price: float) -> float:
+        """
+        向上取整數量，確保訂單價值滿足最小要求
+        用於開倉時計算數量
+        """
+        import math
+
+        precision = self.get_precision(symbol)
+        multiplier = 10 ** precision
+
+        # 向上取整到指定精度
+        rounded = math.ceil(amount * multiplier) / multiplier
+
+        # 檢查訂單價值是否滿足最小要求
+        order_value = rounded * price
+        min_notional = self.FUTURES_MIN_NOTIONAL if Config.TRADING_MODE == 'future' else 10
+
+        if order_value < min_notional:
+            # 計算滿足最小訂單價值所需的數量
+            min_quantity = min_notional / price
+            rounded = math.ceil(min_quantity * multiplier) / multiplier
+            logger.info(f"⚠️ 調整數量以滿足最小訂單價值 ${min_notional}")
+
+        return rounded
+
     def round_amount(self, symbol: str, amount: float) -> float:
+        """向下取整數量（用於平倉等操作）"""
         if symbol not in self.markets and self.use_default_precision:
             if symbol in self.DEFAULT_PRECISIONS:
                 precision = self.DEFAULT_PRECISIONS[symbol]['amount']
@@ -934,6 +976,9 @@ class PrecisionHandler:
         return amount
 
     def check_limits(self, symbol: str, amount: float, price: float) -> bool:
+        """檢查訂單是否滿足限制"""
+        min_notional = self.FUTURES_MIN_NOTIONAL if Config.TRADING_MODE == 'future' else 10
+
         if symbol not in self.markets and self.use_default_precision:
             if symbol in self.DEFAULT_PRECISIONS:
                 defaults = self.DEFAULT_PRECISIONS[symbol]
@@ -941,12 +986,17 @@ class PrecisionHandler:
                     logger.warning(f"{symbol} 數量 {amount} 小於最小值 {defaults['min_amount']}")
                     return False
                 cost = amount * price
-                if cost < defaults['min_cost']:
-                    logger.warning(f"{symbol} 金額 ${cost:.2f} 小於最小值 ${defaults['min_cost']}")
+                if cost < min_notional:
+                    logger.warning(f"{symbol} 金額 ${cost:.2f} 小於最小值 ${min_notional}")
                     return False
             return True
 
         if symbol not in self.markets:
+            # 即使沒有市場信息，也要檢查最小訂單價值
+            cost = amount * price
+            if cost < min_notional:
+                logger.warning(f"{symbol} 金額 ${cost:.2f} 小於最小值 ${min_notional}")
+                return False
             return True
 
         market = self.markets[symbol]
@@ -957,8 +1007,10 @@ class PrecisionHandler:
             return False
 
         cost = amount * price
-        if limits['cost']['min'] and cost < limits['cost']['min']:
-            logger.warning(f"{symbol} 金額小於最小值")
+        # 使用 Futures 的最小訂單價值
+        actual_min_cost = max(limits['cost']['min'] or 0, min_notional)
+        if cost < actual_min_cost:
+            logger.warning(f"{symbol} 金額 ${cost:.2f} 小於最小值 ${actual_min_cost}")
             return False
 
         return True
@@ -972,23 +1024,138 @@ class RiskManager:
         self.exchange = exchange
         self.precision_handler = precision_handler
 
+        # Binance Futures Testnet API 設定
+        self.futures_base_url = "https://testnet.binancefuture.com"
+
+    def _get_futures_balance(self) -> float:
+        """
+        使用 /fapi/v2/balance 端點獲取 Futures 餘額
+        解決 Binance Futures Testnet 不支援 sapi 端點的問題
+        """
+        import hmac
+        import hashlib
+        from urllib.parse import urlencode
+
+        try:
+            timestamp = int(time.time() * 1000)
+            params = {'timestamp': timestamp}
+
+            # 生成簽名
+            query_string = urlencode(params)
+            signature = hmac.new(
+                Config.API_SECRET.strip().encode('utf-8'),
+                query_string.encode('utf-8'),
+                hashlib.sha256
+            ).hexdigest()
+            params['signature'] = signature
+
+            # 發送請求
+            headers = {'X-MBX-APIKEY': Config.API_KEY}
+            url = f"{self.futures_base_url}/fapi/v2/balance"
+
+            response = requests.get(url, params=params, headers=headers, timeout=30)
+
+            if response.status_code == 200:
+                data = response.json()
+                for asset in data:
+                    if asset.get('asset') == 'USDT':
+                        return float(asset.get('availableBalance', 0))
+                return 0
+            else:
+                logger.error(f"Futures API 錯誤: {response.status_code} - {response.text}")
+                return 0
+
+        except Exception as e:
+            logger.error(f"獲取 Futures 餘額失敗: {e}")
+            return 0
+
     def get_balance(self) -> float:
+        """獲取帳戶餘額"""
         for attempt in range(Config.MAX_RETRY):
             try:
-                balance = self.exchange.fetch_balance()
-                return balance['USDT']['free']
+                # 如果是 Binance Futures Testnet，使用專用 API
+                if Config.SANDBOX_MODE and Config.TRADING_MODE == 'future' and Config.EXCHANGE == 'binance':
+                    balance = self._get_futures_balance()
+                    if balance > 0:
+                        return balance
+                    # 如果失敗，繼續嘗試
+                    if attempt < Config.MAX_RETRY - 1:
+                        time.sleep(Config.RETRY_DELAY)
+                        continue
+                    return 0
+                else:
+                    # 正式網或現貨模式使用原本的方法
+                    balance = self.exchange.fetch_balance()
+                    return balance['USDT']['free']
+
             except ccxt.NetworkError as e:
                 logger.warning(f"網絡錯誤，重試 {attempt+1}/{Config.MAX_RETRY}")
                 time.sleep(Config.RETRY_DELAY)
             except Exception as e:
                 logger.error(f"獲取餘額失敗: {e}")
-                return 0
+                if attempt < Config.MAX_RETRY - 1:
+                    time.sleep(Config.RETRY_DELAY)
+                else:
+                    return 0
         return 0
+
+    def get_positions(self) -> list:
+        """獲取現有持倉"""
+        try:
+            if Config.SANDBOX_MODE and Config.TRADING_MODE == 'future' and Config.EXCHANGE == 'binance':
+                return self._get_futures_positions()
+            else:
+                positions = self.exchange.fetch_positions()
+                return [p for p in positions if float(p.get('contracts', 0)) != 0]
+        except Exception as e:
+            logger.error(f"獲取持倉失敗: {e}")
+            return []
+
+    def _get_futures_positions(self) -> list:
+        """使用 Binance Futures API 獲取持倉"""
+        import hmac
+        import hashlib
+        from urllib.parse import urlencode
+
+        try:
+            timestamp = int(time.time() * 1000)
+            params = {'timestamp': timestamp}
+
+            query_string = urlencode(params)
+            signature = hmac.new(
+                Config.API_SECRET.strip().encode('utf-8'),
+                query_string.encode('utf-8'),
+                hashlib.sha256
+            ).hexdigest()
+            params['signature'] = signature
+
+            headers = {'X-MBX-APIKEY': Config.API_KEY}
+            url = f"{self.futures_base_url}/fapi/v2/positionRisk"
+
+            response = requests.get(url, params=params, headers=headers, timeout=30)
+
+            if response.status_code == 200:
+                data = response.json()
+                # 只返回有倉位的
+                return [p for p in data if float(p.get('positionAmt', 0)) != 0]
+            else:
+                logger.error(f"獲取持倉 API 錯誤: {response.status_code} - {response.text}")
+                return []
+        except Exception as e:
+            logger.error(f"獲取 Futures 持倉失敗: {e}")
+            return []
+
+    def get_account_info(self) -> dict:
+        """獲取完整帳戶資訊（餘額 + 倉位）"""
+        return {
+            'balance': self.get_balance(),
+            'positions': self.get_positions()
+        }
 
     def calculate_position_size(self, symbol: str, balance: float,
                                entry_price: float, stop_loss: float,
                                tier_multiplier: float = 1.0) -> float:
-        """計算倉位大小（v5.1: 加入分級乘數）"""
+        """計算倉位大小（v5.1: 加入分級乘數，確保滿足最小訂單價值，加入倉位上限保護）"""
         risk_amount = balance * Config.RISK_PER_TRADE
         stop_dist_percent = abs(entry_price - stop_loss) / entry_price
 
@@ -996,17 +1163,27 @@ class RiskManager:
             return 0
 
         position_value = risk_amount / stop_dist_percent
+
+        # 倉位上限保護：確保倉位價值不超過帳戶餘額的指定比例（考慮槓桿）
+        max_position_value = balance * Config.MAX_POSITION_PERCENT * Config.LEVERAGE
+        if position_value > max_position_value:
+            logger.warning(f"⚠️ {symbol} 倉位超過上限，從 ${position_value:.2f} 調整為 ${max_position_value:.2f}")
+            position_value = max_position_value
+
         raw_position = position_value / entry_price
-        
+
         # v5.1: 根據信號等級調整倉位
         raw_position *= tier_multiplier
 
-        rounded_position = self.precision_handler.round_amount(symbol, raw_position)
+        # 使用向上取整並確保滿足最小訂單價值
+        rounded_position = self.precision_handler.round_amount_up(symbol, raw_position, entry_price)
 
+        # 再次檢查限制（雖然 round_amount_up 已經確保了，但作為安全檢查）
         if not self.precision_handler.check_limits(symbol, rounded_position, entry_price):
             return 0
 
-        logger.info(f"💰 {symbol} 倉位: {rounded_position:.6f} (等級乘數: {tier_multiplier})")
+        order_value = rounded_position * entry_price
+        logger.info(f"💰 {symbol} 倉位: {rounded_position:.6f} (訂單價值: ${order_value:.2f}, 等級乘數: {tier_multiplier})")
         return rounded_position
 
     def calculate_stop_loss(self, extreme_point: float, atr: float, side: str, df: pd.DataFrame = None) -> float:
@@ -1027,6 +1204,9 @@ class RiskManager:
 # ==================== 交易管理 ====================
 class TradeManager:
     """單筆交易管理類（v5.0 雙向版本）"""
+
+    # Binance Futures Testnet API 設定
+    FUTURES_TESTNET_URL = "https://testnet.binancefuture.com"
 
     def __init__(self, symbol: str, side: str, entry_price: float, stop_loss: float,
                  position_size: float, exchange, precision_handler, target_ref: float = None,
@@ -1060,6 +1240,56 @@ class TradeManager:
         logger.info(f"   倉位: {position_size:.6f} | 1.5R: ${self.r15_target:.2f}")
         if target_ref:
             logger.info(f"   目標: ${target_ref:.2f}")
+
+    def _is_binance_futures_testnet(self) -> bool:
+        """檢查是否為 Binance Futures Testnet"""
+        return (Config.SANDBOX_MODE and
+                Config.TRADING_MODE == 'future' and
+                Config.EXCHANGE == 'binance')
+
+    def _futures_close_position(self, quantity: float) -> dict:
+        """直接使用 Binance Futures Testnet API 平倉"""
+        import hmac
+        import hashlib
+        from urllib.parse import urlencode
+
+        symbol_id = self.symbol.replace('/', '')
+        close_side = 'SELL' if self.side == 'LONG' else 'BUY'
+
+        # 🔧 修復：根據交易對精度格式化數量
+        precision = self.precision_handler.get_precision(self.symbol)
+        if precision == 0:
+            formatted_quantity = str(int(quantity))
+        else:
+            formatted_quantity = f"{quantity:.{precision}f}"
+
+        timestamp = int(time.time() * 1000)
+        params = {
+            'symbol': symbol_id,
+            'side': close_side,
+            'type': 'MARKET',
+            'quantity': formatted_quantity,  # 使用格式化後的字符串
+            'reduceOnly': 'true',
+            'timestamp': timestamp
+        }
+
+        query_string = urlencode(params)
+        signature = hmac.new(
+            Config.API_SECRET.strip().encode('utf-8'),
+            query_string.encode('utf-8'),
+            hashlib.sha256
+        ).hexdigest()
+        params['signature'] = signature
+
+        headers = {'X-MBX-APIKEY': Config.API_KEY}
+        url = f"{self.FUTURES_TESTNET_URL}/fapi/v1/order"
+
+        response = requests.post(url, data=params, headers=headers, timeout=30)
+
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise Exception(f"平倉 API 錯誤: {response.status_code} - {response.text}")
 
     def monitor(self, current_price: float, df_1h: pd.DataFrame = None) -> str:
         """監控盈虧與結構出場（雙向版本）"""
@@ -1116,17 +1346,21 @@ class TradeManager:
 
             if Config.TRADING_MODE == 'spot':
                 if self.side == 'LONG':
-                    order = self.exchange.create_market_sell_order(self.symbol, close_amount_rounded)
+                    self.exchange.create_market_sell_order(self.symbol, close_amount_rounded)
                 else:
-                    order = self.exchange.create_market_buy_order(self.symbol, close_amount_rounded)
+                    self.exchange.create_market_buy_order(self.symbol, close_amount_rounded)
             else:
-                close_side = 'sell' if self.side == 'LONG' else 'buy'
-                order = self.exchange.create_order(
-                    symbol=self.symbol,
-                    type='market',
-                    side=close_side,
-                    amount=close_amount_rounded
-                )
+                # 使用直接 API 調用（繞過 ccxt 對 Binance Futures Testnet 的限制）
+                if self._is_binance_futures_testnet():
+                    self._futures_close_position(close_amount_rounded)
+                else:
+                    close_side = 'sell' if self.side == 'LONG' else 'buy'
+                    self.exchange.create_order(
+                        symbol=self.symbol,
+                        type='market',
+                        side=close_side,
+                        amount=close_amount_rounded
+                    )
 
             logger.info(f"✅ {self.symbol} {reason}: 平倉 {percent}% @ ${price:.2f}")
 
@@ -1142,6 +1376,9 @@ class TradeManager:
 # ==================== 主交易機器人（v5.1 增強版）====================
 class TradingBotV51:
     """v5.1 「勝率不掉，出手機會增加」優化版交易機器人"""
+
+    # Binance Futures Testnet API 設定
+    FUTURES_TESTNET_URL = "https://testnet.binancefuture.com"
 
     def __init__(self):
         self.exchange = self.init_exchange()
@@ -1240,6 +1477,134 @@ class TradingBotV51:
             import traceback
             logger.error(f"詳細錯誤: {traceback.format_exc()}")
             raise
+
+    def _futures_api_request(self, method: str, endpoint: str, params: dict = None, signed: bool = True) -> dict:
+        """
+        直接調用 Binance Futures Testnet API
+        繞過 ccxt 的限制
+        """
+        import hmac
+        import hashlib
+        from urllib.parse import urlencode
+
+        url = f"{self.FUTURES_TESTNET_URL}{endpoint}"
+
+        if params is None:
+            params = {}
+
+        headers = {'X-MBX-APIKEY': Config.API_KEY}
+
+        if signed:
+            params['timestamp'] = int(time.time() * 1000)
+            query_string = urlencode(params)
+            signature = hmac.new(
+                Config.API_SECRET.strip().encode('utf-8'),
+                query_string.encode('utf-8'),
+                hashlib.sha256
+            ).hexdigest()
+            params['signature'] = signature
+
+        try:
+            if method.upper() == 'GET':
+                response = requests.get(url, params=params, headers=headers, timeout=30)
+            elif method.upper() == 'POST':
+                response = requests.post(url, data=params, headers=headers, timeout=30)
+            elif method.upper() == 'DELETE':
+                response = requests.delete(url, params=params, headers=headers, timeout=30)
+            else:
+                raise ValueError(f"不支持的 HTTP 方法: {method}")
+
+            if response.status_code == 200:
+                return response.json()
+            else:
+                logger.error(f"API 錯誤: {response.status_code} - {response.text}")
+                return {"error": response.text, "code": response.status_code}
+
+        except Exception as e:
+            logger.error(f"API 請求失敗: {e}")
+            return {"error": str(e)}
+
+    def _futures_set_leverage(self, symbol: str, leverage: int) -> bool:
+        """設置槓桿"""
+        symbol_id = symbol.replace('/', '')
+        result = self._futures_api_request('POST', '/fapi/v1/leverage', {
+            'symbol': symbol_id,
+            'leverage': leverage
+        })
+        return 'error' not in result
+
+    def _futures_create_order(self, symbol: str, side: str, quantity: float) -> dict:
+        """
+        直接使用 Binance Futures Testnet API 下單
+        """
+        symbol_id = symbol.replace('/', '')
+
+        # 先設置槓桿
+        self._futures_set_leverage(symbol, Config.LEVERAGE)
+
+        # 🔧 修復：根據交易對精度格式化數量
+        precision = self.precision_handler.get_precision(symbol)
+        if precision == 0:
+            # 整數精度（如 SOL、DOGE、ADA）
+            formatted_quantity = str(int(quantity))
+        else:
+            # 指定小數位精度
+            formatted_quantity = f"{quantity:.{precision}f}"
+        
+        logger.info(f"📝 {symbol} 下單數量: {quantity} -> {formatted_quantity} (精度: {precision})")
+
+        params = {
+            'symbol': symbol_id,
+            'side': side.upper(),
+            'type': 'MARKET',
+            'quantity': formatted_quantity  # 使用格式化後的字符串
+        }
+
+        result = self._futures_api_request('POST', '/fapi/v1/order', params)
+
+        if 'error' in result:
+            logger.error(f"❌ API 錯誤: {result.get('code', 'N/A')}")
+            logger.error(f"   響應: {result['error']}")
+            raise Exception(f"下單失敗: {result['error']}")
+
+        return result
+
+    def _futures_close_position(self, symbol: str, side: str, quantity: float) -> dict:
+        """
+        直接使用 Binance Futures Testnet API 平倉
+        """
+        symbol_id = symbol.replace('/', '')
+
+        # 平倉方向相反
+        close_side = 'SELL' if side == 'LONG' else 'BUY'
+
+        # 🔧 修復：根據交易對精度格式化數量
+        precision = self.precision_handler.get_precision(symbol)
+        if precision == 0:
+            formatted_quantity = str(int(quantity))
+        else:
+            formatted_quantity = f"{quantity:.{precision}f}"
+
+        params = {
+            'symbol': symbol_id,
+            'side': close_side,
+            'type': 'MARKET',
+            'quantity': formatted_quantity,  # 使用格式化後的字符串
+            'reduceOnly': 'true'
+        }
+
+        result = self._futures_api_request('POST', '/fapi/v1/order', params)
+
+        if 'error' in result:
+            raise Exception(f"平倉失敗: {result['error']}")
+
+        return result
+
+    def _is_binance_futures_testnet(self) -> bool:
+        """檢查是否為 Binance Futures Testnet"""
+        return (Config.SANDBOX_MODE and
+                Config.TRADING_MODE == 'future' and
+                Config.EXCHANGE == 'binance')
 
     def fetch_ohlcv(self, symbol: str, timeframe: str, limit: int = 100) -> pd.DataFrame:
         """獲取 OHLCV 數據"""
@@ -1484,13 +1849,18 @@ class TradingBotV51:
                     logger.warning(f"⚠️ {symbol} 現貨模式不支持做空")
                     return
             else:
-                order_side = 'buy' if side == 'LONG' else 'sell'
-                order = self.exchange.create_order(
-                    symbol=symbol,
-                    type='market',
-                    side=order_side,
-                    amount=position_size
-                )
+                order_side = 'BUY' if side == 'LONG' else 'SELL'
+
+                # 使用直接 API 調用（繞過 ccxt 對 Binance Futures Testnet 的限制）
+                if self._is_binance_futures_testnet():
+                    order = self._futures_create_order(symbol, order_side, position_size)
+                else:
+                    order = self.exchange.create_order(
+                        symbol=symbol,
+                        type='market',
+                        side=order_side.lower(),
+                        amount=position_size
+                    )
 
             logger.info(f"✅ {symbol} {side} 開倉成功！")
             logger.info("-" * 60)
@@ -1676,12 +2046,65 @@ class TradingBotV51:
         logger.info("="*60 + "\n")
         return True
 
-    def run(self):
-        """主運行循環"""
+    def run(self, info_only: bool = False):
+        """主運行循環
+
+        Args:
+            info_only: 若為 True，只獲取帳戶資訊後等待，不執行交易
+        """
         # 執行啟動診斷
         if not self.startup_diagnostics():
             logger.error("❌ 啟動診斷失敗，機器人停止運行")
             return
+
+        # 如果是 info_only 模式，輸出帳戶資訊後等待
+        if info_only:
+            logger.info("\n" + "="*60)
+            logger.info("📊 帳戶資訊模式 - 等待交易指令")
+            logger.info("="*60)
+
+            account_info = self.risk_manager.get_account_info()
+            balance = account_info['balance']
+            positions = account_info['positions']
+
+            # 輸出餘額
+            logger.info(f"\n💰 帳戶餘額: {balance:.2f} USDT")
+
+            # 輸出持倉
+            if positions:
+                logger.info(f"\n📋 現有持倉 ({len(positions)} 個):")
+                for p in positions:
+                    symbol = p.get('symbol', 'N/A')
+                    amt = float(p.get('positionAmt', 0))
+                    entry = float(p.get('entryPrice', 0))
+                    pnl = float(p.get('unRealizedProfit', 0))
+                    side = 'LONG' if amt > 0 else 'SHORT'
+                    logger.info(f"   ├─ {symbol}: {side} {abs(amt):.4f} @ ${entry:.2f} | PnL: ${pnl:.2f}")
+            else:
+                logger.info("\n📋 目前無持倉")
+
+            # 輸出 JSON 格式供 GUI 解析
+            print(f"__ACCOUNT_INFO_JSON__:{json.dumps(account_info)}")
+
+            logger.info("\n⏳ 等待交易指令...")
+
+            # 等待 stdin 指令
+            while True:
+                try:
+                    line = sys.stdin.readline().strip()
+                    if line == "__START_TRADING__":
+                        logger.info("✅ 收到交易指令，開始交易...")
+                        break
+                    elif line == "__STOP__":
+                        logger.info("⏹ 收到停止指令")
+                        return
+                    elif line == "__REFRESH__":
+                        account_info = self.risk_manager.get_account_info()
+                        print(f"__ACCOUNT_INFO_JSON__:{json.dumps(account_info)}")
+                    time.sleep(0.1)
+                except KeyboardInterrupt:
+                    logger.info("\n⏹ 用戶中斷")
+                    return
 
         logger.info("🚀 機器人開始運行...\n")
 
@@ -1708,12 +2131,19 @@ class TradingBotV51:
 
 # ==================== 主程序入口 ====================
 if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description='Trading Bot v5.1')
+    parser.add_argument('--info-only', action='store_true',
+                        help='只獲取帳戶資訊，不執行交易')
+    args = parser.parse_args()
+
     try:
         # 首先載入配置
         Config.load_from_json("bot_config.json")
 
         bot = TradingBotV51()
-        bot.run()
+        bot.run(info_only=args.info_only)
     except Exception as e:
         logger.error(f"❌ 機器人啟動失敗: {e}")
         raise
