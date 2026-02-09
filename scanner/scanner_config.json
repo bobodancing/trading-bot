@@ -1,0 +1,43 @@
+{
+    "EXCHANGE": "binance",
+    "MARKET_TYPE": "future",
+    "SANDBOX_MODE": false,
+
+    "SCAN_INTERVAL_MINUTES": 15,
+
+    "L1_MIN_VOLUME_USD": 15000000,
+    "L1_EXCLUDED_SYMBOLS": ["USDC/USDT", "BUSD/USDT", "TUSD/USDT", "DAI/USDT", "FDUSD/USDT"],
+    "L1_EXCLUDED_PATTERNS": ["UP/USDT", "DOWN/USDT", "BEAR/", "BULL/", "3L/", "3S/"],
+
+    "L2_MIN_ADX": 20,
+    "L2_RSI_RANGE": [40, 70],
+    "L2_MIN_CONDITIONS": 3,
+    "L2_MIN_ATR_PERCENT": 1.5,
+    "L2_MAX_ATR_PERCENT": 15,
+
+    "L3_SWING_LEFT_BARS": 7,
+    "L3_SWING_RIGHT_BARS": 2,
+    "L3_MIN_VOLUME_RATIO": 1.0,
+    "L3_MAX_PENETRATION_ATR": 2.0,
+    "L3_PRE_2B_THRESHOLD": 0.5,
+
+    "L4_MAX_CORRELATION": 0.7,
+    "L4_MAX_PER_SECTOR": 2,
+    "L4_CORRELATION_PERIOD": 30,
+
+    "OUTPUT_TOP_N": 10,
+    "OUTPUT_JSON_PATH": "hot_symbols.json",
+    "OUTPUT_DB_PATH": "scanner_results.db",
+
+    "API_BATCH_SIZE": 50,
+    "API_DELAY_BETWEEN_BATCHES": 1.0,
+    "API_MAX_RETRIES": 3,
+
+    "TELEGRAM_ENABLED": false,
+    "TELEGRAM_BOT_TOKEN": "",
+    "TELEGRAM_CHAT_ID": "",
+
+    "TIMEFRAME_SCAN": "1h",
+    "TIMEFRAME_TREND": "4h",
+    "TIMEFRAME_DAILY": "1d"
+}

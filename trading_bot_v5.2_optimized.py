@@ -1,11 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-交易機器人 v5.1 - 「勝率不掉，出手機會增加」優化版
-基於 v5.0 架構，新增：
-1. 多時間框架確認系統（MTF）
-2. 動態閾值調整
-3. 分級入場條件
-4. 互補型策略模組
+交易機器人 v5.2 - 增強版（基於 botUpdate 分析優化）
+基於 v5.1 架構，新增：
+1. 硬止損單（交易所端 STOP_MARKET 訂單）
+2. A+ SOP 多階段出場（2R 出 30%，3R 再出 30%）
+3. 移動止損功能（Trailing Stop）
+4. 防重複開倉機制
+
+v5.1 功能：
+- 多時間框架確認系統（MTF）
+- 動態閾值調整
+- 分級入場條件
+- 互補型策略模組
 """
 
 import ccxt
@@ -17,7 +23,7 @@ import requests
 import json
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 from decimal import Decimal, ROUND_DOWN
 
@@ -109,12 +115,78 @@ class Config:
     VOL_MINIMUM_THRESHOLD = 0.7  # 降低最低門檻（從 0.8 降到 0.7）
     ACCEPT_WEAK_SIGNALS = True
 
+    # ============ v5.2 新增：A+ SOP 多階段出場 ============
+    ENABLE_APLUS_EXIT = True  # 啟用 A+ SOP 多階段出場
+    APLUS_2R_PARTIAL_PERCENT = 30  # 2R 減倉百分比
+    APLUS_3R_PARTIAL_PERCENT = 30  # 3R 減倉百分比
+    APLUS_TRAILING_ATR_MULT = 1.5  # 追蹤止損 ATR 乘數
+
+    # Scanner 整合設定
+    USE_SCANNER_SYMBOLS = False  # 是否使用掃描結果作為交易標的
+    SCANNER_JSON_PATH = "hot_symbols.json"  # 掃描結果檔案
+    SCANNER_MAX_AGE_MINUTES = 30  # 掃描結果最大有效期（分鐘）
+
     # 其他
     ENABLE_STRUCTURE_BREAK_EXIT = False
     CHECK_INTERVAL = 300
     MAX_RETRY = 3
     RETRY_DELAY = 5
     TREND_CACHE_HOURS = 4
+
+    # JSON key → Config 屬性的映射表（snake_case → UPPER_SNAKE_CASE）
+    _KEY_MAP = {
+        # API 設置
+        'api_key': 'API_KEY', 'api_secret': 'API_SECRET',
+        'exchange': 'EXCHANGE', 'sandbox_mode': 'SANDBOX_MODE',
+        # 交易模式
+        'trading_mode': 'TRADING_MODE', 'trading_direction': 'TRADING_DIRECTION',
+        'leverage': 'LEVERAGE', 'use_hard_stop_loss': 'USE_HARD_STOP_LOSS',
+        # Telegram
+        'telegram_enabled': 'TELEGRAM_ENABLED',
+        'telegram_bot_token': 'TELEGRAM_BOT_TOKEN', 'telegram_chat_id': 'TELEGRAM_CHAT_ID',
+        # 交易標的
+        'symbols': 'SYMBOLS',
+        # 風險管理
+        'risk_per_trade': 'RISK_PER_TRADE', 'max_total_risk': 'MAX_TOTAL_RISK',
+        'max_positions_per_group': 'MAX_POSITIONS_PER_GROUP',
+        'max_position_percent': 'MAX_POSITION_PERCENT',
+        # 技術參數
+        'lookback_period': 'LOOKBACK_PERIOD', 'volume_ma_period': 'VOLUME_MA_PERIOD',
+        'atr_period': 'ATR_PERIOD', 'atr_multiplier': 'ATR_MULTIPLIER',
+        # 市場過濾
+        'enable_market_filter': 'ENABLE_MARKET_FILTER', 'adx_threshold': 'ADX_THRESHOLD',
+        'atr_spike_multiplier': 'ATR_SPIKE_MULTIPLIER',
+        'ema_entanglement_threshold': 'EMA_ENTANGLEMENT_THRESHOLD',
+        # v4.1 量能分級
+        'enable_volume_grading': 'ENABLE_VOLUME_GRADING',
+        'vol_explosive_threshold': 'VOL_EXPLOSIVE_THRESHOLD',
+        'vol_strong_threshold': 'VOL_STRONG_THRESHOLD',
+        'vol_moderate_threshold': 'VOL_MODERATE_THRESHOLD',
+        'vol_minimum_threshold': 'VOL_MINIMUM_THRESHOLD',
+        'accept_weak_signals': 'ACCEPT_WEAK_SIGNALS',
+        # v5.1 新增
+        'enable_mtf_confirmation': 'ENABLE_MTF_CONFIRMATION',
+        'enable_dynamic_thresholds': 'ENABLE_DYNAMIC_THRESHOLDS',
+        'enable_tiered_entry': 'ENABLE_TIERED_ENTRY',
+        'enable_ema_pullback': 'ENABLE_EMA_PULLBACK',
+        'enable_volume_breakout': 'ENABLE_VOLUME_BREAKOUT',
+        # v5.1 分級倉位
+        'tier_a_position_mult': 'TIER_A_POSITION_MULT',
+        'tier_b_position_mult': 'TIER_B_POSITION_MULT',
+        'tier_c_position_mult': 'TIER_C_POSITION_MULT',
+        # v5.2 A+ SOP
+        'enable_aplus_exit': 'ENABLE_APLUS_EXIT',
+        'aplus_2r_partial_percent': 'APLUS_2R_PARTIAL_PERCENT',
+        'aplus_3r_partial_percent': 'APLUS_3R_PARTIAL_PERCENT',
+        'aplus_trailing_atr_mult': 'APLUS_TRAILING_ATR_MULT',
+        # v5.2 Scanner 整合
+        'use_scanner_symbols': 'USE_SCANNER_SYMBOLS',
+        'scanner_json_path': 'SCANNER_JSON_PATH',
+        'scanner_max_age_minutes': 'SCANNER_MAX_AGE_MINUTES',
+        # 其他
+        'enable_structure_break_exit': 'ENABLE_STRUCTURE_BREAK_EXIT',
+        'check_interval': 'CHECK_INTERVAL',
+    }
 
     @classmethod
     def load_from_json(cls, config_file: str = "bot_config.json"):
@@ -127,101 +199,13 @@ class Config:
             with open(config_file, 'r', encoding='utf-8') as f:
                 config_data = json.load(f)
 
-            # API 設置
-            if 'api_key' in config_data:
-                cls.API_KEY = config_data['api_key']
-            if 'api_secret' in config_data:
-                cls.API_SECRET = config_data['api_secret']
-            if 'exchange' in config_data:
-                cls.EXCHANGE = config_data['exchange']
-            if 'sandbox_mode' in config_data:
-                cls.SANDBOX_MODE = config_data['sandbox_mode']
+            loaded_count = 0
+            for json_key, attr_name in cls._KEY_MAP.items():
+                if json_key in config_data:
+                    setattr(cls, attr_name, config_data[json_key])
+                    loaded_count += 1
 
-            # 交易模式
-            if 'trading_mode' in config_data:
-                cls.TRADING_MODE = config_data['trading_mode']
-            if 'trading_direction' in config_data:
-                cls.TRADING_DIRECTION = config_data['trading_direction']
-            if 'leverage' in config_data:
-                cls.LEVERAGE = config_data['leverage']
-            if 'use_hard_stop_loss' in config_data:
-                cls.USE_HARD_STOP_LOSS = config_data['use_hard_stop_loss']
-
-            # Telegram
-            if 'telegram_enabled' in config_data:
-                cls.TELEGRAM_ENABLED = config_data['telegram_enabled']
-            if 'telegram_bot_token' in config_data:
-                cls.TELEGRAM_BOT_TOKEN = config_data['telegram_bot_token']
-            if 'telegram_chat_id' in config_data:
-                cls.TELEGRAM_CHAT_ID = config_data['telegram_chat_id']
-
-            # 交易標的
-            if 'symbols' in config_data:
-                cls.SYMBOLS = config_data['symbols']
-
-            # 風險管理
-            if 'risk_per_trade' in config_data:
-                cls.RISK_PER_TRADE = config_data['risk_per_trade']
-            if 'max_total_risk' in config_data:
-                cls.MAX_TOTAL_RISK = config_data['max_total_risk']
-            if 'max_positions_per_group' in config_data:
-                cls.MAX_POSITIONS_PER_GROUP = config_data['max_positions_per_group']
-            if 'max_position_percent' in config_data:
-                cls.MAX_POSITION_PERCENT = config_data['max_position_percent']
-
-            # 技術參數
-            if 'lookback_period' in config_data:
-                cls.LOOKBACK_PERIOD = config_data['lookback_period']
-            if 'volume_ma_period' in config_data:
-                cls.VOLUME_MA_PERIOD = config_data['volume_ma_period']
-            if 'atr_period' in config_data:
-                cls.ATR_PERIOD = config_data['atr_period']
-            if 'atr_multiplier' in config_data:
-                cls.ATR_MULTIPLIER = config_data['atr_multiplier']
-
-            # 市場過濾
-            if 'enable_market_filter' in config_data:
-                cls.ENABLE_MARKET_FILTER = config_data['enable_market_filter']
-            if 'adx_threshold' in config_data:
-                cls.ADX_THRESHOLD = config_data['adx_threshold']
-            if 'atr_spike_multiplier' in config_data:
-                cls.ATR_SPIKE_MULTIPLIER = config_data['atr_spike_multiplier']
-            if 'ema_entanglement_threshold' in config_data:
-                cls.EMA_ENTANGLEMENT_THRESHOLD = config_data['ema_entanglement_threshold']
-
-            # v4.1 量能分級
-            if 'enable_volume_grading' in config_data:
-                cls.ENABLE_VOLUME_GRADING = config_data['enable_volume_grading']
-            if 'vol_explosive_threshold' in config_data:
-                cls.VOL_EXPLOSIVE_THRESHOLD = config_data['vol_explosive_threshold']
-            if 'vol_strong_threshold' in config_data:
-                cls.VOL_STRONG_THRESHOLD = config_data['vol_strong_threshold']
-            if 'vol_moderate_threshold' in config_data:
-                cls.VOL_MODERATE_THRESHOLD = config_data['vol_moderate_threshold']
-            if 'vol_minimum_threshold' in config_data:
-                cls.VOL_MINIMUM_THRESHOLD = config_data['vol_minimum_threshold']
-            if 'accept_weak_signals' in config_data:
-                cls.ACCEPT_WEAK_SIGNALS = config_data['accept_weak_signals']
-                
-            # v5.1 新增配置
-            if 'enable_mtf_confirmation' in config_data:
-                cls.ENABLE_MTF_CONFIRMATION = config_data['enable_mtf_confirmation']
-            if 'enable_dynamic_thresholds' in config_data:
-                cls.ENABLE_DYNAMIC_THRESHOLDS = config_data['enable_dynamic_thresholds']
-            if 'enable_tiered_entry' in config_data:
-                cls.ENABLE_TIERED_ENTRY = config_data['enable_tiered_entry']
-            if 'enable_ema_pullback' in config_data:
-                cls.ENABLE_EMA_PULLBACK = config_data['enable_ema_pullback']
-            if 'enable_volume_breakout' in config_data:
-                cls.ENABLE_VOLUME_BREAKOUT = config_data['enable_volume_breakout']
-
-            # 其他設置
-            if 'enable_structure_break_exit' in config_data:
-                cls.ENABLE_STRUCTURE_BREAK_EXIT = config_data['enable_structure_break_exit']
-            if 'check_interval' in config_data:
-                cls.CHECK_INTERVAL = config_data['check_interval']
-
-            logger.info(f"✅ 已從 {config_file} 加載配置")
+            logger.info(f"✅ 已從 {config_file} 加載 {loaded_count} 項配置")
 
         except Exception as e:
             logger.error(f"❌ 加載配置文件失敗: {e}")
@@ -975,6 +959,12 @@ class PrecisionHandler:
 
         return amount
 
+    def get_min_amount(self, symbol: str) -> float:
+        """v5.2 新增：獲取交易對的最小交易數量"""
+        if symbol in self.DEFAULT_PRECISIONS:
+            return self.DEFAULT_PRECISIONS[symbol].get('min_amount', 0.001)
+        return 0.001
+
     def check_limits(self, symbol: str, amount: float, price: float) -> bool:
         """檢查訂單是否滿足限制"""
         min_notional = self.FUTURES_MIN_NOTIONAL if Config.TRADING_MODE == 'future' else 10
@@ -1027,33 +1017,41 @@ class RiskManager:
         # Binance Futures Testnet API 設定
         self.futures_base_url = "https://testnet.binancefuture.com"
 
+    def _futures_signed_request(self, method: str, endpoint: str, params: dict = None) -> requests.Response:
+        """統一 Binance Futures Testnet HMAC 簽名 + 請求"""
+        import hmac as hmac_mod
+        import hashlib
+        from urllib.parse import urlencode
+
+        if params is None:
+            params = {}
+
+        params['timestamp'] = int(time.time() * 1000)
+        query_string = urlencode(params)
+        signature = hmac_mod.new(
+            Config.API_SECRET.strip().encode('utf-8'),
+            query_string.encode('utf-8'),
+            hashlib.sha256
+        ).hexdigest()
+        params['signature'] = signature
+
+        headers = {'X-MBX-APIKEY': Config.API_KEY}
+        url = f"{self.futures_base_url}{endpoint}"
+
+        if method == 'POST':
+            return requests.post(url, data=params, headers=headers, timeout=30)
+        elif method == 'DELETE':
+            return requests.delete(url, params=params, headers=headers, timeout=30)
+        else:
+            return requests.get(url, params=params, headers=headers, timeout=30)
+
     def _get_futures_balance(self) -> float:
         """
         使用 /fapi/v2/balance 端點獲取 Futures 餘額
         解決 Binance Futures Testnet 不支援 sapi 端點的問題
         """
-        import hmac
-        import hashlib
-        from urllib.parse import urlencode
-
         try:
-            timestamp = int(time.time() * 1000)
-            params = {'timestamp': timestamp}
-
-            # 生成簽名
-            query_string = urlencode(params)
-            signature = hmac.new(
-                Config.API_SECRET.strip().encode('utf-8'),
-                query_string.encode('utf-8'),
-                hashlib.sha256
-            ).hexdigest()
-            params['signature'] = signature
-
-            # 發送請求
-            headers = {'X-MBX-APIKEY': Config.API_KEY}
-            url = f"{self.futures_base_url}/fapi/v2/balance"
-
-            response = requests.get(url, params=params, headers=headers, timeout=30)
+            response = self._futures_signed_request('GET', '/fapi/v2/balance')
 
             if response.status_code == 200:
                 data = response.json()
@@ -1113,26 +1111,8 @@ class RiskManager:
 
     def _get_futures_positions(self) -> list:
         """使用 Binance Futures API 獲取持倉"""
-        import hmac
-        import hashlib
-        from urllib.parse import urlencode
-
         try:
-            timestamp = int(time.time() * 1000)
-            params = {'timestamp': timestamp}
-
-            query_string = urlencode(params)
-            signature = hmac.new(
-                Config.API_SECRET.strip().encode('utf-8'),
-                query_string.encode('utf-8'),
-                hashlib.sha256
-            ).hexdigest()
-            params['signature'] = signature
-
-            headers = {'X-MBX-APIKEY': Config.API_KEY}
-            url = f"{self.futures_base_url}/fapi/v2/positionRisk"
-
-            response = requests.get(url, params=params, headers=headers, timeout=30)
+            response = self._futures_signed_request('GET', '/fapi/v2/positionRisk')
 
             if response.status_code == 200:
                 data = response.json()
@@ -1203,7 +1183,7 @@ class RiskManager:
 
 # ==================== 交易管理 ====================
 class TradeManager:
-    """單筆交易管理類（v5.0 雙向版本）"""
+    """單筆交易管理類（v5.2 增強版 - 多階段出場 + 硬止損）"""
 
     # Binance Futures Testnet API 設定
     FUTURES_TESTNET_URL = "https://testnet.binancefuture.com"
@@ -1227,19 +1207,46 @@ class TradeManager:
         self.is_half_closed = False
         self.is_closed = False
 
+        # v5.2 新增：硬止損單 ID
         self.stop_loss_order_id = None
 
+        # v5.2 新增：多階段出場狀態追蹤
+        self.is_2r_partial = False      # 是否已執行 2R 減倉
+        self.is_3r_partial = False      # 是否已執行 3R 減倉
+        self.is_trailing_active = False # 是否已啟動追蹤止損
+        self.highest_price = entry_price  # 追蹤用：歷史最高價 (LONG)
+        self.lowest_price = entry_price   # 追蹤用：歷史最低價 (SHORT)
+        self.atr = None                   # 儲存 ATR 用於追蹤止損
+
         risk_dist = abs(entry_price - stop_loss)
+        self.risk_dist = risk_dist  # 保存風險距離
+
+        # v5.2 新增：計算各階段目標價
         if side == 'LONG':
             self.r15_target = entry_price + (risk_dist * 1.5)
+            self.r20_target = entry_price + (risk_dist * 2.0)
+            self.r30_target = entry_price + (risk_dist * 3.0)
         else:
             self.r15_target = entry_price - (risk_dist * 1.5)
+            self.r20_target = entry_price - (risk_dist * 2.0)
+            self.r30_target = entry_price - (risk_dist * 3.0)
 
+        # v5.2: 更新日誌格式
         logger.info(f"🚀 {symbol} {side} 交易建立 (等級: {signal_tier})")
-        logger.info(f"   入場: ${entry_price:.2f} | 止損: ${stop_loss:.2f}")
-        logger.info(f"   倉位: {position_size:.6f} | 1.5R: ${self.r15_target:.2f}")
-        if target_ref:
-            logger.info(f"   目標: ${target_ref:.2f}")
+        logger.info(f"   ├─ 入場: ${entry_price:.2f}")
+        logger.info(f"   ├─ 止損: ${stop_loss:.2f}")
+        logger.info(f"   ├─ 倉位: {position_size:.6f}")
+        logger.info(f"   ├─ 1.5R: ${self.r15_target:.2f}")
+        if signal_tier in ['A+', 'A']:
+            logger.info(f"   ├─ 2.0R: ${self.r20_target:.2f} (減30%)")
+            logger.info(f"   ├─ 3.0R: ${self.r30_target:.2f} (減30%)")
+            logger.info(f"   └─ 尾倉: 追蹤止損")
+        elif target_ref:
+            logger.info(f"   └─ 目標: ${target_ref:.2f} (減50%)")
+
+        # v5.2: 開倉後立即設置硬止損單
+        if Config.USE_HARD_STOP_LOSS:
+            self._place_hard_stop_loss()
 
     def _is_binance_futures_testnet(self) -> bool:
         """檢查是否為 Binance Futures Testnet"""
@@ -1247,34 +1254,15 @@ class TradeManager:
                 Config.TRADING_MODE == 'future' and
                 Config.EXCHANGE == 'binance')
 
-    def _futures_close_position(self, quantity: float) -> dict:
-        """直接使用 Binance Futures Testnet API 平倉"""
-        import hmac
+    def _futures_signed_request(self, method: str, endpoint: str, params: dict) -> requests.Response:
+        """統一 Binance Futures Testnet HMAC 簽名 + 請求"""
+        import hmac as hmac_mod
         import hashlib
         from urllib.parse import urlencode
 
-        symbol_id = self.symbol.replace('/', '')
-        close_side = 'SELL' if self.side == 'LONG' else 'BUY'
-
-        # 🔧 修復：根據交易對精度格式化數量
-        precision = self.precision_handler.get_precision(self.symbol)
-        if precision == 0:
-            formatted_quantity = str(int(quantity))
-        else:
-            formatted_quantity = f"{quantity:.{precision}f}"
-
-        timestamp = int(time.time() * 1000)
-        params = {
-            'symbol': symbol_id,
-            'side': close_side,
-            'type': 'MARKET',
-            'quantity': formatted_quantity,  # 使用格式化後的字符串
-            'reduceOnly': 'true',
-            'timestamp': timestamp
-        }
-
+        params['timestamp'] = int(time.time() * 1000)
         query_string = urlencode(params)
-        signature = hmac.new(
+        signature = hmac_mod.new(
             Config.API_SECRET.strip().encode('utf-8'),
             query_string.encode('utf-8'),
             hashlib.sha256
@@ -1282,9 +1270,143 @@ class TradeManager:
         params['signature'] = signature
 
         headers = {'X-MBX-APIKEY': Config.API_KEY}
-        url = f"{self.FUTURES_TESTNET_URL}/fapi/v1/order"
+        url = f"{self.FUTURES_TESTNET_URL}{endpoint}"
 
-        response = requests.post(url, data=params, headers=headers, timeout=30)
+        if method == 'POST':
+            return requests.post(url, data=params, headers=headers, timeout=30)
+        elif method == 'DELETE':
+            return requests.delete(url, params=params, headers=headers, timeout=30)
+        else:
+            return requests.get(url, params=params, headers=headers, timeout=30)
+
+    def _place_hard_stop_loss(self) -> bool:
+        """v5.2: 在交易所端設置硬止損單"""
+        try:
+            if not self._is_binance_futures_testnet():
+                # 非 Binance Futures Testnet 使用 ccxt
+                stop_side = 'sell' if self.side == 'LONG' else 'buy'
+                order = self.exchange.create_order(
+                    symbol=self.symbol,
+                    type='STOP_MARKET',
+                    side=stop_side,
+                    amount=self.current_size,
+                    params={
+                        'stopPrice': self.current_sl,
+                        'reduceOnly': True
+                    }
+                )
+                self.stop_loss_order_id = order.get('id')
+            else:
+                # Binance Futures Testnet 使用直接 API
+                symbol_id = self.symbol.replace('/', '')
+                stop_side = 'SELL' if self.side == 'LONG' else 'BUY'
+
+                precision = self.precision_handler.get_precision(self.symbol)
+                if precision == 0:
+                    formatted_quantity = str(int(self.current_size))
+                else:
+                    formatted_quantity = f"{self.current_size:.{precision}f}"
+
+                params = {
+                    'symbol': symbol_id,
+                    'side': stop_side,
+                    'type': 'STOP_MARKET',
+                    'algoType': 'CONDITIONAL',
+                    'quantity': formatted_quantity,
+                    'triggerPrice': f"{self.current_sl:.2f}",
+                    'reduceOnly': 'true',
+                }
+
+                response = self._futures_signed_request('POST', '/fapi/v1/algoOrder', params)
+
+                if response.status_code == 200:
+                    result = response.json()
+                    self.stop_loss_order_id = result.get('algoId')
+                    logger.info(f"🛡 {self.symbol} 硬止損單已設置 @ ${self.current_sl:.2f} (ID: {self.stop_loss_order_id})")
+                    return True
+                else:
+                    logger.error(f"❌ 硬止損單設置失敗: {response.status_code} - {response.text}")
+                    return False
+
+            logger.info(f"🛡 {self.symbol} 硬止損單已設置 @ ${self.current_sl:.2f}")
+            return True
+
+        except Exception as e:
+            logger.error(f"❌ 設置硬止損單失敗: {e}")
+            return False
+
+    def _cancel_stop_loss_order(self) -> bool:
+        """v5.2: 取消現有的硬止損單"""
+        if not self.stop_loss_order_id:
+            return True
+
+        try:
+            if not self._is_binance_futures_testnet():
+                self.exchange.cancel_order(self.stop_loss_order_id, self.symbol)
+            else:
+                symbol_id = self.symbol.replace('/', '')
+                params = {
+                    'symbol': symbol_id,
+                    'algoId': self.stop_loss_order_id,
+                }
+
+                response = self._futures_signed_request('DELETE', '/fapi/v1/algoOrder', params)
+
+                if response.status_code == 200:
+                    logger.info(f"✅ {self.symbol} 已取消舊止損單 (ID: {self.stop_loss_order_id})")
+                else:
+                    # 止損單可能已被觸發或不存在，忽略錯誤
+                    logger.debug(f"取消止損單: {response.status_code} - {response.text}")
+
+            self.stop_loss_order_id = None
+            return True
+
+        except Exception as e:
+            logger.warning(f"⚠️ 取消止損單失敗: {e}")
+            self.stop_loss_order_id = None
+            return False
+
+    def _update_hard_stop_loss(self, new_stop: float) -> bool:
+        """v5.2: 更新硬止損單（取消舊的，設置新的）"""
+        if not Config.USE_HARD_STOP_LOSS:
+            return True
+
+        old_sl = self.current_sl
+        self.current_sl = new_stop
+
+        # 取消舊止損單
+        self._cancel_stop_loss_order()
+
+        # 設置新止損單
+        success = self._place_hard_stop_loss()
+
+        if success:
+            logger.info(f"🔄 {self.symbol} 止損已更新: ${old_sl:.2f} -> ${new_stop:.2f}")
+        else:
+            logger.warning(f"⚠️ {self.symbol} 止損更新失敗，保持軟止損 @ ${new_stop:.2f}")
+
+        return success
+
+    def _futures_close_position(self, quantity: float) -> dict:
+        """直接使用 Binance Futures Testnet API 平倉"""
+        symbol_id = self.symbol.replace('/', '')
+        close_side = 'SELL' if self.side == 'LONG' else 'BUY'
+
+        precision = self.precision_handler.get_precision(self.symbol)
+        if precision == 0:
+            formatted_quantity = str(int(quantity))
+        else:
+            formatted_quantity = f"{quantity:.{precision}f}"
+
+        params = {
+            'symbol': symbol_id,
+            'side': close_side,
+            'type': 'MARKET',
+            'quantity': formatted_quantity,
+            'reduceOnly': 'true',
+        }
+
+        response = self._futures_signed_request('POST', '/fapi/v1/order', params)
 
         if response.status_code == 200:
             return response.json()
@@ -1292,54 +1414,146 @@ class TradeManager:
             raise Exception(f"平倉 API 錯誤: {response.status_code} - {response.text}")
 
     def monitor(self, current_price: float, df_1h: pd.DataFrame = None) -> str:
-        """監控盈虧與結構出場（雙向版本）"""
+        """
+        監控盈虧與多階段出場（v5.2 升級版）
+        """
         if self.is_closed:
             return "CLOSED"
 
-        # 檢查止損
+        # 更新歷史極值（用於追蹤止損）
+        if self.side == 'LONG':
+            self.highest_price = max(self.highest_price, current_price)
+        else:
+            self.lowest_price = min(self.lowest_price, current_price)
+
+        # 更新 ATR（如果有數據）
+        if df_1h is not None and 'atr' in df_1h.columns and len(df_1h) > 0:
+            self.atr = df_1h['atr'].iloc[-1]
+
+        # ========== 1. 檢查止損 ==========
         if self.side == 'LONG':
             if current_price <= self.current_sl:
-                logger.warning(f"🚨 {self.symbol} 觸發止損")
+                logger.warning(f"🚨 {self.symbol} 觸發止損 @ ${current_price:.2f}")
+                self._cancel_stop_loss_order()
                 self.close_position(percent=100, reason="止損出場", price=current_price)
                 TelegramNotifier.notify_action(self.symbol, "止損出場", current_price)
                 return "CLOSED"
         else:
             if current_price >= self.current_sl:
-                logger.warning(f"🚨 {self.symbol} 觸發止損")
+                logger.warning(f"🚨 {self.symbol} 觸發止損 @ ${current_price:.2f}")
+                self._cancel_stop_loss_order()
                 self.close_position(percent=100, reason="止損出場", price=current_price)
                 TelegramNotifier.notify_action(self.symbol, "止損出場", current_price)
                 return "CLOSED"
 
-        # v4 結構破壞出場
+        # ========== 2. 結構破壞出場 ==========
         if df_1h is not None and Config.ENABLE_STRUCTURE_BREAK_EXIT:
             if TechnicalAnalysis.check_structure_break(df_1h, current_price, self.side):
                 logger.warning(f"⚠️ {self.symbol} 結構破壞，全部出場")
+                self._cancel_stop_loss_order()
                 self.close_position(percent=100, reason="結構破壞", price=current_price)
                 TelegramNotifier.notify_action(self.symbol, "結構破壞", current_price)
                 return "CLOSED"
 
-        # 1.5R 移損
-        if not self.is_breakeven_set:
-            if (self.side == 'LONG' and current_price >= self.r15_target) or \
-               (self.side == 'SHORT' and current_price <= self.r15_target):
-                self.current_sl = self.entry_price
-                self.is_breakeven_set = True
-                logger.info(f"🛡 {self.symbol} 1.5R達成，移損保本")
-                TelegramNotifier.notify_action(self.symbol, "1.5R移損", current_price)
+        # ========== 3. 計算當前 R 值 ==========
+        r_unit = abs(self.entry_price - self.initial_sl)
+        if r_unit == 0:
+            return "ACTIVE"
 
-        # 目標位減倉
-        if self.target_ref and not self.is_half_closed:
-            if (self.side == 'LONG' and current_price >= self.target_ref) or \
-               (self.side == 'SHORT' and current_price <= self.target_ref):
-                self.close_position(percent=50, reason="目標減倉", price=current_price)
-                self.is_half_closed = True
-                logger.info(f"💰 {self.symbol} 目標減倉")
-                TelegramNotifier.notify_action(self.symbol, "目標減倉", current_price)
+        if self.side == 'LONG':
+            current_r = (current_price - self.entry_price) / r_unit
+        else:
+            current_r = (self.entry_price - current_price) / r_unit
+
+        # ========== 4. A+/A 級專屬：多階段出場 ==========
+        if Config.ENABLE_APLUS_EXIT and self.signal_tier in ['A+', 'A']:
+
+            pct_2r = Config.APLUS_2R_PARTIAL_PERCENT
+            pct_3r = Config.APLUS_3R_PARTIAL_PERCENT
+
+            # 4a. 3R 減倉（優先檢查，因為可能跳過 2R）
+            if not self.is_3r_partial and current_r >= 3.0:
+                if not self.is_2r_partial:
+                    reduce_percent = pct_2r + pct_3r  # 補上 2R + 3R
+                    self.is_2r_partial = True
+                    logger.info(f"⚡ {self.symbol} 跳過2R，執行合併減倉{reduce_percent}%")
+                else:
+                    reduce_percent = pct_3r
+
+                self.close_position(percent=reduce_percent, reason="3R減倉", price=current_price)
+                self.is_3r_partial = True
+
+                # 移損至 +1.5R
+                if self.side == 'LONG':
+                    new_sl = self.entry_price + (r_unit * 1.5)
+                else:
+                    new_sl = self.entry_price - (r_unit * 1.5)
+                self._update_hard_stop_loss(new_sl)
+
+                logger.info(f"🎯 {self.symbol} 3R達成！止損移至 +1.5R (${new_sl:.2f})")
+                TelegramNotifier.notify_action(self.symbol, "3R減倉+移損", current_price,
+                                              f"新止損: ${new_sl:.2f}")
+                self.is_trailing_active = True
+
+            # 4b. 2R 減倉
+            elif not self.is_2r_partial and current_r >= 2.0:
+                self.close_position(percent=pct_2r, reason="2R減倉", price=current_price)
+                self.is_2r_partial = True
+
+                # 移損至 +0.5R
+                if self.side == 'LONG':
+                    new_sl = self.entry_price + (r_unit * 0.5)
+                else:
+                    new_sl = self.entry_price - (r_unit * 0.5)
+                self._update_hard_stop_loss(new_sl)
+
+                logger.info(f"🎯 {self.symbol} 2R達成！減倉{pct_2r}%，止損移至 +0.5R (${new_sl:.2f})")
+                TelegramNotifier.notify_action(self.symbol, "2R減倉+移損", current_price,
+                                              f"新止損: ${new_sl:.2f}")
+
+            # 4c. 追蹤止損（尾倉專用）
+            if self.is_trailing_active and self.atr is not None:
+                trailing_distance = self.atr * Config.APLUS_TRAILING_ATR_MULT
+
+                if self.side == 'LONG':
+                    new_trailing_sl = self.highest_price - trailing_distance
+                    if new_trailing_sl > self.current_sl:
+                        old_sl = self.current_sl
+                        self._update_hard_stop_loss(new_trailing_sl)
+                        logger.info(f"📈 {self.symbol} 追蹤止損: ${old_sl:.2f} → ${new_trailing_sl:.2f}")
+                else:
+                    new_trailing_sl = self.lowest_price + trailing_distance
+                    if new_trailing_sl < self.current_sl:
+                        old_sl = self.current_sl
+                        self._update_hard_stop_loss(new_trailing_sl)
+                        logger.info(f"📉 {self.symbol} 追蹤止損: ${old_sl:.2f} → ${new_trailing_sl:.2f}")
+
+        # ========== 5. 所有等級：1.5R 保本 ==========
+        if not self.is_breakeven_set and current_r >= 1.5:
+            self._update_hard_stop_loss(self.entry_price)
+            self.is_breakeven_set = True
+            logger.info(f"🛡 {self.symbol} 1.5R達成，移損保本 @ ${self.entry_price:.2f}")
+            TelegramNotifier.notify_action(self.symbol, "1.5R移損", current_price)
+
+        # ========== 6. B/C 級：目標減倉 ==========
+        if self.signal_tier in ['B', 'C']:
+            if self.target_ref and not self.is_half_closed:
+                if (self.side == 'LONG' and current_price >= self.target_ref) or \
+                   (self.side == 'SHORT' and current_price <= self.target_ref):
+                    self.close_position(percent=50, reason="目標減倉", price=current_price)
+                    self.is_half_closed = True
+                    logger.info(f"💰 {self.symbol} 目標達成，減倉50%")
+                    TelegramNotifier.notify_action(self.symbol, "目標減倉", current_price)
 
         return "ACTIVE"
 
     def close_position(self, percent: int, reason: str, price: float):
-        """關閉部分或全部倉位（雙向版本）"""
+        """v5.2 增強版：關閉部分或全部倉位"""
+        # v5.2: 小倉位保護
+        if self.current_size <= 0:
+            logger.warning(f"⚠️ {self.symbol} 倉位已為零，跳過平倉")
+            return
+
         try:
             close_amount = self.current_size * (percent / 100)
             close_amount_rounded = self.precision_handler.round_amount(self.symbol, close_amount)
@@ -1368,6 +1582,13 @@ class TradeManager:
 
             if percent >= 100:
                 self.is_closed = True
+                # 全部平倉時取消硬止損單
+                self._cancel_stop_loss_order()
+            elif Config.USE_HARD_STOP_LOSS and self.stop_loss_order_id:
+                # 部分平倉時更新硬止損單的數量
+                self._cancel_stop_loss_order()
+                if self.current_size > 0:
+                    self._place_hard_stop_loss()
 
         except Exception as e:
             logger.error(f"❌ 平倉失敗: {e}")
@@ -1390,18 +1611,23 @@ class TradingBotV51:
         self.last_trend_check = {}
 
         logger.info("="*60)
-        logger.info("🤖 交易機器人 v5.1 優化版已啟動")
+        logger.info("🤖 交易機器人 v5.2 增強版已啟動")
         logger.info("="*60)
         logger.info(f"📊 交易模式: {Config.TRADING_MODE} ({Config.TRADING_DIRECTION})")
         logger.info(f"⚡ 槓桿: {Config.LEVERAGE}x")
         logger.info(f"💰 風險配置: {Config.RISK_PER_TRADE*100}% / {Config.MAX_TOTAL_RISK*100}%")
         logger.info("-"*60)
-        logger.info("🆕 v5.1 新功能:")
+        logger.info("🆕 v5.1 功能:")
         logger.info(f"   ├─ 多時間框架確認 (MTF): {'啟用' if Config.ENABLE_MTF_CONFIRMATION else '關閉'}")
         logger.info(f"   ├─ 動態閾值調整: {'啟用' if Config.ENABLE_DYNAMIC_THRESHOLDS else '關閉'}")
         logger.info(f"   ├─ 分級入場系統: {'啟用' if Config.ENABLE_TIERED_ENTRY else '關閉'}")
         logger.info(f"   ├─ EMA 回撤策略: {'啟用' if Config.ENABLE_EMA_PULLBACK else '關閉'}")
         logger.info(f"   └─ 量能突破策略: {'啟用' if Config.ENABLE_VOLUME_BREAKOUT else '關閉'}")
+        logger.info("-"*60)
+        logger.info("🆕 v5.2 新功能:")
+        logger.info(f"   ├─ 硬止損單 (交易所端): {'啟用' if Config.USE_HARD_STOP_LOSS else '關閉'}")
+        logger.info(f"   ├─ A+ 多階段出場: {'啟用' if Config.ENABLE_APLUS_EXIT else '關閉'}")
+        logger.info(f"   └─ 追蹤止損 ATR 乘數: {Config.APLUS_TRAILING_ATR_MULT}")
         logger.info("-"*60)
         logger.info(f"🎯 市場過濾: {'啟用' if Config.ENABLE_MARKET_FILTER else '關閉'}")
         logger.info(f"🔥 量能分級: {'啟用' if Config.ENABLE_VOLUME_GRADING else '關閉'}")
@@ -1680,13 +1906,75 @@ class TradingBotV51:
 
         return pd.DataFrame()
 
+    def load_scanner_results(self) -> List[str]:
+        """
+        從 Scanner 結果載入動態標的清單
+        如果 Scanner 沒有結果，返回預設標的池
+        """
+        try:
+            scanner_path = Config.SCANNER_JSON_PATH
+
+            if not os.path.exists(scanner_path):
+                logger.warning("⚠️ 找不到 Scanner 結果檔案，使用預設標的")
+                return Config.SYMBOLS
+
+            with open(scanner_path, 'r') as f:
+                data = json.load(f)
+
+            # 檢查掃描時間是否過期
+            scan_time_str = data.get('scan_time', '')
+            if scan_time_str:
+                try:
+                    scan_time = datetime.fromisoformat(scan_time_str.replace('Z', '+00:00'))
+                    age_minutes = (datetime.now(timezone.utc) - scan_time).total_seconds() / 60
+
+                    if age_minutes > Config.SCANNER_MAX_AGE_MINUTES:
+                        logger.warning(f"⚠️ Scanner 結果已過期 ({age_minutes:.0f} 分鐘前)，使用預設標的")
+                        return Config.SYMBOLS
+                except Exception:
+                    pass
+
+            # 提取標的清單
+            hot_symbols = data.get('hot_symbols', [])
+
+            if not hot_symbols:
+                logger.warning("⚠️ Scanner 未掃出潛力標的，使用預設標的池")
+                logger.info(f"   預設標的: {Config.SYMBOLS}")
+                return Config.SYMBOLS
+
+            # Scanner 作為選股器：所有掃出的標的都加入交易池
+            # Bot 後續仍會執行完整的 2B / EMA 回撤 / 量能突破 信號偵測
+            scanner_symbols = [item['symbol'] for item in hot_symbols if item.get('symbol')]
+
+            if not scanner_symbols:
+                logger.warning("⚠️ Scanner 結果無有效標的，使用預設標的池")
+                return Config.SYMBOLS
+
+            logger.info(f"✅ 從 Scanner 載入 {len(scanner_symbols)} 個動態標的")
+            for symbol in scanner_symbols:
+                logger.info(f"   📌 {symbol}")
+
+            return scanner_symbols
+
+        except Exception as e:
+            logger.error(f"讀取 Scanner 結果失敗: {e}")
+            return Config.SYMBOLS
+
     def scan_for_signals(self):
-        """掃描交易信號（v5.1 增強版：多策略掃描）"""
+        """掃描交易信號（v5.2 增強版：多策略掃描 + Scanner 整合）"""
         logger.info("\n" + "="*60)
-        logger.info("🔍 開始掃描交易信號 (v5.1 多策略模式)...")
+        logger.info("🔍 開始掃描交易信號 (v5.2 多策略模式)...")
         logger.info("="*60)
 
-        for symbol in Config.SYMBOLS:
+        # 根據配置決定使用哪個標的池
+        if Config.USE_SCANNER_SYMBOLS:
+            symbols_to_scan = self.load_scanner_results()
+        else:
+            symbols_to_scan = Config.SYMBOLS
+
+        logger.info(f"📋 掃描 {len(symbols_to_scan)} 個標的...")
+
+        for symbol in symbols_to_scan:
             try:
                 logger.info(f"\n📊 正在分析 {symbol}...")
                 logger.info("-" * 60)
@@ -1810,10 +2098,15 @@ class TradingBotV51:
             logger.info(f"📋 持倉列表: {', '.join([f'{s} ({t.side}, {t.signal_tier})' for s, t in self.active_trades.items()])}")
         logger.info("="*60 + "\n")
 
-    def execute_trade(self, symbol: str, signal_details: Dict, market_state: str, 
+    def execute_trade(self, symbol: str, signal_details: Dict, market_state: str,
                      tier_multiplier: float = 1.0, df_signal: pd.DataFrame = None):
-        """執行交易（v5.1: 加入分級倉位）"""
+        """v5.2 增強版：執行交易（防重複 + 分級倉位）"""
         try:
+            # v5.2: 再次檢查是否已有持倉（防止重複開倉）
+            if symbol in self.active_trades:
+                logger.warning(f"⚠️ {symbol} 已有持倉，跳過開倉")
+                return
+
             balance = self.risk_manager.get_balance()
             if balance <= 0:
                 logger.error("❌ 餘額不足")
@@ -1907,6 +2200,9 @@ class TradingBotV51:
                 signal_tier=signal_details.get('signal_tier', 'B')
             )
 
+            # v5.2: 傳遞 ATR 給 TradeManager（用於追蹤止損）
+            trade_manager.atr = signal_details.get('atr')
+
             self.active_trades[symbol] = trade_manager
 
             # 發送 Telegram 通知
@@ -1932,10 +2228,34 @@ class TradingBotV51:
         logger.info(f"👁 監控持倉中... ({len(self.active_trades)} 個活躍倉位)")
         logger.info("="*60)
 
+        # v5.2: 同步交易所端實際持倉，防止硬止損觸發後 Bot 不知情
+        try:
+            exchange_positions = self.risk_manager.get_positions()
+            exchange_symbols = set()
+            for pos in exchange_positions:
+                sym = pos.get('symbol', '')
+                if not sym:
+                    # Binance Futures 原始 API 返回 'BTCUSDT' 格式
+                    sym = pos.get('info', {}).get('symbol', '')
+                exchange_symbols.add(sym)
+
+            for symbol, trade in list(self.active_trades.items()):
+                symbol_id = symbol.replace('/', '')
+                if symbol_id not in exchange_symbols and symbol not in exchange_symbols:
+                    logger.warning(f"⚠️ {symbol} 交易所端已無持倉（硬止損可能已觸發），本地同步關閉")
+                    trade.is_closed = True
+        except Exception as e:
+            logger.debug(f"持倉同步檢查失敗（非關鍵）: {e}")
+
         closed_symbols = []
 
         for symbol, trade in self.active_trades.items():
             try:
+                if trade.is_closed:
+                    closed_symbols.append(symbol)
+                    logger.info(f"🔴 {symbol} 已被交易所端平倉")
+                    continue
+
                 logger.info(f"\n📊 {symbol} ({trade.side}, 等級:{trade.signal_tier})")
                 logger.info("-" * 60)
 
@@ -1967,9 +2287,9 @@ class TradingBotV51:
                 logger.info(f"💰 當前: ${current_price:.2f} | 入場: ${trade.entry_price:.2f}")
                 logger.info(f"{status_emoji} 盈虧: ${profit:.2f} ({profit_pct:+.2f}%) | {profit_r:+.2f}R")
 
-                # 獲取 1H 數據
+                # 獲取 1H 數據（追蹤止損需要 ATR，結構破壞需要完整指標）
                 df_1h = None
-                if Config.ENABLE_STRUCTURE_BREAK_EXIT:
+                if Config.ENABLE_STRUCTURE_BREAK_EXIT or Config.ENABLE_APLUS_EXIT:
                     df_1h = self.fetch_ohlcv(symbol, Config.TIMEFRAME_SIGNAL, limit=50)
                     if not df_1h.empty:
                         df_1h = TechnicalAnalysis.calculate_indicators(df_1h)

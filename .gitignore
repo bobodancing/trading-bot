@@ -4,6 +4,10 @@
 # Claude Code
 .claude/
 
+# Runtime generated
+hot_symbols.json
+scanner_results.db
+
 # Python
 __pycache__/
 *.py[cod]
