@@ -47,7 +47,7 @@ class TestV53DeadzoneFix:
         pm = _make_pm_v53(side='LONG', entry=100, sl=90, size=1.0)
         # risk_dist=10, 1.5R -> price=115
         df = _make_df_flat(close=115.0, atr=2.0)
-        d = pm._get_exit_decision(115.0, df)
+        d = pm.monitor(115.0, df)
         assert d['action'] == 'V53_REDUCE_15R'
         assert d['new_sl'] == pytest.approx(110.0)  # entry + 1.0R (was +0.5R = 105)
         assert pm.is_trailing_active is True
@@ -57,7 +57,7 @@ class TestV53DeadzoneFix:
         pm = _make_pm_v53(side='SHORT', entry=100, sl=110, size=1.0)
         # risk_dist=10, 1.5R -> price=85
         df = _make_df_flat(close=85.0, atr=2.0)
-        d = pm._get_exit_decision(85.0, df)
+        d = pm.monitor(85.0, df)
         assert d['action'] == 'V53_REDUCE_15R'
         assert d['new_sl'] == pytest.approx(90.0)  # entry - 1.0R (was -0.5R = 95)
         assert pm.is_trailing_active is True
@@ -70,7 +70,7 @@ class TestV53DeadzoneFix:
         pm.is_trailing_active = True
         # risk_dist=10, 2.0R -> price=120
         df = _make_df_flat(close=120.0, atr=2.0)
-        d = pm._get_exit_decision(120.0, df)
+        d = pm.monitor(120.0, df)
         assert d['action'] == 'V53_REDUCE_25R'
         assert d['new_sl'] == pytest.approx(115.0)  # entry + 1.5R
 
@@ -85,7 +85,7 @@ class TestV53DeadzoneFix:
         pm.highest_price = 118.0    # MFE reached 1.8R
         # 當前價 117 (1.7R，未到 2.0R 不觸發二減)
         df = _make_df_flat(close=117.0, atr=2.0)
-        d = pm._get_exit_decision(117.0, df)
+        d = pm.monitor(117.0, df)
         assert d['action'] == 'ACTIVE'
         # ATR trailing: highest(118) - atr(2.0) * ATR_MULT(1.5) = 115
         # 115 > current_sl(110) -> trailed

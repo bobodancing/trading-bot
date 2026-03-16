@@ -512,31 +512,6 @@ class PositionManager:
             return {"action": "ACTIVE", "reason": "ALREADY_CLOSED", "new_sl": None, "close_pct": None}
         return self.strategy.get_decision(self, current_price, df_1h, df_4h)
 
-    def monitor_v6(self, current_price: float, df_1h, df_4h=None) -> str:
-        """Deprecated in V7 - use monitor() instead."""
-        if self.is_closed:
-            return "CLOSED"
-        decision = self.strategy.get_decision(self, current_price, df_1h, df_4h)
-        action = decision.get('action', 'ACTIVE')
-        return "CLOSED" if action == "CLOSE" else action
-
-    def monitor_v53(self, current_price: float, df_1h) -> str:
-        """Deprecated in V7 - use monitor() instead."""
-        if self.is_closed:
-            return "CLOSED"
-        decision = self.strategy.get_decision(self, current_price, df_1h)
-        action = decision.get('action', 'ACTIVE')
-        return "CLOSED" if action == "CLOSE" else action
-
-    def _get_exit_decision(
-        self,
-        current_price: float,
-        df_1h,
-        df_4h=None,
-    ) -> Dict[str, Any]:
-        """Deprecated in V7 - use monitor() instead."""
-        return self.strategy.get_decision(self, current_price, df_1h, df_4h)
-
     # ==================== 序列化（for positions.json）====================
 
     def to_dict(self) -> Dict[str, Any]:

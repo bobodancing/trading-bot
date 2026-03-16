@@ -131,24 +131,24 @@ class TestPositionManagerStrategySerialization:
 
 
 # ──────────────────────────────────────────────
-# 4. Deprecated monitor_v6 backward compat
+# 4. monitor() unified interface
 # ──────────────────────────────────────────────
 
-class TestDeprecatedMonitorBackwardCompat:
+class TestMonitorUnifiedInterface:
 
-    def test_deprecated_monitor_v6_backward_compat(self):
-        """pm.monitor_v6() 仍可呼叫，應回傳 str"""
+    def test_monitor_v6_returns_dict(self):
+        """v6 pm.monitor() 回傳 dict"""
         pm = _make_pm(is_v6_pyramid=True)
         df_1h = _make_df_1h_flat()
-        result = pm.monitor_v6(50500.0, df_1h)
-        assert isinstance(result, str)
+        result = pm.monitor(50500.0, df_1h)
+        assert isinstance(result, dict)
 
-    def test_deprecated_monitor_v53_backward_compat(self):
-        """pm.monitor_v53() 仍可呼叫，應回傳 str"""
+    def test_monitor_v53_returns_dict(self):
+        """v53 pm.monitor() 回傳 dict"""
         pm = _make_pm(is_v6_pyramid=False)
         df_1h = _make_df_1h_flat()
-        result = pm.monitor_v53(50500.0, df_1h)
-        assert isinstance(result, str)
+        result = pm.monitor(50500.0, df_1h)
+        assert isinstance(result, dict)
 
 
 # ──────────────────────────────────────────────

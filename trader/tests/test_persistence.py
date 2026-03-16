@@ -319,7 +319,7 @@ class TestPositionExitDecision:
         pm = _make_pm_v6(side='LONG', entry=100, sl=95, hours_ago=1,
                          stage=1, neckline=110)
         df_1h = _make_df_1h_flat(n=20, close=102.0, vol_ma=1000, volume=1000)
-        d = pm._get_exit_decision(102.0, df_1h)
+        d = pm.monitor(102.0, df_1h)
         assert d['action'] == 'ACTIVE'
         assert d['reason'] == 'NONE'
         assert d['new_sl'] is None
@@ -331,7 +331,7 @@ class TestPositionExitDecision:
         df_1h = _make_df_with_bos_long(n=20, swing_low=95.0, swing_high=108.0,
                                         base_close=102.0, bos_close=110.0,
                                         atr=1.0, vol_ma=1000.0)
-        d = pm._get_exit_decision(102.0, df_1h)
+        d = pm.monitor(102.0, df_1h)
         assert d['action'] == 'ACTIVE'
         assert d['reason'] == 'STRUCTURE_TRAIL_SL'
         assert d['new_sl'] == pytest.approx(94.2, abs=0.01)
@@ -344,7 +344,7 @@ class TestPositionExitDecision:
         df_1h = _make_df_with_bos_short(n=20, swing_high=105.0, swing_low=92.0,
                                          base_close=98.0, bos_close=90.0,
                                          atr=1.0, vol_ma=1000.0)
-        d = pm._get_exit_decision(98.0, df_1h)
+        d = pm.monitor(98.0, df_1h)
         assert d['action'] == 'ACTIVE'
         assert d['reason'] == 'STRUCTURE_TRAIL_SL'
         assert d['new_sl'] == pytest.approx(105.8, abs=0.01)
@@ -355,7 +355,7 @@ class TestPositionExitDecision:
         pm = _make_pm_v6(side='LONG', entry=100, sl=95, stage=2, hours_ago=1)
         df_1h = _make_df_1h_flat(n=20, close=102.0)
         df_4h = _make_df_1h_flat(n=5, close=98.0, ema_fast=105.0)
-        d = pm._get_exit_decision(102.0, df_1h, df_4h)
+        d = pm.monitor(102.0, df_1h, df_4h)
         assert d['action'] == 'ACTIVE'
 
     def test_05_4h_ema20_force_short(self):
@@ -363,7 +363,7 @@ class TestPositionExitDecision:
         pm = _make_pm_v6(side='SHORT', entry=100, sl=105, stage=2, hours_ago=1)
         df_1h = _make_df_1h_flat(n=20, close=98.0)
         df_4h = _make_df_1h_flat(n=5, close=110.0, ema_fast=105.0)
-        d = pm._get_exit_decision(98.0, df_1h, df_4h)
+        d = pm.monitor(98.0, df_1h, df_4h)
         assert d['action'] == 'ACTIVE'
 
     def test_06_fast_stop_067r_v6(self):
@@ -371,7 +371,7 @@ class TestPositionExitDecision:
         pm = _make_pm_v6(side='LONG', entry=100, sl=90, size=1.0,
                          stage=1, hours_ago=1)
         df_1h = _make_df_1h_flat(n=20, close=92.5)
-        d = pm._get_exit_decision(92.5, df_1h)
+        d = pm.monitor(92.5, df_1h)
         assert d['action'] == 'CLOSE'
         assert d['reason'] == 'FAST_STOP_067R'
 
@@ -380,7 +380,7 @@ class TestPositionExitDecision:
         pm = _make_pm_v6(side='SHORT', entry=100, sl=110, size=1.0,
                          stage=1, hours_ago=1)
         df_1h = _make_df_1h_flat(n=20, close=107.5)
-        d = pm._get_exit_decision(107.5, df_1h)
+        d = pm.monitor(107.5, df_1h)
         assert d['action'] == 'CLOSE'
         assert d['reason'] == 'FAST_STOP_067R'
 
@@ -390,7 +390,7 @@ class TestPositionExitDecision:
                          neckline=110, hours_ago=37)
         # volume < vol_ma 阻止 stage2 trigger，low 偏低阻止 neckline break
         df_1h = _make_df_1h_flat(n=20, close=102.0, volume=500, vol_ma=1000)
-        d = pm._get_exit_decision(102.0, df_1h)
+        d = pm.monitor(102.0, df_1h)
         assert d['action'] == 'CLOSE'
         assert d['reason'] == 'TIME_EXIT'
 
@@ -399,7 +399,7 @@ class TestPositionExitDecision:
         pm = _make_pm_v6(side='LONG', entry=100, sl=95, stage=2, hours_ago=1)
         pm.highest_price = 110.0
         df_1h = _make_df_1h_flat(n=20, close=104.5)
-        d = pm._get_exit_decision(104.5, df_1h)
+        d = pm.monitor(104.5, df_1h)
         assert d['action'] == 'CLOSE'
         assert d['reason'] == 'PROFIT_PULLBACK'
 
@@ -408,7 +408,7 @@ class TestPositionExitDecision:
         pm = _make_pm_v6(side='LONG', entry=95, sl=90, size=1.0,
                          neckline=103.0, stage=1, hours_ago=1)
         df_1h = _make_df_1h_flat(n=20, close=106.0, volume=1400.0, vol_ma=1000.0)
-        d = pm._get_exit_decision(106.0, df_1h)
+        d = pm.monitor(106.0, df_1h)
         assert d['action'] == 'STAGE2_TRIGGER'
         assert d['reason'] == 'NECKLINE_BREAK'
 
@@ -432,7 +432,7 @@ class TestPositionExitDecision:
                              'volume': 1000, 'vol_ma': 1000, 'atr': 1.0,
                              'ema_slow': 100.0, 'ema_fast': 100.0})
         df_1h = pd.DataFrame(rows)
-        d = pm._get_exit_decision(103.0, df_1h)
+        d = pm.monitor(103.0, df_1h)
         assert d['action'] == 'STAGE3_TRIGGER'
         assert d['reason'] == 'EMA_PULLBACK'
 
@@ -440,7 +440,7 @@ class TestPositionExitDecision:
         """V5.3 不走 early_stop_r — price=92.5 已達 -0.75R 但 V53 應繼續持倉（由 SL/structure_break 處理）"""
         pm = _make_pm_v53(side='LONG', entry=100, sl=90, hours_ago=1)
         df_1h = _make_df_1h_flat(n=20, close=92.5)
-        d = pm._get_exit_decision(92.5, df_1h)
+        d = pm.monitor(92.5, df_1h)
         # V53 不應觸發 early_stop_r，應繼續走 V53 策略邏輯
         assert d['action'] != 'CLOSE' or d['reason'] != 'FAST_STOP_067R'
 
@@ -449,7 +449,7 @@ class TestPositionExitDecision:
         pm = _make_pm_v53(side='LONG', entry=100, sl=95, hours_ago=25)
         pm.is_first_partial = False
         df_1h = _make_df_1h_flat(n=20, close=102.0)
-        d = pm._get_exit_decision(102.0, df_1h)
+        d = pm.monitor(102.0, df_1h)
         assert d['action'] == 'CLOSE'
         assert d['reason'] == 'TIME_EXIT'
 

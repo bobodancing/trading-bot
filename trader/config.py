@@ -78,14 +78,9 @@ class ConfigV6:
     TIER_B_POSITION_MULT = 0.7
     TIER_C_POSITION_MULT = 0.5
 
-    # 互補策略
-    ENABLE_EMA_PULLBACK = True
+    # EMA 指標週期（給 calculate_indicators 計算欄位用）
     EMA_PULLBACK_FAST = 10
     EMA_PULLBACK_SLOW = 20
-    EMA_PULLBACK_THRESHOLD = 0.02
-
-    ENABLE_VOLUME_BREAKOUT = True
-    VOLUME_BREAKOUT_MULT = 2.0
 
     # 市場過濾器
     ENABLE_MARKET_FILTER = True
@@ -197,8 +192,6 @@ class ConfigV6:
     # 策略選擇器
     STRATEGY_USE_V6 = {
         '2B_BREAKOUT': True,
-        'EMA_PULLBACK': True,
-        'VOLUME_BREAKOUT': False,
     }
 
     # Debug & 日誌
