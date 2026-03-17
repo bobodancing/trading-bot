@@ -362,6 +362,7 @@ def detect_volume_breakout(
             'candle_confirmed': True,
             'neckline': None,
             'fakeout_depth_atr': 0.0,
+            'detection_method': 'volume_breakout',
         }
     # 量能突破 + 跌破低點 + 陰線確認
     elif price < recent_low and price < current['open']:
@@ -379,6 +380,7 @@ def detect_volume_breakout(
             'candle_confirmed': True,
             'neckline': None,
             'fakeout_depth_atr': 0.0,
+            'detection_method': 'volume_breakout',
         }
 
     if signal_side is None:

@@ -705,7 +705,7 @@ class TradingBotV6:
                     logger.info(
                         f"{symbol}: V5.3 notional 截頂 "
                         f"${v53_notional:.2f} -> ${v53_cap_notional:.2f} "
-                        f"(equity_cap={Config.EQUITY_CAP_PERCENT*100:.0f}%)"
+                        f"(v53_equity_cap={Config.V53_EQUITY_CAP_PERCENT*100:.0f}%)"
                     )
                     position_size = capped_size
 

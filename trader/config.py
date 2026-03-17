@@ -198,8 +198,7 @@ class ConfigV6:
     # 策略選擇器
     STRATEGY_USE_V6 = {
         '2B_BREAKOUT': True,
-        'EMA_PULLBACK': True,
-        'VOLUME_BREAKOUT': True,
+        # EMA_PULLBACK / VOLUME_BREAKOUT 固定走 V5.3 路徑，不在此控制
     }
 
     # Signal → Strategy 映射（新增策略只需在此加一行 + register class）
