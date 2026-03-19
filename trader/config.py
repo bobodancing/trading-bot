@@ -162,11 +162,17 @@ class ConfigV6:
     V6_4H_EMA20_FORCE_EXIT = False
     V6_REVERSE_2B_EXIT = True
 
-    # 獲利回吐保護：從 highest_price 回撤達此比例即全平（V6 路徑）
-    PROFIT_PULLBACK_THRESHOLD = 0.55
+    # === 分階段獲利回吐保護（V6 路徑）===
+    # Stage 1：給空間去晉級，門檻寬鬆
+    MIN_MFE_R_FOR_PULLBACK_S1 = 1.0    # Stage 1 至少跑 1.0R 才啟用
+    PULLBACK_THRESHOLD_S1 = 0.55        # 從高點回撤 55% 即全平
 
-    # 獲利回吐保護最低 MFE 門檻（R 為單位）
-    # MFE 未達此 R 倍數前不啟用 pullback 保護，避免噪音掃出
+    # Stage 2+：方向已確認，收緊保護
+    MIN_MFE_R_FOR_PULLBACK_S2 = 0.5    # Stage 2+ 達 0.5R 即啟用
+    PULLBACK_THRESHOLD_S2 = 0.40        # 從高點回撤 40% 即全平
+
+    # 保留舊參數作為 fallback（非 V6 路徑仍可能引用）
+    PROFIT_PULLBACK_THRESHOLD = 0.55
     MIN_MFE_R_FOR_PULLBACK = 0.3
 
     # 快速止損（虧損達 0.67R 即平倉）

@@ -541,21 +541,22 @@ class TestProfitPullbackMFEThreshold:
             f"Should not trigger pullback at MFE 0.2R, got {decision}"
 
     def test_profit_pullback_triggers_when_mfe_above_threshold(self):
-        """profit_pullback SHOULD trigger when MFE >= MIN_MFE_R_FOR_PULLBACK"""
+        """profit_pullback SHOULD trigger when MFE >= MIN_MFE_R_FOR_PULLBACK_S2 (stage=2)"""
         pm = PositionManager(
             symbol='TEST/USDT', side='LONG',
             entry_price=100.0, stop_loss=98.0,
             position_size=1.0, is_v6_pyramid=True,
             initial_r=2.0,
         )
-        # risk_dist = 2.0, set MFE = 0.5R = 1.0 price units (above 0.3R threshold)
+        pm.stage = 2  # S2 threshold: 0.5R / 40%
+        # risk_dist = 2.0, set MFE = 0.5R = 1.0 price units (above 0.5R threshold)
         pm.highest_price = 101.0
         # Current price pulls back 60% of MFE
-        current_price = 100.4  # pullback = 0.6/1.0 = 60% >= 55%
+        current_price = 100.4  # pullback = 0.6/1.0 = 60% >= 40%
         df_1h = _make_df_1h_flat(n=20, close=current_price)
         decision = pm.monitor(current_price, df_1h)
         assert decision['action'] == 'CLOSE', \
-            f"Should trigger pullback at MFE 0.5R, got {decision}"
+            f"Should trigger pullback at MFE 0.5R (stage 2), got {decision}"
 
     def test_profit_pullback_short_mfe_threshold(self):
         """SHORT: profit_pullback respects MIN_MFE_R threshold"""

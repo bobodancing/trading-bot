@@ -64,18 +64,27 @@ class V6PyramidStrategy(TradingStrategy):
         if early is not None:
             return early
 
-        # === 獲利回吐保護（需 MFE >= MIN_MFE_R 才啟用）===
+        # === 分階段獲利回吐保護 ===
+        # Stage 1 門檻寬鬆（讓利潤有空間跑向 neckline）
+        # Stage 2+ 門檻收緊（方向已確認，積極保護）
+        if pm.stage >= 2:
+            min_mfe_r = Cfg.MIN_MFE_R_FOR_PULLBACK_S2
+            pb_threshold = Cfg.PULLBACK_THRESHOLD_S2
+        else:
+            min_mfe_r = Cfg.MIN_MFE_R_FOR_PULLBACK_S1
+            pb_threshold = Cfg.PULLBACK_THRESHOLD_S1
+
         if pm.side == 'LONG' and pm.highest_price > pm.avg_entry:
             mfe = pm.highest_price - pm.avg_entry
             mfe_r = mfe / pm.risk_dist if pm.risk_dist > 0 else 0
-            if mfe_r >= Cfg.MIN_MFE_R_FOR_PULLBACK:
+            if mfe_r >= min_mfe_r:
                 pullback = pm.highest_price - current_price
-                if pullback / mfe >= Cfg.PROFIT_PULLBACK_THRESHOLD:
+                if pullback / mfe >= pb_threshold:
                     logger.warning(
-                        f"[V6] {pm.symbol} Profit pullback: "
+                        f"[V6] {pm.symbol} Profit pullback (S{pm.stage}): "
                         f"peak=${pm.highest_price:.2f} cur=${current_price:.2f} "
                         f"mfe={mfe_r:.2f}R pullback={pullback / mfe * 100:.1f}% >= "
-                        f"{Cfg.PROFIT_PULLBACK_THRESHOLD * 100:.0f}%"
+                        f"{pb_threshold * 100:.0f}% (threshold: {min_mfe_r}R)"
                     )
                     pm.exit_reason = 'profit_pullback'
                     return {**result, "action": Action.CLOSE, "reason": "PROFIT_PULLBACK"}
@@ -83,14 +92,14 @@ class V6PyramidStrategy(TradingStrategy):
         if pm.side == 'SHORT' and pm.lowest_price < pm.avg_entry:
             mfe = pm.avg_entry - pm.lowest_price
             mfe_r = mfe / pm.risk_dist if pm.risk_dist > 0 else 0
-            if mfe_r >= Cfg.MIN_MFE_R_FOR_PULLBACK:
+            if mfe_r >= min_mfe_r:
                 pullback = current_price - pm.lowest_price
-                if pullback / mfe >= Cfg.PROFIT_PULLBACK_THRESHOLD:
+                if pullback / mfe >= pb_threshold:
                     logger.warning(
-                        f"[V6] {pm.symbol} Profit pullback: "
+                        f"[V6] {pm.symbol} Profit pullback (S{pm.stage}): "
                         f"trough=${pm.lowest_price:.2f} cur=${current_price:.2f} "
                         f"mfe={mfe_r:.2f}R pullback={pullback / mfe * 100:.1f}% >= "
-                        f"{Cfg.PROFIT_PULLBACK_THRESHOLD * 100:.0f}%"
+                        f"{pb_threshold * 100:.0f}% (threshold: {min_mfe_r}R)"
                     )
                     pm.exit_reason = 'profit_pullback'
                     return {**result, "action": Action.CLOSE, "reason": "PROFIT_PULLBACK"}
