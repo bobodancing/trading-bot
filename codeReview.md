@@ -1,6 +1,6 @@
 # Trading Bot — Code Review & Roadmap
 
-> 小波 | 初版 2026-02-17 | 更新 2026-03-16
+> 小波 | 初版 2026-02-17 | 更新 2026-03-20
 > 架構參考：`project_structure_map_v3.md`
 
 ---
@@ -17,7 +17,7 @@
 |------|------|------|------|
 | 架構設計 | 8 | **9.5** | `trader/` 平台化 + 策略 Registry 拔插 + infrastructure 分層 |
 | 策略邏輯 | 8.5 | 8.5 | 風險壓縮正確、三階段滾倉嚴謹 |
-| 測試覆蓋 | 5 | **8.5** | 259 passed（integration + 26 test modules） |
+| 測試覆蓋 | 5 | **8.5** | 281 passed（integration + 28 test modules） |
 | 錯誤處理 | 6.5 | **8.0** | OrderEngine + _handle_close rollback + _sync 四重防護 + ghost adoption |
 | 可維護性 | 6 | **9.0** | 模組拆分 + 策略拔插 + 設定分層 + 瘦身 -286 行 |
 | 文件品質 | 9 | 9 | README + project_structure_map_v3.md |
@@ -101,6 +101,14 @@
 - [x] SL Distance Cap（> 6% → 跳過）
 - [x] Symbol Loss Cooldown（虧損後 24h 冷卻）
 
+### V6 Three-Tier Defense（2026-03-20）
+
+- [x] **移除 profit_pullback**（avg capture 0.3，Stage 2 到達率 8.3%，平均持倉 42 分鐘 — 結構性缺陷）
+- [x] **Tier 1 — 保本移損（Breakeven Bridge）**：MFE ≥ 1.5R → SL 移 entry + 0.1R（一次性棘輪）
+- [x] **Tier 2 — 加速結構追蹤**：Stage 1 用 `get_fast_trailing_swing()`（right=2, 無 BOS）
+- [x] **Tier 3 — 標準追蹤**：Stage 2+ 沿用現有 left=7 right=3 + BOS + 4H EMA20
+- [x] 281 tests passed ✅
+
 ### 其他已完成
 
 - [x] close_position rollback tests
@@ -165,7 +173,7 @@ Trader Refactor（Phase 0+1+2）✅  ── v6→trader 改名 + 瘦身 + 插件
   |
   ├── [選做] Remote Monitoring QMD endpoint
   |
-你在這裡 ── Testnet 數據蒐集中（3/10 部署，等 3/20+ 數據）
+你在這裡 ── Three-Tier Defense 完成（3/20），Testnet 數據蒐集中（驗證 Stage 2 到達率改善）
   |
 V7 P3（ATR 滑價）── 需 Testnet 數據
   |
@@ -263,7 +271,9 @@ Phase 8（DEX 遷移）── 插件化已就緒
 | ATR_MULTIPLIER | 1.5 | SL 較寬鬆 |
 | SL_ATR_BUFFER | 0.8 | 結構追蹤緩衝 |
 | EARLY_STOP_R_THRESHOLD | 0.75 | 呼吸空間 |
-| PROFIT_PULLBACK_THRESHOLD | 0.55 | 趨勢回撤容許 |
+| V6_BREAKEVEN_MFE_R | 1.5 | Tier 1 保本觸發門檻 |
+| V6_BREAKEVEN_BUFFER_R | 0.1 | 保本 SL 緩衝（entry + 0.1R） |
+| V6_FAST_TRAIL_RIGHT_BARS | 2 | Tier 2 加速追蹤右側確認 |
 | V6_4H_EMA20_FORCE_EXIT | false | 暫停 |
 | V6_STAGE1_MAX_HOURS | 36 | Stage 1 等待 |
 | STAGE2_VOLUME_MULT | 1.2 | Stage 2 觸發 |
@@ -272,7 +282,7 @@ Phase 8（DEX 遷移）── 插件化已就緒
 | STAGE1/2/3_RATIO | 0.33/0.37/0.30 | Stage 分配 |
 | MIN_FAKEOUT_ATR | 0.3 | 2B 最小穿透 |
 | REVERSE_2B_MIN_FAKEOUT_ATR | 0.3 | 出場 2B 穿透 |
-| MIN_MFE_R_FOR_PULLBACK | 0.3 | pullback MFE 門檻 |
+| V6_FAST_TRAIL_REQUIRE_BOS | false | Tier 2 不要求 BOS |
 | BTC_TREND_FILTER_ENABLED | true | BTC 過濾 |
 | BTC_COUNTER_TREND_MULT | 0.0 | 逆勢禁入 |
 | MAX_SL_DISTANCE_PCT | 0.06 | SL 上限 6% |

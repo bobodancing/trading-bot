@@ -162,16 +162,17 @@ class ConfigV6:
     V6_4H_EMA20_FORCE_EXIT = False
     V6_REVERSE_2B_EXIT = True
 
-    # === 分階段獲利回吐保護（V6 路徑）===
-    # Stage 1：給空間去晉級，門檻寬鬆
-    MIN_MFE_R_FOR_PULLBACK_S1 = 1.0    # Stage 1 至少跑 1.0R 才啟用
-    PULLBACK_THRESHOLD_S1 = 0.55        # 從高點回撤 55% 即全平
+    # === 三段式動態防守 (Three-Tier Defense) ===
+    # Tier 1: 保本移損（Breakeven Bridge）
+    V6_BREAKEVEN_ENABLED = True
+    V6_BREAKEVEN_MFE_R = 1.5       # MFE 達 1.5R 觸發保本
+    V6_BREAKEVEN_BUFFER_R = 0.1    # SL 移到 entry + 0.1R（覆蓋手續費）
 
-    # Stage 2+：方向已確認，收緊保護
-    MIN_MFE_R_FOR_PULLBACK_S2 = 0.5    # Stage 2+ 達 0.5R 即啟用
-    PULLBACK_THRESHOLD_S2 = 0.40        # 從高點回撤 40% 即全平
+    # Tier 2: 加速結構追蹤（Stage 1 用）
+    V6_FAST_TRAIL_RIGHT_BARS = 2   # Stage 1 加速確認（標準是 SWING_RIGHT_BARS=3）
+    V6_FAST_TRAIL_REQUIRE_BOS = False  # Stage 1 不要求 BOS，只要 HL/LH
 
-    # 保留舊參數作為 fallback（非 V6 路徑仍可能引用）
+    # === 舊 pullback 參數（V53 fallback 用，V6 已改為三段式防守）===
     PROFIT_PULLBACK_THRESHOLD = 0.55
     MIN_MFE_R_FOR_PULLBACK = 0.3
 

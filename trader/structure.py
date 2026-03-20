@@ -250,6 +250,45 @@ class StructureAnalysis:
         return None
 
     @staticmethod
+    def get_fast_trailing_swing(
+        df: pd.DataFrame,
+        side: str,
+        current_sl: float,
+        left_bars: int = 7,
+        right_bars: int = 2
+    ) -> Optional[float]:
+        """
+        Tier 2 加速結構追蹤 — 只要求 HL/LH，不要求 BOS 確認
+
+        與 get_validated_trailing_swing 的差異：
+        1. right_bars 可以更小（預設 2 vs 標準 3）
+        2. 不要求 BOS 突破確認，只要 swing point 符合 HL/LH 就移損
+
+        做多 (LONG): 最新 confirmed swing low > current_sl → 移損
+        做空 (SHORT): 最新 confirmed swing high < current_sl → 移損
+        """
+        swings = StructureAnalysis.find_swing_points(df, left_bars, right_bars)
+        lows = swings['swing_lows']
+        highs = swings['swing_highs']
+
+        if side == 'LONG':
+            if not lows:
+                return None
+            last_low_price = lows[-1][1]
+            # 條件：Higher Low（只要高於當前 SL，棘輪只上不下）
+            if last_low_price > current_sl:
+                return last_low_price
+        elif side == 'SHORT':
+            if not highs:
+                return None
+            last_high_price = highs[-1][1]
+            # 條件：Lower High（只要低於當前 SL，棘輪只下不上）
+            if last_high_price < current_sl:
+                return last_high_price
+
+        return None
+
+    @staticmethod
     def find_latest_confirmed_swing(
         df: pd.DataFrame,
         direction: str,

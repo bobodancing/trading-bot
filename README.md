@@ -2,7 +2,7 @@
 
 基於 Swing Point 結構分析的加密貨幣期貨交易平台，支援策略拔插（Plugin Architecture）。
 
-> 最後更新：2026-03-16 | 259 tests passed
+> 最後更新：2026-03-20 | 281 tests passed
 
 ## 目錄
 
@@ -28,7 +28,7 @@
 
 | 策略 | 進場信號 | 持倉管理 |
 |------|----------|----------|
-| **V6 Pyramid** | 2B Swing Pivot Breakout | 三階段滾倉（Stage 1→2→3）+ 結構追蹤出場 |
+| **V6 Pyramid** | 2B Swing Pivot Breakout | 三階段滾倉（Stage 1→2→3）+ 三段式動態防守出場 |
 | **V53 SOP** | 2B Breakout | 1.0R / 1.5R / 2.0R 分批減倉 |
 
 **新增策略**只需：寫 class → `StrategyFactory.register()` → config 映射，不動 bot.py。
@@ -74,10 +74,10 @@ trading_bot/
 │   ├── execution/
 │   │   └── order_engine.py      # OrderExecutionEngine（下單 / 止損 / 平倉）
 │   │
-│   └── tests/                   # 259 tests
+│   └── tests/                   # 281 tests
 │       ├── conftest.py
 │       ├── test_integration.py  # StatefulMockEngine + FaultInjector
-│       └── test_*.py            # 26 test modules
+│       └── test_*.py            # 28 test modules
 │
 ├── scanner/                     # Market Scanner（獨立服務）
 │   └── market_scanner.py        # 四層掃描（流動性 → 動能 → 形態 → 相關性）
@@ -234,12 +234,13 @@ SIGNAL_STRATEGY_MAP = {
 
 核心原則：**三次加倉，總風險始終 ≤ initial_R**
 
-#### 出場機制
+#### 出場機制（Three-Tier Defense）
 
-1. **BOS 結構追蹤**：Temporal BOS 驗證 — 找最新 HL → 前方 swing high 作 BOS target → close 突破才移損
-2. **獲利回吐保護**：從高點回撤 ≥ 55%（需 MFE ≥ 0.3R 才啟用）
-3. **反向 2B**：雙根確認（穿透 + 收回 + 深度 ≥ 0.3 ATR + 下根確認）
-4. **Stage 1 超時**：36h 未升級 → 平倉
+1. **Tier 1 — 保本移損**：MFE ≥ 1.5R → SL 移至 entry + 0.1R（棘輪，只做一次）
+2. **Tier 2 — 加速結構追蹤**：Stage 1 用 HL/LH（right=2, 無需 BOS）
+3. **Tier 3 — 標準結構追蹤**：Stage 2+ 用 Temporal BOS（left=7, right=3）+ 4H EMA20
+4. **反向 2B**：雙根確認（穿透 + 收回 + 深度 ≥ 0.3 ATR + 下根確認）
+5. **Stage 1 超時**：36h 未升級 → 平倉
 
 ### V53 SOP（分批減倉）
 
@@ -320,7 +321,7 @@ JSON key 自動映射大寫（`risk_per_trade` → `RISK_PER_TRADE`）。
 | `PYRAMID_ENABLED` | true | 三段滾倉 |
 | `SWING_LEFT_BARS` / `RIGHT` | 7 / 3 | Swing Point 確認 |
 | `SL_ATR_BUFFER` | 0.8 | 止損 ATR 緩衝 |
-| `PROFIT_PULLBACK_THRESHOLD` | 0.55 | 回撤全平門檻 |
+| `V6_BREAKEVEN_MFE_R` | 1.5 | Tier 1 保本觸發（MFE≥1.5R） |
 | `MIN_FAKEOUT_ATR` | 0.3 | 2B 最小穿透深度 |
 | `BTC_TREND_FILTER_ENABLED` | true | BTC 趨勢過濾 |
 | `MAX_SL_DISTANCE_PCT` | 0.06 | SL 距離上限 |
@@ -371,7 +372,7 @@ SIGNAL_STRATEGY_MAP = {
 
 ## 測試
 
-259 個 pytest，全部通過。
+281 個 pytest，全部通過。
 
 ```bash
 python3 -m pytest trader/tests/ -v
@@ -408,7 +409,7 @@ python3 -m pytest trader/tests/test_signals.py -v  # 單一模組
 | 指標 | pandas-ta（EMA / ATR / ADX / RSI） |
 | 數據 | pandas + numpy |
 | 通知 | Telegram Bot API |
-| 測試 | pytest（259 tests） |
+| 測試 | pytest（281 tests） |
 | 持久化 | JSON (atomic write) + SQLite (performance + scanner) |
 
 ---

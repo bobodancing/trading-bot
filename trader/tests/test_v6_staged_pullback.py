@@ -1,11 +1,11 @@
 """
-Tests for V6 staged pullback protection.
+Tests for V6 Three-Tier Defense (replaces staged pullback).
 
-Stage 1 : MIN_MFE_R = 1.0R, threshold = 55%
-Stage 2+ : MIN_MFE_R = 0.5R, threshold = 40%
+Tier 1: Breakeven Bridge — MFE >= 1.5R → SL to entry + 0.1R
+Tier 2: Fast Structural Trail — Stage 1, HL/LH only, right_bars=2
+Tier 3: Standard BOS Trail — Stage 2+, left=7 right=3 + BOS
 """
 import sys
-import os
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -49,74 +49,71 @@ def _make_pm(side='LONG', stage=1, avg_entry=100.0, risk_dist=10.0,
     return pm
 
 
-class TestV6StagedPullback:
+class TestPullbackRemoved:
+    """確認 profit_pullback 已完全移除"""
 
-    def test_stage1_below_mfe_threshold_holds(self):
-        """Stage 1, MFE 0.5R (< 1.0R) -> 不觸發 pullback, HOLD"""
-        # mfe = 5, risk_dist = 10, mfe_r = 0.5 < 1.0
+    def test_no_pullback_stage1_long(self):
+        """MFE 2R + 回撤 60%，不再觸發 PROFIT_PULLBACK"""
         pm = _make_pm(side='LONG', stage=1, avg_entry=100.0, risk_dist=10.0,
-                      highest_price=105.0)
-        current_price = 102.0  # pullback = 3/5 = 60%
+                      highest_price=120.0)
+        current_price = 112.0  # pullback = 8/20 = 40%
         result = pm.monitor(current_price, _make_df(current_price))
-        assert result['action'] != 'CLOSE' or result.get('reason') != 'PROFIT_PULLBACK', \
-            f"Should NOT trigger pullback at MFE 0.5R (S1 needs 1.0R), got {result}"
+        assert result.get('reason') != 'PROFIT_PULLBACK', \
+            f"profit_pullback should be removed, got {result}"
 
-    def test_stage1_above_threshold_closes(self):
-        """Stage 1, MFE 1.2R (>= 1.0R), pullback 60% (>= 55%) -> CLOSE"""
-        # mfe = 12, risk_dist = 10, mfe_r = 1.2
-        pm = _make_pm(side='LONG', stage=1, avg_entry=100.0, risk_dist=10.0,
-                      highest_price=112.0)
-        current_price = 104.8  # pullback = 7.2/12 = 60%
-        result = pm.monitor(current_price, _make_df(current_price))
-        assert result['action'] == 'CLOSE', f"Expected CLOSE, got {result}"
-        assert result['reason'] == 'PROFIT_PULLBACK'
-
-    def test_stage2_tighter_threshold_closes(self):
-        """Stage 2, MFE 0.7R (>= 0.5R), pullback 45% (>= 40%) -> CLOSE"""
-        # mfe = 7, risk_dist = 10, mfe_r = 0.7
-        pm = _make_pm(side='LONG', stage=2, avg_entry=100.0, risk_dist=10.0,
-                      highest_price=107.0)
-        current_price = 103.85  # pullback = 3.15/7 = 45%
-        result = pm.monitor(current_price, _make_df(current_price))
-        assert result['action'] == 'CLOSE', f"Expected CLOSE, got {result}"
-        assert result['reason'] == 'PROFIT_PULLBACK'
-
-    def test_stage2_below_mfe_threshold_holds(self):
-        """Stage 2, MFE 0.3R (< 0.5R) -> HOLD"""
-        # mfe = 3, risk_dist = 10, mfe_r = 0.3 < 0.5
-        pm = _make_pm(side='LONG', stage=2, avg_entry=100.0, risk_dist=10.0,
-                      highest_price=103.0)
-        current_price = 101.5  # pullback = 1.5/3 = 50%
-        result = pm.monitor(current_price, _make_df(current_price))
-        assert result['action'] != 'CLOSE' or result.get('reason') != 'PROFIT_PULLBACK', \
-            f"Should NOT trigger pullback at MFE 0.3R (S2 needs 0.5R), got {result}"
-
-    def test_stage1_short_above_threshold_closes(self):
-        """SHORT Stage 1, MFE 1.5R (>= 1.0R), pullback 60% (>= 55%) -> CLOSE"""
-        # mfe = 15, risk_dist = 10, mfe_r = 1.5
-        pm = _make_pm(side='SHORT', stage=1, avg_entry=100.0, risk_dist=10.0,
-                      lowest_price=85.0)
-        current_price = 94.0  # pullback = (94-85)/15 = 60%
-        result = pm.monitor(current_price, _make_df(current_price))
-        assert result['action'] == 'CLOSE', f"Expected CLOSE, got {result}"
-        assert result['reason'] == 'PROFIT_PULLBACK'
-
-    def test_stage2_short_tighter_closes(self):
-        """SHORT Stage 2, MFE 0.6R (>= 0.5R), pullback 42% (>= 40%) -> CLOSE"""
-        # mfe = 6, risk_dist = 10, mfe_r = 0.6
+    def test_no_pullback_stage2_short(self):
+        """Stage 2 SHORT MFE 1R + 回撤 50%，不再觸發"""
         pm = _make_pm(side='SHORT', stage=2, avg_entry=100.0, risk_dist=10.0,
-                      lowest_price=94.0)
-        current_price = 96.52  # pullback = (96.52-94)/6 = 42%
+                      lowest_price=90.0)
+        current_price = 95.0  # pullback = 5/10 = 50%
         result = pm.monitor(current_price, _make_df(current_price))
-        assert result['action'] == 'CLOSE', f"Expected CLOSE, got {result}"
-        assert result['reason'] == 'PROFIT_PULLBACK'
+        assert result.get('reason') != 'PROFIT_PULLBACK', \
+            f"profit_pullback should be removed, got {result}"
 
-    def test_stage3_uses_s2_threshold(self):
-        """Stage 3 使用 S2+ 門檻 (0.5R / 40%)"""
-        # mfe = 6, risk_dist = 10, mfe_r = 0.6 >= 0.5
-        pm = _make_pm(side='LONG', stage=3, avg_entry=100.0, risk_dist=10.0,
-                      highest_price=106.0)
-        current_price = 103.6  # pullback = 2.4/6 = 40%
-        result = pm.monitor(current_price, _make_df(current_price))
-        assert result['action'] == 'CLOSE', f"Expected CLOSE, got {result}"
-        assert result['reason'] == 'PROFIT_PULLBACK'
+
+class TestTier1Breakeven:
+    """Tier 1: Breakeven Bridge"""
+
+    def test_breakeven_long_triggered(self):
+        """LONG MFE 2R → SL 應移到 entry + 0.1R"""
+        pm = _make_pm(side='LONG', stage=1, avg_entry=100.0, risk_dist=10.0,
+                      highest_price=120.0)
+        current_price = 118.0
+        pm.monitor(current_price, _make_df(current_price))
+        # entry=100, buffer=10*0.1=1, expected SL >= 101
+        assert pm.current_sl >= 101.0, \
+            f"Breakeven should move SL to entry+0.1R=101, got {pm.current_sl}"
+
+    def test_breakeven_short_triggered(self):
+        """SHORT MFE 2R → SL 應移到 entry - 0.1R"""
+        pm = _make_pm(side='SHORT', stage=1, avg_entry=100.0, risk_dist=10.0,
+                      lowest_price=80.0)
+        current_price = 82.0
+        pm.monitor(current_price, _make_df(current_price))
+        # entry=100, buffer=10*0.1=1, expected SL <= 99
+        assert pm.current_sl <= 99.0, \
+            f"Breakeven should move SL to entry-0.1R=99, got {pm.current_sl}"
+
+    def test_breakeven_not_triggered_below_threshold(self):
+        """MFE 1.0R (< 1.5R) → SL 不動"""
+        pm = _make_pm(side='LONG', stage=1, avg_entry=100.0, risk_dist=10.0,
+                      highest_price=110.0)
+        original_sl = pm.current_sl  # 90
+        current_price = 108.0
+        pm.monitor(current_price, _make_df(current_price))
+        assert pm.current_sl == original_sl, \
+            f"SL should not move at MFE 1.0R, got {pm.current_sl}"
+
+    def test_breakeven_ratchet(self):
+        """保本移損只上不下（棘輪）"""
+        pm = _make_pm(side='LONG', stage=1, avg_entry=100.0, risk_dist=10.0,
+                      highest_price=120.0)
+        # 第一次觸發
+        pm.monitor(118.0, _make_df(118.0))
+        sl_after_be = pm.current_sl
+        assert sl_after_be >= 101.0
+
+        # highest 不變，再 monitor 一次不會降回去
+        pm.monitor(105.0, _make_df(105.0))
+        assert pm.current_sl >= sl_after_be, \
+            f"Breakeven ratchet failed: {pm.current_sl} < {sl_after_be}"
