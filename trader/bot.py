@@ -881,8 +881,16 @@ class TradingBotV6:
 
                 # SL 變化 → 更新硬止損
                 if new_sl is not None:
+                    old_sl = pm.current_sl
                     self._update_hard_stop_loss(pm, new_sl)
                     state_changed = True
+                    # 只通知顯著移損（變化 > 1%），避免 trailing 微調洗版
+                    if old_sl > 0 and abs(new_sl - old_sl) / old_sl > 0.01:
+                        TelegramNotifier.notify_action(
+                            symbol, '1.5R移損',
+                            current_price,
+                            f"SL ${old_sl:.2f} → ${new_sl:.2f}"
+                        )
 
                 # 通用 action dispatch
                 if action == Action.CLOSE:
@@ -1195,6 +1203,11 @@ class TradingBotV6:
                     pm.exit_reason = 'hard_stop_hit'
                     pm.is_closed = True
                     hard_stop_detected = True
+                    TelegramNotifier.notify_action(
+                        symbol, '硬止損觸發',
+                        pm.current_sl,
+                        f"交易所已無持倉，推測硬止損已觸發"
+                    )
                 else:
                     # === 防護 3：Size 校驗 — 數量不一致 → 告警 ===
                     bot_amt = pm.total_size
@@ -1425,6 +1438,11 @@ class TradingBotV6:
                 f"{pm.symbol} 階段2 加倉完成: +{add_size:.6f} @ ${fill_price:.2f} | "
                 f"總倉位={pm.total_size:.6f} | 止損=${pm.current_sl:.2f}（保本）"
             )
+            TelegramNotifier.notify_action(
+                pm.symbol, '1.5R移損',
+                fill_price,
+                f"Stage2 加倉 +{add_size:.6f} 總={pm.total_size:.6f} SL=${pm.current_sl:.2f}"
+            )
 
         except Exception as e:
             logger.error(f"{pm.symbol} 階段2 加倉失敗: {e}")
@@ -1521,6 +1539,11 @@ class TradingBotV6:
                     f"[模擬] {pm.symbol} {label} 減倉: -{reduce_size:.6f} "
                     f"@ ${current_price:.2f} PnL=${partial_pnl:+.2f}"
                 )
+                TelegramNotifier.notify_action(
+                    pm.symbol, '目標減倉',
+                    current_price,
+                    f"{label} -{reduce_size:.6f} PnL=${partial_pnl:+.2f}"
+                )
                 pm.total_size -= reduce_size
                 _trade_log({
                     **self._build_log_base('PARTIAL_CLOSE', pm.trade_id, pm.symbol, pm.side),
@@ -1556,6 +1579,11 @@ class TradingBotV6:
                 f"{pm.symbol} {label} 減倉: -{reduce_size:.6f} @ ${fill_price:.2f} | "
                 f"PnL=${partial_pnl:+.2f} 累積=${pm.realized_partial_pnl:+.2f} | "
                 f"剩餘={pm.total_size:.6f} | 止損=${pm.current_sl:.2f}"
+            )
+            TelegramNotifier.notify_action(
+                pm.symbol, '目標減倉',
+                fill_price,
+                f"{label} -{reduce_size:.6f} PnL=${partial_pnl:+.2f} 剩餘={pm.total_size:.6f}"
             )
 
             _trade_log({
@@ -1694,6 +1722,33 @@ if __name__ == "__main__":
     _trade_handler.addFilter(_TradeFilter())
     _trade_handler.setLevel(logging.INFO)
     logging.getLogger().addHandler(_trade_handler)
+
+    # WARNING/ERROR 轉發到 Telegram（節流：同訊息 5 分鐘內不重複發送）
+    class _TelegramLogHandler(logging.Handler):
+        def __init__(self):
+            super().__init__(level=logging.WARNING)
+            self._last_sent = {}  # message_key -> timestamp
+
+        def emit(self, record):
+            try:
+                msg = self.format(record)
+                # 節流：取前 80 字元作 key，5 分鐘內同 key 不重複
+                key = msg[:80]
+                now = time.time()
+                if now - self._last_sent.get(key, 0) < 300:
+                    return
+                self._last_sent[key] = now
+                # 清理過期 key（避免記憶體洩漏）
+                if len(self._last_sent) > 100:
+                    cutoff = now - 300
+                    self._last_sent = {k: v for k, v in self._last_sent.items() if v > cutoff}
+                TelegramNotifier.notify_warning(msg)
+            except Exception:
+                pass  # 通知失敗不影響主程式
+
+    _tg_handler = _TelegramLogHandler()
+    _tg_handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s'))
+    logging.getLogger().addHandler(_tg_handler)
 
     try:
         # bot_config.json 相對於專案根目錄（bot.py 的上層），不依賴 CWD

@@ -59,10 +59,10 @@ class TelegramNotifier:
 方向: {side}
 市場狀態: {details.get('market_state', 'N/A')}
 量能強度: {details.get('vol_ratio', 0):.2f}x 均量
-入場價: ${details['entry_price']:.2f}
-止損價: ${details['stop_loss']:.2f}
+入場價: ${details.get('entry_price', 0):.2f}
+止損價: ${details.get('stop_loss', 0):.2f}
 目標位: ${details.get('target_ref', 'N/A')}
-倉位: {details['position_size']:.6f}
+倉位: {details.get('position_size', 0):.6f}
 1.5R: ${details.get('r15_target', 'N/A')}
 ──────────────────
         """
@@ -82,6 +82,12 @@ class TelegramNotifier:
         msg = f"{emoji} <b>{action}</b>\n幣種: {symbol}\n價格: ${price:.2f}"
         if details:
             msg += f"\n{details}"
+        TelegramNotifier.send_message(msg)
+
+    @staticmethod
+    def notify_warning(message: str):
+        """轉發 WARNING/ERROR 級別 log 到 Telegram（有節流）"""
+        msg = f"<b>Bot Alert</b>\n<pre>{message[:500]}</pre>"
         TelegramNotifier.send_message(msg)
 
     @staticmethod
