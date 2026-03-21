@@ -28,7 +28,10 @@ class TelegramNotifier:
                 'text': message,
                 'parse_mode': 'HTML'
             }
-            requests.post(url, data=payload, timeout=10)
+            response = requests.post(url, data=payload, timeout=10)
+            response.raise_for_status()
+            if not response.json().get('ok'):
+                logger.warning(f"Telegram API 回報失敗: {response.json().get('description')}")
         except Exception as e:
             logger.error(f"Telegram 發送失敗: {e}")
 
