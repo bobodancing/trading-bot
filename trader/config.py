@@ -35,8 +35,8 @@ class ConfigV6:
 
     # Telegram
     TELEGRAM_ENABLED = True
-    TELEGRAM_BOT_TOKEN = '8280737402:AAFRARTvKmLZbIGK0iZ1Cscu-yZR7Mt-PJA'
-    TELEGRAM_CHAT_ID = '@trading_bobo_bot'
+    TELEGRAM_BOT_TOKEN = ''
+    TELEGRAM_CHAT_ID = ''
 
     # 交易標的
     SYMBOLS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT']
