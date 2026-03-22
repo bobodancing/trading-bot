@@ -1725,6 +1725,11 @@ if __name__ == "__main__":
 
     # WARNING/ERROR 轉發到 Telegram（節流：同訊息 5 分鐘內不重複發送）
     class _TelegramLogHandler(logging.Handler):
+        # 不轉發到 Telegram 的訊息（含以下字串即略過）
+        _IGNORE_PATTERNS = [
+            "Scanner JSON 中 hot_symbols 為空",
+        ]
+
         def __init__(self):
             super().__init__(level=logging.WARNING)
             self._last_sent = {}  # message_key -> timestamp
@@ -1732,6 +1737,8 @@ if __name__ == "__main__":
         def emit(self, record):
             try:
                 msg = self.format(record)
+                if any(p in msg for p in self._IGNORE_PATTERNS):
+                    return
                 # 節流：取前 80 字元作 key，5 分鐘內同 key 不重複
                 key = msg[:80]
                 now = time.time()
