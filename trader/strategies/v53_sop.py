@@ -88,7 +88,9 @@ class V53SopStrategy(TradingStrategy):
 
         # === 結構破壞（冷卻 3 cycle，連續 2 根 1H close 確認）===
         if df_1h is not None and len(df_1h) >= 2 and pm.monitor_count > 3:
-            swings = StructureAnalysis.find_swing_points(df_1h, left_bars=5, right_bars=1)
+            swings = StructureAnalysis.find_swing_points(
+                df_1h, left_bars=Cfg.SWING_LEFT_BARS, right_bars=Cfg.SWING_RIGHT_BARS
+            )
             close_curr = df_1h['close'].iloc[-1]
             close_prev = df_1h['close'].iloc[-2]
             if pm.side == 'LONG' and swings['last_swing_low'] is not None:
