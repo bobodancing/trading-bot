@@ -37,7 +37,7 @@
     "enable_ema_pullback": true,
     "enable_volume_breakout": true,
     "enable_structure_break_exit": true,
-    "tier_a_position_mult": 1.0,
+    "tier_a_position_mult": 0.7,
     "tier_b_position_mult": 0.7,
     "tier_c_position_mult": 0.5,
     "max_hold_hours": 168,
