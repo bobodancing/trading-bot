@@ -79,7 +79,7 @@ INSERT OR IGNORE INTO trades (
 
 
 class PerformanceDB:
-    def __init__(self, db_path: str = "v6_performance.db"):
+    def __init__(self, db_path: str = "performance.db"):
         self.db_path = db_path
         self._init_db()
 

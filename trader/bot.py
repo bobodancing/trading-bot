@@ -101,7 +101,7 @@ class TradingBotV6:
         self._restore_positions()
 
         # Phase 0: 績效 DB
-        db_path = getattr(Config, 'DB_PATH', 'v6_performance.db')
+        db_path = getattr(Config, 'DB_PATH', 'performance.db')
         self.perf_db = PerformanceDB(db_path=db_path)
 
         self._log_startup()

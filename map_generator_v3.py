@@ -4,7 +4,7 @@ import ast
 from pathlib import Path
 
 # --- 設定區 ---
-PROJECT_ROOT = r"/home/rwfunder/文件/tradingbot/trading_bot_v6"
+PROJECT_ROOT = r"/home/rwfunder/文件/tradingbot/trading_bot"
 OUTPUT_FILE = "project_structure_map_v3.md"
 
 IGNORE_DIRS = {".git", "__pycache__", ".venv", "venv", "env", "build", "dist", "tests", ".pytest_cache", ".log"}
@@ -21,7 +21,7 @@ KEY_NON_PYTHON_FILES = [
     ("secrets.json",              "API keys + Telegram tokens — ⚠️ 勿 commit（.gitignore）"),
     ("bot_config.json",           "交易參數（無 secrets，可 commit）"),
     ("positions.json",            "Runtime 持倉狀態（PositionPersistence 讀寫）"),
-    ("v6_performance.db",         "交易績效 SQLite（MFE/MAE/capture_ratio/market_regime）"),
+    ("performance.db",            "交易績效 SQLite（MFE/MAE/capture_ratio/market_regime）"),
     ("hot_symbols.json",          "Scanner 輸出的熱門標的清單"),
     ("scanner/scanner_config.json", "Scanner 專屬設定"),
     ("requirements.txt",          "Python 依賴清單"),
@@ -49,7 +49,7 @@ trader/                  ← [trader.service]
 │   ├── api_client.py    ← BinanceFuturesClient（HMAC 簽章 + recvWindow + -1021 偵測）
 │   ├── data_provider.py ← MarketDataProvider（retry + sandbox fallback）
 │   ├── notifier.py      ← TelegramNotifier
-│   └── performance_db.py← PerformanceDB（SQLite v6_performance.db，平倉自動寫入）
+│   └── performance_db.py← PerformanceDB（SQLite performance.db，平倉自動寫入）
 ├── indicators/
 │   └── technical.py     ← TechnicalAnalysis, DynamicThresholdManager,
 │                           MTFConfirmation, MarketFilter

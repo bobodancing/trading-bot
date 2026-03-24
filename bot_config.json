@@ -83,5 +83,5 @@
     "btc_counter_trend_mult": 0.0,
     "max_sl_distance_pct": 0.06,
     "symbol_loss_cooldown_hours": 24,
-    "DB_PATH": "v6_performance.db"
+    "DB_PATH": "performance.db"
 }

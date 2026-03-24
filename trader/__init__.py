@@ -1,10 +1,10 @@
 """
-Trading Bot V6.0 — 終極滾倉版
+Trading Bot — 策略拔插平台
 
-三段式金字塔加倉系統，透過 Swing Point 結構和動態風險壓縮實現趨勢重拳出擊。
+支援多策略架構：V7 Structure / V53 SOP / legacy V6 Pyramid。
 """
 
-__version__ = "6.0.0"
+__version__ = "7.0.0"
 
 from trader.config import Config, ConfigV6
 from trader.infrastructure.api_client import BinanceFuturesClient

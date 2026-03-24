@@ -1,7 +1,7 @@
 """
-V6.0 Config — 獨立配置類
+Trading Bot Config — 獨立配置類
 
-合併 V5.3 + V6.0 所有參數，不再依賴 trading_bot_main.py。
+合併所有策略參數（V53 SOP / V7 Structure / legacy V6 Pyramid）。
 """
 
 import os
@@ -12,11 +12,11 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
-class ConfigV6:
+class Config:
     """
-    V6.0 配置類（獨立版）
+    Trading Bot 配置類（獨立版）
 
-    包含所有 V5.3 基礎參數 + V6.0 滾倉專屬設定。
+    包含所有策略共用參數 + 各策略專屬設定。
     """
 
     # ==================== V5.3 基礎參數 ====================
@@ -262,9 +262,9 @@ class ConfigV6:
     _LOG_DIR = str(Path(__file__).resolve().parent.parent / '.log')
 
     POSITIONS_JSON_PATH = str(Path(__file__).resolve().parent.parent / '.log' / 'positions.json')
-    LOG_FILE_PATH = str(Path(__file__).resolve().parent.parent / '.log' / 'v6_bot.log')
+    LOG_FILE_PATH = str(Path(__file__).resolve().parent.parent / '.log' / 'bot.log')
     AUTO_BACKUP_ON_STAGE_CHANGE = True
-    DB_PATH = "v6_performance.db"
+    DB_PATH = "performance.db"
 
     # ==================== Scanner 整合 ====================
 
@@ -367,4 +367,4 @@ class ConfigV6:
 
 
 # Alias for convenience
-Config = ConfigV6
+ConfigV6 = Config  # backward compat alias
