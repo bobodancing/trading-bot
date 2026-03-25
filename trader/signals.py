@@ -204,7 +204,7 @@ def detect_2b_with_pivots(
     neck_str = f"${signal_details['neckline']:.2f}" if signal_details['neckline'] else 'N/A'
     swing_type = 'low' if signal_side == 'LONG' else 'high'
     logger.info(
-        f"[V6] 2B {signal_side} detected: "
+        f"[2B] {signal_side} detected: "
         f"price=${close:.2f} | swing_{swing_type}="
         f"${signal_details['stop_level']:.2f} | "
         f"neckline={neck_str} | "

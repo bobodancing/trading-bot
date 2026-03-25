@@ -281,7 +281,8 @@ class PositionManager:
         """
         from trader.config import ConfigV6 as Cfg
 
-        prefix = f"[V6] {self.symbol} Stage2Check"
+        _tag = "V7" if self.strategy_name == "v7_structure" else "V6"
+        prefix = f"[{_tag}] {self.symbol} Stage2Check"
         log_fn = logger.info if Cfg.V6_STAGE2_DEBUG_LOG else logger.debug
 
         if self.stage != 1 or self.neckline is None:
@@ -342,8 +343,9 @@ class PositionManager:
             )
             return False
 
+        _tag = "V7" if self.strategy_name == "v7_structure" else "V6"
         logger.info(
-            f"[V6] {self.symbol} Stage 2 TRIGGERED: "
+            f"[{_tag}] {self.symbol} Stage 2 TRIGGERED: "
             f"close=${close:.2f} broke neckline=${self.neckline:.2f} | "
             f"vol={vol_ratio:.2f}x"
         )
@@ -414,8 +416,9 @@ class PositionManager:
         if not reversal:
             return False
 
+        _tag = "V7" if self.strategy_name == "v7_structure" else "V6"
         logger.info(
-            f"[V6] {self.symbol} Stage 3 TRIGGERED: "
+            f"[{_tag}] {self.symbol} Stage 3 TRIGGERED: "
             f"EMA pullback + reduced volume + reversal candle"
         )
         return True
@@ -469,8 +472,9 @@ class PositionManager:
             # 簡化：直接按比例縮減
             ratio = self.initial_r / new_total_risk if new_total_risk > 0 else 0
             adjusted_size = max_size * ratio
+            _tag = "V7" if self.strategy_name == "v7_structure" else "V6"
             logger.info(
-                f"[V6] {self.symbol} Stage 2 risk cap: "
+                f"[{_tag}] {self.symbol} Stage 2 risk cap: "
                 f"max_size={max_size:.6f} -> adjusted={adjusted_size:.6f} "
                 f"(risk ratio={ratio:.2f})"
             )
@@ -523,8 +527,9 @@ class PositionManager:
             # 舊公式 1.0-(risk/initial_r) 在 risk>initial_r 時歸零，改為 proportional
             ratio = min(1.0, (self.initial_r + 0.001) / (new_total_risk + 0.001))
             adjusted_size = max_size * ratio
+            _tag = "V7" if self.strategy_name == "v7_structure" else "V6"
             logger.info(
-                f"[V6] {self.symbol} Stage 3 risk cap: "
+                f"[{_tag}] {self.symbol} Stage 3 risk cap: "
                 f"max_size={max_size:.6f} -> adjusted={adjusted_size:.6f}"
             )
             return adjusted_size
