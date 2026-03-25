@@ -182,50 +182,38 @@ class PositionManager:
 
     # ==================== V6.0 滾倉方法 ====================
 
-    def add_stage2(self, price: float, size: float) -> bool:
+    def add_stage2(self, price: float, size: float, new_sl: float = None) -> bool:
         """
-        Stage 2 加倉：neckline 突破確認
+        Stage 2 加倉
 
-        - 加倉 + 移損至 Stage 1 入場價（保本位）
-        - 更新 avg_entry 和 total_size
-
-        Args:
-            price: Stage 2 入場價（neckline 突破價附近）
-            size: 加倉數量（已通過 risk 驗證）
-
-        Returns:
-            bool: 成功
+        - V6: 移損至 Stage 1 入場價（保本位）
+        - V7: 使用傳入的 new_sl（swing-based SL）
         """
         if self.stage != 1:
             logger.warning(f"{self.symbol} Stage 2 skip: current stage is {self.stage}")
             return False
 
-        # 記錄 entry
         self.entries.append(EntryRecord(
             price=price, size=size, stage=2,
             time=datetime.now(timezone.utc).isoformat()
         ))
 
-        # 更新倉位
         old_total = self.total_size
         self.total_size += size
         self.avg_entry = (old_total * self.avg_entry + size * price) / self.total_size
 
-        # 移損至 Stage 1 入場價（保本位）
-        stage1_entry = self.entries[0].price
-        if self.side == 'LONG':
-            new_sl = stage1_entry  # 保本
-        else:
-            new_sl = stage1_entry  # 保本
+        if new_sl is None:
+            new_sl = self.entries[0].price  # V6: breakeven
 
         self.current_sl = new_sl
         self.stage = 2
 
+        tag = "V7" if self.strategy_name == "v7_structure" else "V6"
         logger.info(
-            f"[V6] {self.symbol} Stage 2 added: "
+            f"[{tag}] {self.symbol} Stage 2 added: "
             f"+{size:.6f} @ ${price:.2f} | "
             f"Total: {self.total_size:.6f} | Avg: ${self.avg_entry:.2f} | "
-            f"SL -> ${new_sl:.2f} (breakeven)"
+            f"SL -> ${new_sl:.2f}"
         )
         return True
 
@@ -263,8 +251,9 @@ class PositionManager:
         self.current_sl = swing_stop
         self.stage = 3
 
+        tag = "V7" if self.strategy_name == "v7_structure" else "V6"
         logger.info(
-            f"[V6] {self.symbol} Stage 3 added: "
+            f"[{tag}] {self.symbol} Stage 3 added: "
             f"+{size:.6f} @ ${price:.2f} | "
             f"Total: {self.total_size:.6f} | Avg: ${self.avg_entry:.2f} | "
             f"SL -> ${swing_stop:.2f} (swing structure)"

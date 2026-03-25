@@ -1460,10 +1460,8 @@ class TradingBotV6:
                 logger.info(
                     f"[模擬] {pm.symbol} 階段2 加倉: +{add_size:.6f} @ ${entry_price:.2f}"
                 )
-                pm.add_stage2(entry_price, add_size)
-                # V7: override SL to structural swing point
-                if pm.strategy_name == 'v7_structure' and decision and decision.get('new_sl'):
-                    pm.current_sl = decision['new_sl']
+                v7_sl = decision.get('new_sl') if decision and pm.strategy_name == 'v7_structure' else None
+                pm.add_stage2(entry_price, add_size, new_sl=v7_sl)
                 return
 
             # 下單
@@ -1478,10 +1476,8 @@ class TradingBotV6:
                 )
 
             # 更新 PM
-            pm.add_stage2(fill_price, add_size)
-            # V7: override SL to structural swing point
-            if pm.strategy_name == 'v7_structure' and decision and decision.get('new_sl'):
-                pm.current_sl = decision['new_sl']
+            v7_sl = decision.get('new_sl') if decision and pm.strategy_name == 'v7_structure' else None
+            pm.add_stage2(fill_price, add_size, new_sl=v7_sl)
 
             # 更新硬止損（Stage 2 移損至保本）
             self._refresh_stop_loss(pm, pm.current_sl)
