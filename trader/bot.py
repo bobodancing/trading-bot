@@ -516,6 +516,15 @@ class TradingBotV6:
                     else None
                 )
 
+                # === Risk Guard: Tier 過濾 ===
+                _tier_rank = {'A': 3, 'B': 2, 'C': 1}
+                _min_tier = getattr(Config, 'V7_MIN_SIGNAL_TIER', 'C')
+                if _tier_rank.get(signal_tier, 0) < _tier_rank.get(_min_tier, 0):
+                    logger.info(
+                        f"{symbol}: 跳過（Tier {signal_tier} < 最低要求 {_min_tier}，score={tier_score}）"
+                    )
+                    continue
+
                 # === Risk Guard: BTC Trend Filter ===
                 if Config.BTC_TREND_FILTER_ENABLED and "BTC" not in symbol:
                     btc_trend = self._check_btc_trend()
@@ -892,8 +901,17 @@ class TradingBotV6:
                     if df_4h is not None and not df_4h.empty:
                         df_4h = TechnicalAnalysis.calculate_indicators(df_4h)
 
+                # V7 Stage 2+: 額外取得低時間框架數據（更靈敏的 trailing）
+                df_trail = None
+                if pm.strategy_name == "v7_structure" and pm.stage >= 2:
+                    trail_tf = getattr(Config, 'V7_STAGE3_TRAIL_TIMEFRAME', None)
+                    if trail_tf:
+                        df_trail = self.fetch_ohlcv(symbol, trail_tf, limit=50)
+                        if df_trail is not None and not df_trail.empty:
+                            df_trail = TechnicalAnalysis.calculate_indicators(df_trail)
+
                 # Monitor（V7 P2 起回傳 Dict）
-                decision = pm.monitor(current_price, df_1h, df_4h)
+                decision = pm.monitor(current_price, df_1h, df_4h, df_trail=df_trail)
                 action = decision.get('action', Action.HOLD)
                 new_sl = decision.get('new_sl')
 

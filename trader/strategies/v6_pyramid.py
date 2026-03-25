@@ -37,6 +37,7 @@ class V6PyramidStrategy(TradingStrategy):
         current_price: float,
         df_1h,
         df_4h=None,
+        **kwargs,
     ) -> DecisionDict:
         """
         V6.0 出場決策：

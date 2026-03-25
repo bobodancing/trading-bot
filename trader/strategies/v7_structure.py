@@ -49,6 +49,7 @@ class V7StructureStrategy(TradingStrategy):
         current_price: float,
         df_1h,
         df_4h=None,
+        **kwargs,
     ) -> DecisionDict:
         from trader.config import ConfigV6 as Cfg
 
@@ -84,21 +85,33 @@ class V7StructureStrategy(TradingStrategy):
 
         # 4. 加倉觸發
         if pm.stage < 3 and df_1h is not None and len(df_1h) >= 2:
-            add_result = self._check_add_trigger(pm, df_1h, Cfg)
+            add_result = self._check_add_trigger(pm, current_price, df_1h, Cfg)
             if add_result is not None:
                 return add_result
 
         # 5. 結構 Trailing SL（Stage 2/3）
+        #    Stage 2+ 優先用低時間框架（15m）做更靈敏的 trailing；加倉判斷仍用 1H
         if pm.stage >= 2 and df_1h is not None and len(df_1h) > 0:
-            trailing = self._structure_trailing_sl(pm, df_1h, Cfg)
+            df_trail = kwargs.get('df_trail')
+            trail_df = df_trail if (df_trail is not None and len(df_trail) > 0) else df_1h
+            trailing = self._structure_trailing_sl(pm, trail_df, Cfg)
             if trailing is not None:
                 return {**result, "action": Action.UPDATE_SL, "reason": "V7_STRUCTURE_TRAIL_SL", "new_sl": trailing}
 
         return result
 
-    def _check_add_trigger(self, pm, df_1h, Cfg) -> Optional[DecisionDict]:
-        """三條件 AND 加倉觸發"""
+    def _check_add_trigger(self, pm, current_price, df_1h, Cfg) -> Optional[DecisionDict]:
+        """三條件 AND 加倉觸發（需浮盈 >= 門檻才允許加倉）"""
         from trader.structure import StructureAnalysis
+
+        # 浮盈門檻：浮虧中不加倉
+        min_pnl = getattr(Cfg, 'V7_MIN_PNL_PCT_FOR_ADD', 0.0)
+        if pm.avg_entry and pm.avg_entry > 0:
+            unrealized_pnl_pct = (current_price - pm.avg_entry) / pm.avg_entry * 100
+            if pm.side == 'SHORT':
+                unrealized_pnl_pct = -unrealized_pnl_pct
+            if unrealized_pnl_pct < min_pnl:
+                return None
 
         swings = StructureAnalysis.find_swing_points(
             df_1h, Cfg.SWING_LEFT_BARS, Cfg.SWING_RIGHT_BARS
@@ -167,8 +180,14 @@ class V7StructureStrategy(TradingStrategy):
         atr_buffer = pm.atr * Cfg.SL_ATR_BUFFER if pm.atr else 0
         if pm.side == 'LONG':
             new_sl = swing_price - atr_buffer
+            # 加倉時 SL 至少在 breakeven
+            if pm.avg_entry and new_sl < pm.avg_entry:
+                new_sl = pm.avg_entry
         else:
             new_sl = swing_price + atr_buffer
+            # 加倉時 SL 至少在 breakeven
+            if pm.avg_entry and new_sl > pm.avg_entry:
+                new_sl = pm.avg_entry
 
         self.last_structure_swing = swing_price
         self.add_trigger_swings.append(swing_price)
@@ -231,12 +250,15 @@ class V7StructureStrategy(TradingStrategy):
 
         return None
 
-    def _structure_trailing_sl(self, pm, df_1h, Cfg) -> Optional[float]:
-        """結構 Trailing SL：追蹤新形成的順勢 swing point（棘輪只往有利方向移動）"""
+    def _structure_trailing_sl(self, pm, df, Cfg) -> Optional[float]:
+        """結構 Trailing SL：追蹤新形成的順勢 swing point（棘輪只往有利方向移動）
+
+        df 可以是 1H 或低時間框架（如 15m），由呼叫端根據 stage 決定。
+        """
         from trader.structure import StructureAnalysis
 
         swings = StructureAnalysis.find_swing_points(
-            df_1h, Cfg.SWING_LEFT_BARS, Cfg.SWING_RIGHT_BARS
+            df, Cfg.SWING_LEFT_BARS, Cfg.SWING_RIGHT_BARS
         )
         atr_buffer = pm.atr * Cfg.SL_ATR_BUFFER if pm.atr else 0
 

@@ -538,11 +538,14 @@ class PositionManager:
 
     # ==================== Monitor（Strategy Pattern V7 P2）====================
 
-    def monitor(self, current_price: float, df_1h=None, df_4h=None) -> Dict[str, Any]:
+    def monitor(self, current_price: float, df_1h=None, df_4h=None, df_trail=None) -> Dict[str, Any]:
         """
         統一監控入口（V7 P2 起回傳 Dict）。
 
         委託 self.strategy.get_decision() 計算出場/加倉決策。
+
+        Args:
+            df_trail: 低時間框架數據（15m），Stage 3 trailing 用。
 
         Returns:
             dict: {
@@ -555,7 +558,7 @@ class PositionManager:
         """
         if self.is_closed:
             return {"action": "ACTIVE", "reason": "ALREADY_CLOSED", "new_sl": None, "close_pct": None}
-        return self.strategy.get_decision(self, current_price, df_1h, df_4h)
+        return self.strategy.get_decision(self, current_price, df_1h, df_4h, df_trail=df_trail)
 
     # ==================== 序列化（for positions.json）====================
 

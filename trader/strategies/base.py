@@ -110,6 +110,7 @@ class TradingStrategy(ABC):
         current_price: float,
         df_1h: pd.DataFrame,
         df_4h: pd.DataFrame = None,
+        **kwargs,
     ) -> DecisionDict:
         """
         根據當前市場狀態，回傳持倉決策。

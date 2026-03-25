@@ -56,6 +56,7 @@ class V53SopStrategy(TradingStrategy):
         current_price: float,
         df_1h,
         df_4h=None,
+        **kwargs,
     ) -> DecisionDict:
         """
         V5.3 出場決策：
