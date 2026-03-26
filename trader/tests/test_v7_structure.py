@@ -381,56 +381,6 @@ class TestV7Registration:
         assert isinstance(s, V7StructureStrategy)
 
 
-class TestV7PnlGate:
-    """加倉浮盈門檻：浮虧中不加倉"""
-
-    def test_no_add_when_underwater_long(self):
-        """LONG 浮虧（price < avg_entry）→ 不加倉"""
-        from trader.strategies.v7_structure import V7StructureStrategy
-        from trader.config import Config
-        Config.V7_MIN_PNL_PCT_FOR_ADD = 0.0
-
-        strategy = V7StructureStrategy()
-        pm = make_pm(side='LONG', entry_price=100.0, stop_loss=88.0, stage=1, atr=2.0)
-        pm.avg_entry = 100.0
-
-        df = _make_swing_df_long_hl()
-        # current_price < avg_entry → underwater
-        result = strategy._check_add_trigger(pm, 98.0, df, Config)
-        assert result is None
-
-    def test_no_add_when_underwater_short(self):
-        """SHORT 浮虧（price > avg_entry）→ 不加倉"""
-        from trader.strategies.v7_structure import V7StructureStrategy
-        from trader.config import Config
-        Config.V7_MIN_PNL_PCT_FOR_ADD = 0.0
-
-        strategy = V7StructureStrategy()
-        pm = make_pm(side='SHORT', entry_price=100.0, stop_loss=112.0, stage=1, atr=2.0)
-        pm.avg_entry = 100.0
-
-        df = _make_swing_df_short_lh()
-        # price > avg_entry → underwater for short
-        result = strategy._check_add_trigger(pm, 102.0, df, Config)
-        assert result is None
-
-    def test_add_allowed_when_in_profit(self):
-        """LONG 浮盈中（price > avg_entry）→ 允許加倉（若 swing 條件也滿足）"""
-        from trader.strategies.v7_structure import V7StructureStrategy
-        from trader.config import Config
-        Config.V7_MIN_PNL_PCT_FOR_ADD = 0.0
-
-        strategy = V7StructureStrategy()
-        pm = make_pm(side='LONG', entry_price=100.0, stop_loss=88.0, stage=1, atr=2.0)
-        pm.avg_entry = 100.0
-
-        df = _make_swing_df_long_hl()
-        # current_price > avg_entry → in profit
-        result = strategy._check_add_trigger(pm, 102.0, df, Config)
-        # swing conditions in _make_swing_df_long_hl should satisfy → ADD
-        assert result is not None
-        assert result['action'] == Action.ADD
-
 
 class TestV7BreakevenSL:
     """Stage 2→3 加倉 SL 至少在 breakeven；Stage 1→2 不限制，給回調空間"""
@@ -481,58 +431,6 @@ class TestV7BreakevenSL:
         if result is not None:
             assert result['new_sl'] <= pm.avg_entry
 
-
-class TestV7MultiTimeframeTrailing:
-    """Stage 3 trailing 使用低時間框架（df_trail）"""
-
-    @patch('trader.strategies.v7_structure._apply_common_pre', return_value=None)
-    def test_stage3_uses_df_trail(self, mock_pre):
-        """Stage 3 有 df_trail → _structure_trailing_sl 使用 df_trail"""
-        from trader.strategies.v7_structure import V7StructureStrategy
-        strategy = V7StructureStrategy()
-
-        pm = make_pm(side='LONG', entry_price=100.0, stop_loss=95.0, stage=3, atr=2.0)
-        df_1h = make_df([(100, 102, 98, 101, 80, 100, 2.0)] * 10)
-        df_trail = _make_swing_df_long_hl()
-
-        with patch.object(strategy, '_structure_trailing_sl', return_value=None) as mock_trail:
-            strategy.get_decision(pm, 105.0, df_1h, df_trail=df_trail)
-            mock_trail.assert_called_once()
-            # 第一個位置參數是 pm，第二個是 df（應為 df_trail）
-            called_df = mock_trail.call_args[0][1]
-            assert called_df is df_trail
-
-    @patch('trader.strategies.v7_structure._apply_common_pre', return_value=None)
-    def test_stage2_uses_df_trail(self, mock_pre):
-        """Stage 2 有 df_trail → _structure_trailing_sl 使用 df_trail"""
-        from trader.strategies.v7_structure import V7StructureStrategy
-        strategy = V7StructureStrategy()
-
-        pm = make_pm(side='LONG', entry_price=100.0, stop_loss=95.0, stage=2, atr=2.0)
-        df_1h = make_df([(100, 102, 98, 101, 80, 100, 2.0)] * 10)
-        df_trail = _make_swing_df_long_hl()
-
-        with patch.object(strategy, '_structure_trailing_sl', return_value=None) as mock_trail:
-            with patch.object(strategy, '_check_add_trigger', return_value=None):
-                strategy.get_decision(pm, 105.0, df_1h, df_trail=df_trail)
-            mock_trail.assert_called_once()
-            called_df = mock_trail.call_args[0][1]
-            assert called_df is df_trail
-
-    @patch('trader.strategies.v7_structure._apply_common_pre', return_value=None)
-    def test_fallback_to_1h_without_df_trail(self, mock_pre):
-        """沒有 df_trail → fallback 使用 df_1h"""
-        from trader.strategies.v7_structure import V7StructureStrategy
-        strategy = V7StructureStrategy()
-
-        pm = make_pm(side='LONG', entry_price=100.0, stop_loss=95.0, stage=3, atr=2.0)
-        df_1h = make_df([(100, 102, 98, 101, 80, 100, 2.0)] * 10)
-
-        with patch.object(strategy, '_structure_trailing_sl', return_value=None) as mock_trail:
-            strategy.get_decision(pm, 105.0, df_1h)
-            mock_trail.assert_called_once()
-            called_df = mock_trail.call_args[0][1]
-            assert called_df is df_1h
 
 
 class TestV7Integration:

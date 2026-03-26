@@ -211,8 +211,6 @@ class Config:
     V7_STAGE1_MAX_HOURS = 36       # V7 Stage 1 超時（小時）
     V7_STAGE_VOLUME_MULT = 1.0    # 加倉量能門檻（volume / vol_ma）
     V7_MIN_SIGNAL_TIER = 'B'      # 最低可進場 tier（'A'=只做A, 'B'=A+B, 'C'=全做）
-    V7_MIN_PNL_PCT_FOR_ADD = 0.0  # 加倉最低浮盈門檻（%），0=breakeven
-    V7_STAGE3_TRAIL_TIMEFRAME = '15m'  # Stage 3 trailing 用的低時間框架
 
     # 快速止損/時間退出後的冷卻時間
     EARLY_EXIT_COOLDOWN_HOURS = 10
@@ -223,6 +221,8 @@ class Config:
     # 判定方式：BTC/USDT 1D EMA20 vs EMA50
     BTC_TREND_FILTER_ENABLED = True
     BTC_COUNTER_TREND_MULT = 0.0  # 0.0 = 禁止逆勢進場
+    BTC_EMA_RANGING_THRESHOLD = 0.02  # BTC EMA20/50 差距 < 2% 視為 RANGING
+    BTC_RANGING_POSITION_MULT = 0.5   # RANGING 時倉位乘數（保守模式）
 
     # SL 距離上限（佔 entry price 的百分比）
     # 超過此距離的交易直接跳過（防小幣結構寬導致單筆巨虧）

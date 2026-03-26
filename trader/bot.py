@@ -528,7 +528,24 @@ class TradingBotV6:
                 # === Risk Guard: BTC Trend Filter ===
                 if Config.BTC_TREND_FILTER_ENABLED and "BTC" not in symbol:
                     btc_trend = self._check_btc_trend()
-                    if btc_trend is not None and signal_side != btc_trend:
+                    signal_details['btc_trend'] = btc_trend or "UNKNOWN"
+
+                    if btc_trend in ("RANGING", None):
+                        # BTC 橫盤或取數據失敗 → 保守模式：只做 A tier + 降倉
+                        ranging_label = "RANGING" if btc_trend == "RANGING" else "UNKNOWN"
+                        if signal_tier != 'A':
+                            logger.info(
+                                f"{symbol}: 跳過（BTC {ranging_label}，"
+                                f"Tier {signal_tier} < 保守門檻 A）"
+                            )
+                            continue
+                        tier_multiplier *= Config.BTC_RANGING_POSITION_MULT
+                        logger.info(
+                            f"{symbol}: BTC {ranging_label}，保守模式"
+                            f"（只做 A tier，倉位 ×{Config.BTC_RANGING_POSITION_MULT}）"
+                        )
+
+                    elif signal_side != btc_trend:
                         if Config.BTC_COUNTER_TREND_MULT <= 0:
                             logger.info(
                                 f"{symbol}: 跳過（BTC 趨勢={btc_trend}，信號={signal_side} 逆勢，"
@@ -536,7 +553,6 @@ class TradingBotV6:
                             )
                             continue
                         else:
-                            # 降倉：乘以逆勢乘數
                             tier_multiplier *= Config.BTC_COUNTER_TREND_MULT
                             logger.info(
                                 f"{symbol}: BTC 逆勢（BTC={btc_trend}，信號={signal_side}），"
@@ -575,12 +591,16 @@ class TradingBotV6:
     # ==================== Private Helpers ====================
 
     def _check_btc_trend(self) -> Optional[str]:
-        """Fetch BTC 1D EMA20/50 trend. Returns 'LONG', 'SHORT', or None on failure."""
+        """Fetch BTC 1D EMA20/50 trend. Returns 'LONG', 'SHORT', 'RANGING', or None on failure."""
         try:
             btc_df = self.data_provider.fetch_ohlcv("BTC/USDT", "1d", limit=60)
             if btc_df is not None and len(btc_df) >= 50:
                 btc_ema20 = btc_df['close'].ewm(span=20, adjust=False).mean().iloc[-1]
                 btc_ema50 = btc_df['close'].ewm(span=50, adjust=False).mean().iloc[-1]
+                if btc_ema50 != 0:
+                    ema_diff = abs(btc_ema20 - btc_ema50) / btc_ema50
+                    if ema_diff < Config.BTC_EMA_RANGING_THRESHOLD:
+                        return "RANGING"
                 return "LONG" if btc_ema20 > btc_ema50 else "SHORT"
         except Exception as e:
             logger.warning(f"BTC trend check failed: {e}")
@@ -822,10 +842,13 @@ class TradingBotV6:
             pm.volume_grade = signal_details.get('volume_grade')
             pm.tier_score = signal_details.get('tier_score')
 
-            # --- BTC Trend Alignment (data collection only) ---
-            if "BTC" not in symbol:  # BTC/USDT 自身不適用
-                btc_trend = self._check_btc_trend()
-                pm.btc_trend_aligned = (side == btc_trend) if btc_trend is not None else None
+            # --- BTC Trend Alignment (data collection) ---
+            if "BTC" not in symbol:
+                btc_trend = signal_details.get('btc_trend', 'UNKNOWN')
+                if btc_trend in ("UNKNOWN", "RANGING"):
+                    pm.btc_trend_aligned = None
+                else:
+                    pm.btc_trend_aligned = (side == btc_trend)
             else:
                 pm.btc_trend_aligned = None
 
@@ -901,17 +924,8 @@ class TradingBotV6:
                     if df_4h is not None and not df_4h.empty:
                         df_4h = TechnicalAnalysis.calculate_indicators(df_4h)
 
-                # V7 Stage 2+: 額外取得低時間框架數據（更靈敏的 trailing）
-                df_trail = None
-                if pm.strategy_name == "v7_structure" and pm.stage >= 2:
-                    trail_tf = getattr(Config, 'V7_STAGE3_TRAIL_TIMEFRAME', None)
-                    if trail_tf:
-                        df_trail = self.fetch_ohlcv(symbol, trail_tf, limit=50)
-                        if df_trail is not None and not df_trail.empty:
-                            df_trail = TechnicalAnalysis.calculate_indicators(df_trail)
-
                 # Monitor（V7 P2 起回傳 Dict）
-                decision = pm.monitor(current_price, df_1h, df_4h, df_trail=df_trail)
+                decision = pm.monitor(current_price, df_1h, df_4h)
                 action = decision.get('action', Action.HOLD)
                 new_sl = decision.get('new_sl')
 

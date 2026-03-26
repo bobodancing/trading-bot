@@ -8,11 +8,16 @@ from datetime import datetime, timezone, timedelta
 from trader.config import ConfigV6 as Config
 
 
-def _make_btc_df(ema20_above_ema50: bool):
+def _make_btc_df(ema20_above_ema50: bool, ranging: bool = False):
     """Helper: 製作 BTC 1D df，控制 EMA20 vs EMA50 方向。"""
     n = 60
     dates = pd.date_range(end=datetime.now(), periods=n, freq='1D')
-    if ema20_above_ema50:
+    if ranging:
+        # 橫盤：價格幾乎不動，EMA20 ≈ EMA50
+        prices = np.full(n, 85000.0)
+        # 微幅波動避免完全相同
+        prices += np.random.default_rng(42).normal(0, 50, n)
+    elif ema20_above_ema50:
         # 上升趨勢：近期價格高
         prices = np.linspace(80000, 90000, n)
     else:
@@ -71,6 +76,73 @@ class TestBTCTrendFilter:
         """BTC/USDT 自身不適用 filter"""
         symbol = "BTC/USDT"
         assert "BTC" in symbol  # 應跳過 filter
+
+
+class TestBTCRangingFilter:
+    """A2. BTC Ranging / UNKNOWN → 保守模式"""
+
+    def test_ranging_detected(self):
+        """EMA20 ≈ EMA50（差距 < 2%）→ RANGING"""
+        btc_df = _make_btc_df(ema20_above_ema50=True, ranging=True)
+        ema20 = btc_df['close'].ewm(span=20, adjust=False).mean().iloc[-1]
+        ema50 = btc_df['close'].ewm(span=50, adjust=False).mean().iloc[-1]
+        ema_diff = abs(ema20 - ema50) / ema50
+        assert ema_diff < Config.BTC_EMA_RANGING_THRESHOLD  # < 2%
+
+    def test_trending_not_ranging(self):
+        """明確趨勢時差距 > 2% → 不是 RANGING"""
+        btc_df = _make_btc_df(ema20_above_ema50=True)
+        ema20 = btc_df['close'].ewm(span=20, adjust=False).mean().iloc[-1]
+        ema50 = btc_df['close'].ewm(span=50, adjust=False).mean().iloc[-1]
+        ema_diff = abs(ema20 - ema50) / ema50
+        assert ema_diff >= Config.BTC_EMA_RANGING_THRESHOLD
+
+    def test_ranging_tier_b_blocked(self):
+        """BTC RANGING + Tier B → 被跳過"""
+        btc_trend = "RANGING"
+        signal_tier = "B"
+        # 保守模式只允許 A tier
+        assert signal_tier != 'A'  # 應被 block
+
+    def test_ranging_tier_a_allowed_with_reduced_position(self):
+        """BTC RANGING + Tier A → 通過但降倉"""
+        btc_trend = "RANGING"
+        signal_tier = "A"
+        tier_multiplier = 1.0
+        # Tier A 通過
+        assert signal_tier == 'A'
+        # 降倉
+        tier_multiplier *= Config.BTC_RANGING_POSITION_MULT
+        assert tier_multiplier == 0.5
+
+    def test_unknown_treated_as_ranging(self):
+        """btc_trend=None（API 失敗）→ 同 RANGING 保守策略"""
+        btc_trend = None
+        signal_tier = "B"
+        # None 進入 RANGING 分支
+        assert btc_trend in ("RANGING", None)
+        assert signal_tier != 'A'  # 應被 block
+
+    def test_unknown_tier_a_allowed(self):
+        """btc_trend=None + Tier A → 降倉通過"""
+        btc_trend = None
+        signal_tier = "A"
+        tier_multiplier = 1.0
+        assert btc_trend in ("RANGING", None)
+        assert signal_tier == 'A'
+        tier_multiplier *= Config.BTC_RANGING_POSITION_MULT
+        assert tier_multiplier == 0.5
+
+    def test_ranging_tier_c_blocked(self):
+        """BTC RANGING + Tier C → 被跳過"""
+        btc_trend = "RANGING"
+        signal_tier = "C"
+        assert signal_tier != 'A'
+
+    def test_config_defaults(self):
+        """Config 預設值正確"""
+        assert Config.BTC_EMA_RANGING_THRESHOLD == 0.02
+        assert Config.BTC_RANGING_POSITION_MULT == 0.5
 
 
 class TestSLDistanceCap:

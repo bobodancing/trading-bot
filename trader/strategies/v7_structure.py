@@ -90,28 +90,16 @@ class V7StructureStrategy(TradingStrategy):
                 return add_result
 
         # 5. 結構 Trailing SL（Stage 2/3）
-        #    Stage 2+ 優先用低時間框架（15m）做更靈敏的 trailing；加倉判斷仍用 1H
         if pm.stage >= 2 and df_1h is not None and len(df_1h) > 0:
-            df_trail = kwargs.get('df_trail')
-            trail_df = df_trail if (df_trail is not None and len(df_trail) > 0) else df_1h
-            trailing = self._structure_trailing_sl(pm, trail_df, Cfg)
+            trailing = self._structure_trailing_sl(pm, df_1h, Cfg)
             if trailing is not None:
                 return {**result, "action": Action.UPDATE_SL, "reason": "V7_STRUCTURE_TRAIL_SL", "new_sl": trailing}
 
         return result
 
     def _check_add_trigger(self, pm, current_price, df_1h, Cfg) -> Optional[DecisionDict]:
-        """三條件 AND 加倉觸發（需浮盈 >= 門檻才允許加倉）"""
+        """三條件 AND 加倉觸發"""
         from trader.structure import StructureAnalysis
-
-        # 浮盈門檻：浮虧中不加倉
-        min_pnl = getattr(Cfg, 'V7_MIN_PNL_PCT_FOR_ADD', 0.0)
-        if pm.avg_entry and pm.avg_entry > 0:
-            unrealized_pnl_pct = (current_price - pm.avg_entry) / pm.avg_entry * 100
-            if pm.side == 'SHORT':
-                unrealized_pnl_pct = -unrealized_pnl_pct
-            if unrealized_pnl_pct < min_pnl:
-                return None
 
         swings = StructureAnalysis.find_swing_points(
             df_1h, Cfg.SWING_LEFT_BARS, Cfg.SWING_RIGHT_BARS
