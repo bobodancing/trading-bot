@@ -2,7 +2,7 @@
 
 基於 Swing Point 結構分析的加密貨幣期貨交易平台，支援策略拔插（Plugin Architecture）。
 
-> 最後更新：2026-03-28 | 362 tests passed
+> 最後更新：2026-03-29 | 366 tests passed
 
 ## 目錄
 
@@ -76,10 +76,10 @@ trading_bot/
 │   ├── execution/
 │   │   └── order_engine.py      # OrderExecutionEngine（下單 / 止損 / 平倉）
 │   │
-│   └── tests/                   # 362 tests
+│   └── tests/                   # 366 tests
 │       ├── conftest.py
 │       ├── test_integration.py  # StatefulMockEngine + FaultInjector
-│       └── test_*.py            # 28 test modules
+│       └── test_*.py            # 34 test modules
 │
 ├── scanner/                     # Market Scanner（獨立服務）
 │   └── market_scanner.py        # 四層掃描（流動性 → 動能 → 形態 → 相關性）
@@ -222,7 +222,7 @@ SIGNAL_STRATEGY_MAP = {
 
 #### 信號偵測
 
-使用 Swing Point Pivot（左 7 根 + 右 3 根確認），穿透深度 ≥ 0.3 ATR 過濾噪音。
+使用 Swing Point Pivot（左 7 根 + 右 3 根確認），穿透深度 0.6–1.5 ATR 過濾噪音（淺層=噪音，過深=真突破）。
 
 - **Bullish 2B**：價格跌破 confirmed swing low 後放量收回
 - **Bearish 2B**：價格突破 confirmed swing high 後放量收回
@@ -266,6 +266,9 @@ SIGNAL_STRATEGY_MAP = {
 | BTC RANGING Filter | BTC EMA20/50 差距 < 0.5% → 完全停止進場 | 橫盤市場不做趨勢單 |
 | Tier C Filter | V7 進場信號 Tier < B → 跳過 | 去除低品質信號 |
 | SL Distance Cap | SL 距離 > 6% 入場價 → 跳過 | 防止大波動吃大虧 |
+| Explosive Volume Filter | 2B 信號 vol_ratio ≥ 2.5x → 跳過 | 爆量=真突破非 fakeout |
+| ADX Cap | ADX > 50 時 2B 信號 → 跳過 | 趨勢過強不宜反轉 |
+| Mid-candle Guard | 移除未關閉 K 線再偵測信號 | 防止未確認數據假信號 |
 | Symbol Cooldown | 同幣虧損後 24h 內不再進場 | 防連虧 |
 
 ---
@@ -330,7 +333,9 @@ JSON key 自動映射大寫（`risk_per_trade` → `RISK_PER_TRADE`）。
 | `SWING_LEFT_BARS` / `RIGHT` | 7 / 3 | Swing Point 確認 |
 | `SL_ATR_BUFFER` | 0.8 | 止損 ATR 緩衝 |
 | `V6_BREAKEVEN_MFE_R` | 1.5 | Tier 1 保本觸發（MFE≥1.5R） |
-| `MIN_FAKEOUT_ATR` | 0.3 | 2B 最小穿透深度 |
+| `MIN_FAKEOUT_ATR` | 0.6 | 2B 最小穿透深度 |
+| `MAX_FAKEOUT_ATR` | 1.5 | 2B 最大穿透深度 |
+| `ADX_MAX_2B` | 50 | 2B 信號 ADX 上限 |
 | `BTC_TREND_FILTER_ENABLED` | true | BTC 趨勢過濾 |
 | `BTC_EMA_RANGING_THRESHOLD` | 0.005 | EMA20/50 差距 < 0.5% → RANGING |
 | `V7_MIN_SIGNAL_TIER` | 'B' | V7 最低進場 Tier |
@@ -382,7 +387,7 @@ SIGNAL_STRATEGY_MAP = {
 
 ## 測試
 
-362 個 pytest，全部通過。
+366 個 pytest，全部通過。
 
 ```bash
 python3 -m pytest trader/tests/ -v
@@ -403,7 +408,8 @@ python3 -m pytest trader/tests/test_v7_structure.py -v  # V7 單一模組
 | `test_v7p2.py` | 16 | Strategy dispatch |
 | `test_tier_equity_balance.py` | 13 | Tier mult / equity cap |
 | `test_reverse_2b_exit.py` | 9 | 穿透深度 + 雙根確認 |
-| 其他 16 個模組 | 183 | 各子系統 |
+| `test_2b_quality_filters.py` | 10 | Explosive vol / ADX cap / Fakeout range |
+| 其他 16 個模組 | 177 | 各子系統 |
 
 ---
 
@@ -416,7 +422,7 @@ python3 -m pytest trader/tests/test_v7_structure.py -v  # V7 單一模組
 | 指標 | pandas-ta（EMA / ATR / ADX / RSI） |
 | 數據 | pandas + numpy |
 | 通知 | Telegram Bot API |
-| 測試 | pytest（362 tests） |
+| 測試 | pytest（366 tests） |
 | 持久化 | JSON (atomic write) + SQLite (performance + scanner) |
 
 ---
