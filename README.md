@@ -2,7 +2,7 @@
 
 基於 Swing Point 結構分析的加密貨幣期貨交易平台，支援策略拔插（Plugin Architecture）。
 
-> 最後更新：2026-03-25 | 348 tests passed
+> 最後更新：2026-03-28 | 362 tests passed
 
 ## 目錄
 
@@ -76,7 +76,7 @@ trading_bot/
 │   ├── execution/
 │   │   └── order_engine.py      # OrderExecutionEngine（下單 / 止損 / 平倉）
 │   │
-│   └── tests/                   # 348 tests
+│   └── tests/                   # 362 tests
 │       ├── conftest.py
 │       ├── test_integration.py  # StatefulMockEngine + FaultInjector
 │       └── test_*.py            # 28 test modules
@@ -263,6 +263,8 @@ SIGNAL_STRATEGY_MAP = {
 | Guard | 規則 | 效果 |
 |-------|------|------|
 | BTC Trend Filter | BTC 1D EMA20 < EMA50 時禁 LONG | 避免逆勢進場 |
+| BTC RANGING Filter | BTC EMA20/50 差距 < 0.5% → 完全停止進場 | 橫盤市場不做趨勢單 |
+| Tier C Filter | V7 進場信號 Tier < B → 跳過 | 去除低品質信號 |
 | SL Distance Cap | SL 距離 > 6% 入場價 → 跳過 | 防止大波動吃大虧 |
 | Symbol Cooldown | 同幣虧損後 24h 內不再進場 | 防連虧 |
 
@@ -330,6 +332,8 @@ JSON key 自動映射大寫（`risk_per_trade` → `RISK_PER_TRADE`）。
 | `V6_BREAKEVEN_MFE_R` | 1.5 | Tier 1 保本觸發（MFE≥1.5R） |
 | `MIN_FAKEOUT_ATR` | 0.3 | 2B 最小穿透深度 |
 | `BTC_TREND_FILTER_ENABLED` | true | BTC 趨勢過濾 |
+| `BTC_EMA_RANGING_THRESHOLD` | 0.005 | EMA20/50 差距 < 0.5% → RANGING |
+| `V7_MIN_SIGNAL_TIER` | 'B' | V7 最低進場 Tier |
 | `MAX_SL_DISTANCE_PCT` | 0.06 | SL 距離上限 |
 | `SYMBOL_LOSS_COOLDOWN_HOURS` | 24 | 同幣虧損冷卻 |
 
@@ -378,7 +382,7 @@ SIGNAL_STRATEGY_MAP = {
 
 ## 測試
 
-348 個 pytest，全部通過。
+362 個 pytest，全部通過。
 
 ```bash
 python3 -m pytest trader/tests/ -v
@@ -395,7 +399,7 @@ python3 -m pytest trader/tests/test_v7_structure.py -v  # V7 單一模組
 | `test_risk.py` | 13 | Stage sizing / risk cap |
 | `test_persistence.py` | 30 | Atomic write / 出場決策 16 場景 |
 | `test_integration.py` | 18 | StatefulMockEngine + FaultInjector |
-| `test_risk_guard.py` | 16 | BTC Filter / SL Cap / Cooldown |
+| `test_risk_guard.py` | 21 | BTC Filter / RANGING Filter / SL Cap / Cooldown |
 | `test_v7p2.py` | 16 | Strategy dispatch |
 | `test_tier_equity_balance.py` | 13 | Tier mult / equity cap |
 | `test_reverse_2b_exit.py` | 9 | 穿透深度 + 雙根確認 |
@@ -412,7 +416,7 @@ python3 -m pytest trader/tests/test_v7_structure.py -v  # V7 單一模組
 | 指標 | pandas-ta（EMA / ATR / ADX / RSI） |
 | 數據 | pandas + numpy |
 | 通知 | Telegram Bot API |
-| 測試 | pytest（348 tests） |
+| 測試 | pytest（362 tests） |
 | 持久化 | JSON (atomic write) + SQLite (performance + scanner) |
 
 ---
