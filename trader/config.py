@@ -216,6 +216,40 @@ class Config:
     V7_STAGE_VOLUME_MULT = 1.0    # 加倉量能門檻（volume / vol_ma）
     V7_MIN_SIGNAL_TIER = 'B'      # 最低可進場 tier（'A'=只做A, 'B'=A+B, 'C'=全做）
 
+    # ==================== Grid & Regime System ====================
+    # Regime Engine
+    ENABLE_GRID_TRADING = False         # 主開關（預設關閉，testnet 驗證後開啟）
+    REGIME_TIMEFRAME = '4h'             # Regime 偵測用的 K 線週期
+    REGIME_ADX_TRENDING = 25            # ADX >= 此值 → TRENDING
+    REGIME_ADX_RANGING = 20             # ADX < 此值 → RANGING candidate
+    REGIME_BBW_RANGING_PCT = 25         # BBW < 歷史 N% 分位 → RANGING candidate
+    REGIME_BBW_SQUEEZE_PCT = 10         # BBW < 歷史 N% 分位 → SQUEEZE candidate
+    REGIME_ATR_SQUEEZE_MULT = 1.1      # ATR <= avg * mult → SQUEEZE (尚未擴張)
+    REGIME_ATR_TRENDING_MULT = 1.3     # ATR > avg * mult → TRENDING (已擴張)
+    REGIME_CONFIRM_CANDLES = 3          # 切換需連續 N 根 K 線確認
+    REGIME_BBW_HISTORY = 50             # BBW 歷史窗口（根數）
+
+    # Capital Pool
+    GRID_CAPITAL_RATIO = 0.30           # 網格池佔總資金比例
+    TREND_CAPITAL_RATIO = 0.70          # 趨勢池佔總資金比例
+
+    # ATR Grid Parameters
+    GRID_SMA_PERIOD = 20                # 中軸 SMA 週期
+    GRID_ATR_PERIOD = 14                # ATR 週期
+    GRID_ATR_MULTIPLIER = 2.5           # k 值：上下軌 = SMA ± k*ATR
+    GRID_LEVELS = 5                     # 單邊格數（總共 2*N 格）
+    GRID_WEIGHT_CENTER = 0.5            # 中軸格位倉位乘數
+    GRID_WEIGHT_EDGE = 1.5              # 邊緣格位倉位乘數
+
+    # Grid Risk
+    GRID_MAX_TOTAL_RISK = 0.03          # 網格池最大總風險 3%
+    GRID_RISK_PER_TRADE = 0.01          # 單格風險 1%
+    GRID_MAX_DRAWDOWN = 0.05            # 最大回撤 5% → 強制停止
+    GRID_MAX_NOTIONAL = 0.0             # 最大名義曝險（0 = grid_balance * LEVERAGE）
+    GRID_COOLDOWN_HOURS = 6             # 停損後冷卻時間
+    GRID_CONVERGE_TIMEOUT_HOURS = 4     # 收斂模式超時（小時）
+    GRID_RESET_DRIFT_RATIO = 0.5       # SMA 偏移超過此比例 * spacing → reset
+
     # 快速止損/時間退出後的冷卻時間
     EARLY_EXIT_COOLDOWN_HOURS = 10
 
