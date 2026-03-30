@@ -127,3 +127,50 @@ class TelegramNotifier:
             f"PnL: {pnl:+.2f}%"
         )
         TelegramNotifier.send_message(msg)
+
+    @staticmethod
+    def notify_regime_change(old_regime: str, new_regime: str, confirm_candles: int):
+        """Regime 狀態切換通知"""
+        msg = (
+            f"🔄 <b>Regime: {old_regime} → {new_regime}</b>\n"
+            f"已確認 {confirm_candles} 根 4H K 線"
+        )
+        TelegramNotifier.send_message(msg)
+
+    @staticmethod
+    def notify_grid_activated(center: float, lower: float, upper: float, levels: int):
+        msg = (
+            f"📊 <b>Grid activated</b>\n"
+            f"Center: {center:.0f}\n"
+            f"Range: {lower:.0f} - {upper:.0f}\n"
+            f"Levels: {levels * 2}"
+        )
+        TelegramNotifier.send_message(msg)
+
+    @staticmethod
+    def notify_grid_action(action_type: str, side: str, level: int, price: float, size: float):
+        msg = (
+            f"📊 Grid L{abs(level)} {action_type} {side} "
+            f"@ {price:.0f} (size: {size:.4f} BTC)"
+        )
+        TelegramNotifier.send_message(msg)
+
+    @staticmethod
+    def notify_grid_close(level: int, side: str, price: float, pnl: float):
+        emoji = "🟢" if pnl >= 0 else "🔴"
+        msg = (
+            f"{emoji} Grid L{abs(level)} {side} closed "
+            f"@ {price:.0f} ({'+' if pnl >= 0 else ''}{pnl:.2f} USDT)"
+        )
+        TelegramNotifier.send_message(msg)
+
+    @staticmethod
+    def notify_grid_stopped(reason: str, details: str = ""):
+        msg = f"⚠️ <b>Grid stopped:</b> {reason}"
+        if details:
+            msg += f"\n{details}"
+        TelegramNotifier.send_message(msg)
+
+
+# Alias for compatibility with grid strategy code
+Notifier = TelegramNotifier
