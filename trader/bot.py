@@ -1958,6 +1958,17 @@ class TradingBotV6:
             logger.error("啟動診斷失敗，停止運行")
             return
 
+        # Ensure hedge mode for grid trading
+        if Config.ENABLE_GRID_TRADING:
+            is_hedge = self.futures_client.get_position_mode()
+            if is_hedge is False:
+                logger.info("Grid trading enabled — switching to hedge mode")
+                if not self.futures_client.set_hedge_mode(True):
+                    logger.error("Failed to set hedge mode — grid trading disabled")
+                    Config.ENABLE_GRID_TRADING = False
+            # Load saved grid state
+            self.grid_engine.load_state()
+
         logger.info("機器人開始運行...\n")
 
         # 接管交易所有但 positions.json 未記錄的倉位（幽靈倉位恢復）
