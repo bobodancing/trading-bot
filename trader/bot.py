@@ -1250,7 +1250,7 @@ class TradingBotV6:
             regime = self.regime_engine.current_regime
             if regime != "RANGING" and not self.grid_engine.state.converging:
                 self.grid_engine.converge()
-                TelegramNotifier.notify_grid_stopped("regime_change", f"→ {regime}")
+                TelegramNotifier.notify_grid_stopped("converge", f"→ {regime}")
 
             ticker = self.fetch_ticker("BTC/USDT")
             if ticker:

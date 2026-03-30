@@ -242,12 +242,12 @@ class Config:
     GRID_WEIGHT_EDGE = 1.5              # 邊緣格位倉位乘數
 
     # Grid Risk
-    GRID_MAX_TOTAL_RISK = 0.03          # 網格池最大總風險 3%
-    GRID_RISK_PER_TRADE = 0.01          # 單格風險 1%
+    GRID_MAX_TOTAL_RISK = 0.075         # 網格池最大總風險 7.5%（配合 2.5% 單格）
+    GRID_RISK_PER_TRADE = 0.025         # 單格風險 2.5%
     GRID_MAX_DRAWDOWN = 0.05            # 最大回撤 5% → 強制停止
     GRID_MAX_NOTIONAL = 0.0             # 最大名義曝險（0 = grid_balance * LEVERAGE）
     GRID_COOLDOWN_HOURS = 6             # 停損後冷卻時間
-    GRID_CONVERGE_TIMEOUT_HOURS = 4     # 收斂模式超時（小時）
+    GRID_CONVERGE_TIMEOUT_HOURS = 72    # 收斂模式超時（小時），給均值回歸足夠時間
     GRID_RESET_DRIFT_RATIO = 0.5       # SMA 偏移超過此比例 * spacing → reset
 
     # 快速止損/時間退出後的冷卻時間

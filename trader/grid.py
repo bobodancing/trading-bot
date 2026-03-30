@@ -38,6 +38,7 @@ class GridState:
     level_weights: dict = field(default_factory=dict)
     converging: bool = False
     converge_start_time: float = 0.0
+    converge_market_ts: object = None  # pd.Timestamp for backtest timeout
     activated_at: float = 0.0
     last_cooldown_time: float = 0.0
 
@@ -112,8 +113,8 @@ class V8AtrGrid:
             f"{levels*2} levels"
         )
 
-    def tick(self, current_price: float, df_1h: pd.DataFrame) -> List[GridAction]:
-        """每 scan cycle 呼叫，回傳本 cycle 的動作列表"""
+    def tick(self, current_price: float, df_1h: pd.DataFrame, market_ts=None) -> List[GridAction]:
+        """每 scan cycle 呼叫，回傳本 cycle 的動作列表。market_ts: 回測用時間戳。"""
         if self.state is None:
             return []
 
@@ -142,11 +143,17 @@ class V8AtrGrid:
             self.state.last_cooldown_time = time.time()
             return actions
 
-        # Check converge timeout
+        # Check converge timeout (wall clock for production, market_ts for backtest)
         if self.state.converging:
-            timeout_h = getattr(Config, 'GRID_CONVERGE_TIMEOUT_HOURS', 4)
-            if time.time() - self.state.converge_start_time > timeout_h * 3600:
-                logger.info("Grid converge timeout — force closing")
+            timeout_h = getattr(Config, 'GRID_CONVERGE_TIMEOUT_HOURS', 72)
+            timed_out = False
+            if market_ts is not None and self.state.converge_market_ts is not None:
+                elapsed = (market_ts - self.state.converge_market_ts).total_seconds()
+                timed_out = elapsed > timeout_h * 3600
+            elif self.state.converge_start_time > 0:
+                timed_out = time.time() - self.state.converge_start_time > timeout_h * 3600
+            if timed_out:
+                logger.info(f"Grid converge timeout ({timeout_h}h) — force closing")
                 actions.extend(self.force_close_all("converge_timeout"))
                 return actions
 
@@ -207,11 +214,12 @@ class V8AtrGrid:
 
         return actions
 
-    def converge(self):
+    def converge(self, market_ts=None):
         """進入收斂模式 — 不開新格，等現有格位平倉"""
         if self.state and not self.state.converging:
             self.state.converging = True
             self.state.converge_start_time = time.time()
+            self.state.converge_market_ts = market_ts  # 回測用 market timestamp
             logger.info("Grid entering converge mode")
 
     def force_close_all(self, reason: str) -> List[GridAction]:
