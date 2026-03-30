@@ -269,3 +269,33 @@ class PositionPersistence:
         except Exception as e:
             logger.error(f"❌ Failed to clear positions: {e}")
             return False
+
+
+# ==================== Grid State Persistence ====================
+
+def save_grid_state(state_dict: dict, path: str = "grid_positions.json"):
+    """Atomic save of grid state to JSON"""
+    import json
+    from pathlib import Path as FilePath
+    tmp_path = path + ".tmp"
+    try:
+        with open(tmp_path, 'w') as f:
+            json.dump({"schema_version": 1, "grid_state": state_dict}, f, indent=2)
+        FilePath(tmp_path).replace(path)
+        logger.debug(f"Grid state saved to {path}")
+    except Exception as e:
+        logger.error(f"Failed to save grid state: {e}")
+
+
+def load_grid_state(path: str = "grid_positions.json") -> dict:
+    """Load grid state from JSON, returns empty dict if not found"""
+    import json
+    try:
+        with open(path, 'r') as f:
+            data = json.load(f)
+        return data.get("grid_state", {})
+    except FileNotFoundError:
+        return {}
+    except Exception as e:
+        logger.error(f"Failed to load grid state: {e}")
+        return {}
