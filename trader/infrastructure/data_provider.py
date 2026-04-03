@@ -90,6 +90,9 @@ class MarketDataProvider:
 
                 df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
                 df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+                # Keep the legacy column while making candle time explicit for
+                # callers that dedupe by the latest completed bar.
+                df.index = pd.DatetimeIndex(df['timestamp'], name='timestamp')
                 return df
 
             except Exception as e:

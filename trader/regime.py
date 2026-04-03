@@ -23,6 +23,7 @@ class RegimeEngine:
         self._confirm_count: int = 0
         self._last_candle_time: Optional[pd.Timestamp] = None
         self._trend_direction: Optional[str] = None  # "LONG" / "SHORT"
+        self._last_detected_regime: Optional[str] = None
 
     @property
     def trend_direction(self) -> Optional[str]:
@@ -31,6 +32,28 @@ class RegimeEngine:
             return None
         return self._trend_direction
 
+    @property
+    def direction_hint(self) -> Optional[str]:
+        """Latest 4H direction hint even when regime stays ambiguous."""
+        return self._trend_direction
+
+    @property
+    def last_candle_time(self) -> Optional[pd.Timestamp]:
+        return self._last_candle_time
+
+    @property
+    def last_detected_regime(self) -> Optional[str]:
+        return self._last_detected_regime
+
+    @staticmethod
+    def _extract_candle_time(df_4h: pd.DataFrame) -> Optional[pd.Timestamp]:
+        if isinstance(df_4h.index, pd.DatetimeIndex) and len(df_4h.index) > 0:
+            return df_4h.index[-1]
+        if 'timestamp' in df_4h.columns and len(df_4h['timestamp']) > 0:
+            candle_time = df_4h['timestamp'].iloc[-1]
+            return pd.Timestamp(candle_time) if not pd.isna(candle_time) else None
+        return None
+
     def update(self, df_4h: pd.DataFrame) -> str:
         """每 cycle 呼叫，回傳 'TRENDING' | 'RANGING' | 'SQUEEZE'。
         只在新 K 線收盤時更新 counter。
@@ -38,12 +61,16 @@ class RegimeEngine:
         if df_4h is None or df_4h.empty:
             return self.current_regime
 
-        latest_time = df_4h.index[-1]
+        latest_time = self._extract_candle_time(df_4h)
+        if latest_time is None:
+            return self.current_regime
         if latest_time == self._last_candle_time:
             return self.current_regime
 
         self._last_candle_time = latest_time
+        self._update_direction(df_4h)
         detected = self._detect_regime(df_4h)
+        self._last_detected_regime = detected
 
         if detected is None:
             return self.current_regime
@@ -63,7 +90,6 @@ class RegimeEngine:
                 )
             self.current_regime = self._pending_regime
 
-        self._update_direction(df_4h)
         return self.current_regime
 
     def _detect_regime(self, df: pd.DataFrame) -> Optional[str]:

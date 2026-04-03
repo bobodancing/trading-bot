@@ -121,6 +121,8 @@ class TradingBotV6:
         )
         self.grid_trades: dict = {}
         self._start_time = datetime.now(timezone.utc)
+        self._btc_regime_context: Dict[str, object] = {}
+        self._btc_trend_context: Dict[str, object] = {}
 
     def _init_exchange(self):
         """初始化交易所（沿用 V5.3）"""
@@ -338,29 +340,23 @@ class TradingBotV6:
         symbols = self.load_scanner_results() if Config.USE_SCANNER_SYMBOLS else Config.SYMBOLS
         logger.debug(f"開始掃描 {len(symbols)} 個標的...")  # 降噪
 
+        self._btc_regime_context = {}
+        self._btc_trend_context = {}
+
         # === RegimeEngine routing (only when grid trading enabled) ===
         if Config.ENABLE_GRID_TRADING:
-            btc_df_4h = self.data_provider.fetch_ohlcv("BTC/USDT", Config.REGIME_TIMEFRAME, limit=60)
-            if btc_df_4h is not None and not btc_df_4h.empty:
-                btc_df_4h = TechnicalAnalysis.calculate_indicators(btc_df_4h)
-                btc_df_4h['bbw'] = _bbw(btc_df_4h['close'])
-                adx_data = _adx(btc_df_4h['high'], btc_df_4h['low'], btc_df_4h['close'], length=14)
-                if adx_data is not None:
-                    for col in adx_data.columns:
-                        if col.startswith('DMP') or col.startswith('DMN'):
-                            btc_df_4h[col] = adx_data[col]
-                old_regime = self.regime_engine.current_regime
-                regime = self.regime_engine.update(btc_df_4h)
-                if regime != old_regime:
-                    TelegramNotifier.notify_regime_change(old_regime, regime, Config.REGIME_CONFIRM_CANDLES)
-                if regime == "RANGING":
-                    self._scan_grid_signals()
-                    return  # skip trend scanning
-                elif regime == "SQUEEZE":
-                    if self.grid_engine.state and not self.grid_engine.state.converging:
-                        self.grid_engine.converge()
-                    return  # both sides pause
-                # TRENDING — continue to trend scanning below
+            btc_regime_context = self._update_btc_regime_context()
+            regime = btc_regime_context.get('regime')
+            if regime == "RANGING":
+                self._scan_grid_signals()
+                return  # skip trend scanning
+            elif regime == "SQUEEZE":
+                if self.grid_engine.state and not self.grid_engine.state.converging:
+                    self.grid_engine.converge()
+                return  # both sides pause
+            # TRENDING / ambiguous -> continue to trend scanning below
+        if Config.BTC_TREND_FILTER_ENABLED:
+            self._btc_trend_context = self._resolve_btc_trend_context(log_event=True)
 
         for symbol in symbols:
             try:
@@ -567,19 +563,18 @@ class TradingBotV6:
 
                 # === Risk Guard: BTC Trend Filter ===
                 if Config.BTC_TREND_FILTER_ENABLED and "BTC" not in symbol:
-                    if Config.ENABLE_GRID_TRADING:
-                        btc_trend = self.regime_engine.trend_direction
-                    else:
-                        btc_trend = self._check_btc_trend()
+                    btc_context = self._btc_trend_context or self._resolve_btc_trend_context()
+                    btc_trend = btc_context.get('trend')
                     signal_details['btc_trend'] = btc_trend or "UNKNOWN"
 
                     if btc_trend in ("RANGING", None):
                         # BTC 橫盤或數據失敗 → 完全停止趨勢進場
                         ranging_label = "RANGING" if btc_trend == "RANGING" else "UNKNOWN"
-                        logger.info(
+                        pause_msg = (
                             f"{symbol}: 跳過（BTC {ranging_label}，"
                             f"趨勢策略暫停，等待網格策略接手）"
                         )
+                        logger.info(pause_msg)
                         continue
 
                     elif signal_side != btc_trend:
@@ -768,6 +763,101 @@ class TradingBotV6:
 
     def _check_btc_trend(self) -> Optional[str]:
         """Fetch BTC 1D EMA20/50 trend. Returns 'LONG', 'SHORT', 'RANGING', or None on failure."""
+        return self._get_daily_btc_trend_context().get('trend')  # type: ignore[return-value]
+
+    @staticmethod
+    def _get_last_candle_time(df: pd.DataFrame) -> Optional[pd.Timestamp]:
+        if df is None or df.empty:
+            return None
+        if isinstance(df.index, pd.DatetimeIndex) and len(df.index) > 0:
+            return df.index[-1]
+        if 'timestamp' in df.columns and len(df['timestamp']) > 0:
+            candle_time = df['timestamp'].iloc[-1]
+            return pd.Timestamp(candle_time) if not pd.isna(candle_time) else None
+        return None
+
+    @staticmethod
+    def _format_candle_time(candle_time: Optional[pd.Timestamp]) -> str:
+        if candle_time is None or pd.isna(candle_time):
+            return "n/a"
+        return pd.Timestamp(candle_time).isoformat()
+
+    def _make_btc_context(
+        self,
+        *,
+        source: str,
+        trend: Optional[str] = None,
+        regime: Optional[str] = None,
+        detected: Optional[str] = None,
+        direction: Optional[str] = None,
+        candle_time: Optional[pd.Timestamp] = None,
+        reason: str = "ok",
+    ) -> Dict[str, object]:
+        return {
+            "source": source,
+            "trend": trend,
+            "regime": regime or "UNKNOWN",
+            "detected": detected or "UNKNOWN",
+            "direction": direction or "UNKNOWN",
+            "candle_time": self._format_candle_time(candle_time),
+            "reason": reason,
+        }
+
+    def _update_btc_regime_context(self) -> Dict[str, object]:
+        """Update 4H BTC regime state once per cycle for routing + trend guard."""
+        try:
+            btc_df_4h = self.data_provider.fetch_ohlcv("BTC/USDT", Config.REGIME_TIMEFRAME, limit=60)
+        except Exception as e:
+            context = self._make_btc_context(source="none", reason=f"regime_fetch_failed:{e}")
+            self._btc_regime_context = context
+            logger.warning(
+                "BTC regime context unavailable: "
+                f"source={context['source']} regime={context['regime']} detected={context['detected']} "
+                f"direction={context['direction']} candle={context['candle_time']} reason={context['reason']}"
+            )
+            return context
+
+        candle_time = self._get_last_candle_time(btc_df_4h)
+        if btc_df_4h is None or btc_df_4h.empty:
+            context = self._make_btc_context(
+                source="none",
+                candle_time=candle_time,
+                reason="regime_fetch_empty",
+            )
+            self._btc_regime_context = context
+            logger.warning(
+                "BTC regime context unavailable: "
+                f"source={context['source']} regime={context['regime']} detected={context['detected']} "
+                f"direction={context['direction']} candle={context['candle_time']} reason={context['reason']}"
+            )
+            return context
+
+        btc_df_4h = TechnicalAnalysis.calculate_indicators(btc_df_4h)
+        btc_df_4h['bbw'] = _bbw(btc_df_4h['close'])
+        adx_data = _adx(btc_df_4h['high'], btc_df_4h['low'], btc_df_4h['close'], length=14)
+        if adx_data is not None:
+            for col in adx_data.columns:
+                if col.startswith('DMP') or col.startswith('DMN'):
+                    btc_df_4h[col] = adx_data[col]
+
+        old_regime = self.regime_engine.current_regime
+        regime = self.regime_engine.update(btc_df_4h)
+        if regime != old_regime:
+            TelegramNotifier.notify_regime_change(old_regime, regime, Config.REGIME_CONFIRM_CANDLES)
+
+        context = self._make_btc_context(
+            source="regime",
+            regime=regime,
+            detected=self.regime_engine.last_detected_regime,
+            direction=self.regime_engine.direction_hint,
+            candle_time=self.regime_engine.last_candle_time or candle_time,
+            reason="regime_updated",
+        )
+        self._btc_regime_context = context
+        return context
+
+    def _get_daily_btc_trend_context(self) -> Dict[str, object]:
+        """Resolve BTC trend from the conservative 1D EMA20/50 fallback."""
         try:
             btc_df = self.data_provider.fetch_ohlcv("BTC/USDT", "1d", limit=60)
             if btc_df is not None and len(btc_df) >= 50:
@@ -776,11 +866,86 @@ class TradingBotV6:
                 if btc_ema50 != 0:
                     ema_diff = abs(btc_ema20 - btc_ema50) / btc_ema50
                     if ema_diff < Config.BTC_EMA_RANGING_THRESHOLD:
-                        return "RANGING"
-                return "LONG" if btc_ema20 > btc_ema50 else "SHORT"
+                        trend = "RANGING"
+                    else:
+                        trend = "LONG" if btc_ema20 > btc_ema50 else "SHORT"
+                    return self._make_btc_context(
+                        source="1d_fallback",
+                        trend=trend,
+                        direction=trend if trend in ("LONG", "SHORT") else None,
+                        candle_time=self._get_last_candle_time(btc_df),
+                        reason="daily_ema_fallback",
+                    )
         except Exception as e:
             logger.warning(f"BTC trend check failed: {e}")
-        return None
+            return self._make_btc_context(source="none", reason=f"daily_check_failed:{e}")
+
+        candle_time = self._get_last_candle_time(btc_df) if 'btc_df' in locals() else None
+        data_len = len(btc_df) if 'btc_df' in locals() and btc_df is not None else 0
+        return self._make_btc_context(
+            source="none",
+            candle_time=candle_time,
+            reason=f"insufficient_daily_data:{data_len}",
+        )
+
+    def _resolve_btc_trend_context(self, log_event: bool = False) -> Dict[str, object]:
+        """Resolve BTC trend once per cycle with 4H regime priority and 1D fallback."""
+        if Config.ENABLE_GRID_TRADING:
+            regime_context = self._btc_regime_context or self._make_btc_context(
+                source="none",
+                reason="regime_not_initialized",
+            )
+            regime = regime_context.get('regime')
+            direction = regime_context.get('direction')
+            detected = regime_context.get('detected')
+
+            if regime == "RANGING":
+                context = dict(regime_context)
+                context['trend'] = "RANGING"
+                context['reason'] = "regime_ranging"
+            elif regime == "SQUEEZE":
+                context = dict(regime_context)
+                context['trend'] = None
+                context['reason'] = "regime_squeeze_pause"
+            elif direction in ("LONG", "SHORT"):
+                context = dict(regime_context)
+                context['trend'] = direction
+                if detected == "UNKNOWN":
+                    context['reason'] = "ambiguous_regime_keep_direction"
+                else:
+                    context['reason'] = "regime_direction"
+            else:
+                fallback_context = self._get_daily_btc_trend_context()
+                if fallback_context.get('trend') is not None:
+                    context = fallback_context
+                    context['reason'] = (
+                        f"fallback_after_{regime_context.get('reason', 'regime_unavailable')}"
+                    )
+                else:
+                    context = self._make_btc_context(
+                        source="none",
+                        regime=regime if isinstance(regime, str) else None,
+                        detected=detected if isinstance(detected, str) else None,
+                        direction=direction if isinstance(direction, str) else None,
+                        candle_time=self.regime_engine.last_candle_time,
+                        reason=(
+                            f"regime_unavailable_and_1d_failed:"
+                            f"{regime_context.get('reason', 'unknown')}"
+                        ),
+                    )
+        else:
+            context = self._get_daily_btc_trend_context()
+            if context.get('trend') is not None:
+                context['reason'] = "grid_disabled_daily_ema"
+
+        if log_event:
+            logger.info(
+                "BTC trend resolved: "
+                f"source={context['source']} regime={context['regime']} detected={context['detected']} "
+                f"direction={context['direction']} trend={context.get('trend') or 'UNKNOWN'} "
+                f"candle={context['candle_time']} reason={context['reason']}"
+            )
+        return context
 
     def _refresh_stop_loss(self, pm: PositionManager, new_sl: float):
         """Cancel existing SL order, place new one, update pm.stop_order_id."""

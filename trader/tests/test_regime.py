@@ -101,6 +101,24 @@ class TestHysteresis:
             engine.update(df.iloc[:51])
         assert engine.current_regime == "TRENDING"  # Only 1 real update
 
+    def test_datetime_index_advances_confirmation_counter(self):
+        """Different completed candle times should count even with the same frame length"""
+        engine = RegimeEngine()
+        engine.current_regime = "TRENDING"
+        adx = [15] * 60
+        bbw = [0.08] * 40 + [0.01] * 20
+        atr = [200] * 60
+        df = _make_df(adx, bbw, atr)
+
+        first = df.iloc[:51].copy()
+        second = df.iloc[:51].copy()
+        second.index = second.index + pd.Timedelta(hours=4)
+
+        engine.update(first)
+        engine.update(second)
+
+        assert engine._confirm_count == 2
+
     def test_adx_middle_zone_keeps_previous(self):
         """ADX 20-25 (ambiguous) should keep previous regime"""
         engine = RegimeEngine()
@@ -139,6 +157,23 @@ class TestTrendDirection:
         df['DMN_14'] = [28.0] * 60
         for i in range(3):
             engine.update(df.iloc[:50 + i])
+        assert engine.trend_direction == "SHORT"
+
+    def test_ambiguous_zone_keeps_direction_hint(self):
+        """ADX 20-25 should still update direction for BTC guard fallback avoidance"""
+        engine = RegimeEngine()
+        engine.current_regime = "TRENDING"
+        adx = [22] * 60
+        bbw = [0.04] * 60
+        atr = [200] * 60
+        df = _make_df(adx, bbw, atr)
+        df['DMP_14'] = [12.0] * 60
+        df['DMN_14'] = [28.0] * 60
+
+        for i in range(3):
+            engine.update(df.iloc[:50 + i])
+
+        assert engine.current_regime == "TRENDING"
         assert engine.trend_direction == "SHORT"
 
     def test_ranging_no_direction(self):
