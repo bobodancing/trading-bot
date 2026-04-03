@@ -1961,13 +1961,24 @@ class TradingBotV6:
         # Ensure hedge mode for grid trading
         if Config.ENABLE_GRID_TRADING:
             is_hedge = self.futures_client.get_position_mode()
-            if is_hedge is False:
+            if is_hedge is True:
+                logger.info("Hedge mode already enabled — grid trading ready")
+            elif is_hedge is False:
                 logger.info("Grid trading enabled — switching to hedge mode")
                 if not self.futures_client.set_hedge_mode(True):
-                    logger.error("Failed to set hedge mode — grid trading disabled")
-                    Config.ENABLE_GRID_TRADING = False
-            # Load saved grid state
-            self.grid_engine.load_state()
+                    # Verify: re-query actual state
+                    is_hedge = self.futures_client.get_position_mode()
+                    if is_hedge is not True:
+                        logger.error(
+                            "無法啟用 hedge mode — grid trading 已停用"
+                            "（有持倉時 Binance 不允許切換，需先平倉或手動在交易所啟用）"
+                        )
+                        Config.ENABLE_GRID_TRADING = False
+            else:
+                logger.warning("無法查詢 position mode — grid trading 已停用")
+                Config.ENABLE_GRID_TRADING = False
+            if Config.ENABLE_GRID_TRADING:
+                self.grid_engine.load_state()
 
         logger.info("機器人開始運行...\n")
 

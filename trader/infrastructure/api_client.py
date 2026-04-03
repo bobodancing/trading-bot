@@ -118,9 +118,10 @@ class BinanceFuturesClient:
                 'POST', '/fapi/v1/positionSide/dual',
                 params={'dualSidePosition': str(dual).lower()}
             )
-            if resp is not None:
+            if resp is not None and 'error' not in resp:
                 logger.info(f"Hedge mode set to {dual}")
                 return True
+            logger.warning(f"Hedge mode switch rejected: {resp}")
         except Exception as e:
             logger.error(f"Failed to set hedge mode: {e}")
         return False
