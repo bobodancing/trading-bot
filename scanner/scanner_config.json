@@ -21,9 +21,7 @@
     "L3_MAX_PENETRATION_ATR": 2.0,
     "L3_PRE_2B_THRESHOLD": 0.5,
 
-    "L4_MAX_CORRELATION": 0.7,
     "L4_MAX_PER_SECTOR": 2,
-    "L4_CORRELATION_PERIOD": 30,
 
     "OUTPUT_TOP_N": 10,
     "OUTPUT_JSON_PATH": "hot_symbols.json",

@@ -48,3 +48,21 @@ class PoolManager:
     def get_trend_balance(self, total_balance: float) -> float:
         """趨勢池 = 總餘額 - 網格池分配"""
         return total_balance - self.grid_allocated
+
+    @property
+    def round_count(self) -> int:
+        return self._round_count
+
+    def to_dict(self) -> dict:
+        return {
+            'grid_allocated': self.grid_allocated,
+            'grid_realized_pnl': self.grid_realized_pnl,
+            'round_count': self._round_count,
+        }
+
+    def load_state(self, state: dict):
+        if not state:
+            return
+        self.grid_allocated = float(state.get('grid_allocated', 0.0) or 0.0)
+        self.grid_realized_pnl = float(state.get('grid_realized_pnl', 0.0) or 0.0)
+        self._round_count = int(state.get('round_count', 0) or 0)

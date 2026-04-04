@@ -72,6 +72,7 @@ class TestV53DeadzoneFix:
         df = _make_df_flat(close=120.0, atr=2.0)
         d = pm.monitor(120.0, df)
         assert d['action'] == 'PARTIAL_CLOSE'
+        assert d['reason'] == 'V53_REDUCE_20R'
         assert d['new_sl'] == pytest.approx(115.0)  # entry + 1.5R
 
     def test_trailing_works_after_15r(self):

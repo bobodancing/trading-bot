@@ -273,14 +273,22 @@ class PositionPersistence:
 
 # ==================== Grid State Persistence ====================
 
-def save_grid_state(state_dict: dict, path: str = "grid_positions.json"):
-    """Atomic save of grid state to JSON"""
+def save_grid_state(state_dict: dict, path: str = "grid_positions.json", pool_state: dict | None = None):
+    """Atomic save of grid runtime state to JSON."""
     import json
     from pathlib import Path as FilePath
     tmp_path = path + ".tmp"
     try:
         with open(tmp_path, 'w') as f:
-            json.dump({"schema_version": 1, "grid_state": state_dict}, f, indent=2)
+            json.dump(
+                {
+                    "schema_version": 2,
+                    "grid_state": state_dict or {},
+                    "pool_state": pool_state or {},
+                },
+                f,
+                indent=2,
+            )
         FilePath(tmp_path).replace(path)
         logger.debug(f"Grid state saved to {path}")
     except Exception as e:
@@ -288,12 +296,37 @@ def save_grid_state(state_dict: dict, path: str = "grid_positions.json"):
 
 
 def load_grid_state(path: str = "grid_positions.json") -> dict:
-    """Load grid state from JSON, returns empty dict if not found"""
+    """Load grid runtime state from JSON, returns empty dict if not found."""
     import json
     try:
         with open(path, 'r') as f:
             data = json.load(f)
-        return data.get("grid_state", {})
+        schema_version = data.get("schema_version")
+        if schema_version is None:
+            if "grid_state" in data:
+                return {
+                    "schema_version": 1,
+                    "grid_state": data.get("grid_state", {}) or {},
+                    "pool_state": {},
+                }
+            return {
+                "schema_version": 1,
+                "grid_state": data or {},
+                "pool_state": {},
+            }
+
+        if schema_version == 1:
+            return {
+                "schema_version": 1,
+                "grid_state": data.get("grid_state", {}) or {},
+                "pool_state": {},
+            }
+
+        return {
+            "schema_version": schema_version,
+            "grid_state": data.get("grid_state", {}) or {},
+            "pool_state": data.get("pool_state", {}) or {},
+        }
     except FileNotFoundError:
         return {}
     except Exception as e:

@@ -4,7 +4,7 @@ V54 NoScale 策略
 基於 V53 SOP，核心差異：
 - 不加倉、不減倉（進場多少出場多少）
 - 1.0R → breakeven 保護（+0.1R buffer）
-- 1.5R / 2.5R → SL 移損鎖利（無 partial close）
+- 1.5R / 2.0R → SL 移損鎖利（無 partial close）
 - Structure break / stage1_timeout / ATR trailing 出場
 """
 
@@ -60,7 +60,7 @@ class V54NoScaleStrategy(TradingStrategy):
         1. 共同前處理（SL hit / Early Stop）
         2. 結構破壞（冷卻 3 cycle，連續 2 根 1H close 確認）
         3. 時間退出（STAGE1_MAX_HOURS 且未達 1.5R）
-        4. 2.5R SL 鎖利（移損至 +1.5R）
+        4. 2.0R SL 鎖利（移損至 +1.5R）
         5. 1.5R SL 鎖利（移損至 +1.0R）
         6. 1.0R breakeven（移損至 +0.1R）
         7. ATR trailing
@@ -119,7 +119,7 @@ class V54NoScaleStrategy(TradingStrategy):
             pm.exit_reason = 'stage1_timeout'
             return {**result, "action": Action.CLOSE, "reason": "TIME_EXIT"}
 
-        # === 2.5R SL 鎖利（移損至 +1.5R）===
+        # === 2.0R SL 鎖利（移損至 +1.5R）===
         if not self.is_25r_locked and current_r >= 2.0:
             self.is_25r_locked = True
             self.is_15r_locked = True
@@ -130,7 +130,7 @@ class V54NoScaleStrategy(TradingStrategy):
             else:
                 new_sl = pm.avg_entry - (r_unit * 1.5)
             pm.current_sl = new_sl
-            result = {**result, "reason": "V54_LOCK_25R", "new_sl": new_sl}
+            result = {**result, "reason": "V54_LOCK_20R", "new_sl": new_sl}
 
         # === 1.5R SL 鎖利（移損至 +1.0R）===
         elif not self.is_15r_locked and current_r >= 1.5:

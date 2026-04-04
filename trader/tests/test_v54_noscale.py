@@ -105,6 +105,7 @@ class TestV54SLLocking:
         pm = _make_pm(side='LONG', entry=100, sl=90)
         df = _make_df(close=120.0, atr=20.0)
         d = pm.monitor(120.0, df)
+        assert d['reason'] == 'V54_LOCK_20R'
         assert d['new_sl'] == pytest.approx(115.0)  # 100 + 10*1.5
         assert d['action'] != 'PARTIAL_CLOSE'
 
@@ -113,6 +114,7 @@ class TestV54SLLocking:
         pm = _make_pm(side='SHORT', entry=100, sl=110)
         df = _make_df(close=80.0, atr=20.0)
         d = pm.monitor(80.0, df)
+        assert d['reason'] == 'V54_LOCK_20R'
         assert d['new_sl'] == pytest.approx(85.0)  # 100 - 10*1.5
         assert d['action'] != 'PARTIAL_CLOSE'
 

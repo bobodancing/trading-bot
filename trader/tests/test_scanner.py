@@ -177,6 +177,25 @@ class TestLayer2:
         # 不 assert 具體數量（取決於 synthetic data），只確認不 crash
         assert isinstance(result, list)
 
+    def test_layer2_ignores_unfinished_last_candle(self, mock_scanner):
+        btc_df = pd.DataFrame([
+            {'close': 100.0, 'volume': 200.0, 'vol_ma': 100.0, 'adx': 25.0, 'rsi': 55.0, 'atr_percent': 3.0, 'ema_50': 95.0}
+            for _ in range(60)
+        ])
+        symbol_df = pd.DataFrame([
+            {'close': 100.0, 'volume': 200.0, 'vol_ma': 100.0, 'adx': 25.0, 'rsi': 55.0, 'atr_percent': 3.0, 'ema_50': 95.0}
+            for _ in range(59)
+        ] + [
+            {'close': 100.0, 'volume': 50.0, 'vol_ma': 100.0, 'adx': 10.0, 'rsi': 90.0, 'atr_percent': 0.5, 'ema_50': 100.0}
+        ])
+
+        mock_scanner.calculate_indicators = lambda df: df
+        mock_scanner._data_provider.fetch_ohlcv.side_effect = [btc_df, symbol_df]
+
+        result = mock_scanner.layer2_momentum_filter(['ETH/USDT'])
+
+        assert len(result) == 1
+
     def test_insufficient_data_skipped(self, mock_scanner):
         """< 50 根 → 跳過不 crash"""
         df = make_ohlcv(rows=10)

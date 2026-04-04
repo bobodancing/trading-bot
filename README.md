@@ -2,7 +2,7 @@
 
 基於 Swing Point 結構分析的加密貨幣期貨交易平台，支援策略拔插（Plugin Architecture）。
 
-> 最後更新：2026-03-31 | 405 tests passed
+> 最後更新：2026-04-04 | 449 tests passed
 
 ## 目錄
 
@@ -29,16 +29,17 @@
 | 策略 | 適用市況 | 進場信號 | 持倉管理 |
 |------|---------|----------|----------|
 | **V7 Structure** | TRENDING | 2B Swing Pivot Breakout | 三段結構加倉（Swing-based SL 棘輪）+ 反向 2B + 超時退出 |
-| **V53 SOP** | TRENDING | EMA Pullback / Volume Breakout | 1.0R / 1.5R / 2.0R 分批減倉 |
-| **V8 ATR Grid** | RANGING | RegimeEngine 自動切換 | SMA±k*ATR 虛擬網格，金字塔權重，converge 退出（`ENABLE_GRID_TRADING=False`）|
+| **V54 NoScale** | TRENDING | 2B / EMA Pullback / Volume Breakout | 不加倉不減倉，1.0R/1.5R/2.0R 純移損 + ATR trailing |
+| **V53 SOP** | TRENDING | EMA Pullback / Volume Breakout | 1.0R / 1.5R / 2.0R 分批減倉（新進場停用） |
+| **V8 ATR Grid** | RANGING | RegimeEngine 自動切換 | SMA±k*ATR 虛擬網格，金字塔權重，regime exit 立即全平（`ENABLE_GRID_TRADING=False`）|
 | ~~V6 Pyramid~~ | — | ~~2B~~ | ~~deprecated，既有倉位仍可運行~~ |
 
 **市場 Regime 路由**（`ENABLE_GRID_TRADING=True` 時）：
 
 ```
 RANGING  → V8 ATR Grid（BTC/USDT 專用）
-TRENDING → V53 SOP + V7 Structure
-SQUEEZE  → 全暫停（Grid converge）
+TRENDING → Grid 立即全平 → V54 NoScale + V7 Structure 接手
+SQUEEZE  → Grid converge + 趨勢暫停
 ```
 
 **新增策略**只需：寫 class → `StrategyFactory.register()` → config 映射，不動 bot.py。
@@ -67,7 +68,8 @@ trading_bot/
 │   ├── strategies/              # 策略插件層（Registry Pattern）
 │   │   ├── base.py              # Action enum + DecisionDict + TradingStrategy ABC + StrategyFactory
 │   │   ├── v7_structure.py      # V7 結構加倉（Swing-based 三段加倉 + 反向 2B + 超時）
-│   │   ├── v53_sop.py           # V5.3 SOP 出場（1.0R/1.5R/2.0R 減倉）
+│   │   ├── v54_noscale.py        # V54 NoScale（1.0R/1.5R/2.0R 純移損，主力策略）
+│   │   ├── v53_sop.py           # V5.3 SOP 出場（1.0R/1.5R/2.0R 減倉，新進場停用）
 │   │   ├── v6_pyramid.py        # [deprecated] V6 滾倉（既有倉位保留）
 │   │   └── v8_grid/             # V8 ATR Grid 策略插件
 │   │       ├── __init__.py      # 統一 export（V8AtrGrid, GridState, GridAction, PoolManager）
@@ -91,7 +93,7 @@ trading_bot/
 │   ├── execution/
 │   │   └── order_engine.py      # OrderExecutionEngine（下單 / 止損 / 平倉）
 │   │
-│   └── tests/                   # 405 tests
+│   └── tests/                   # 449 tests
 │       ├── conftest.py
 │       ├── test_integration.py  # StatefulMockEngine + FaultInjector
 │       ├── test_regime.py       # RegimeEngine 三態偵測
@@ -101,7 +103,7 @@ trading_bot/
 │       └── test_*.py            # 34+ test modules
 │
 ├── scanner/                     # Market Scanner（獨立服務）
-│   └── market_scanner.py        # 四層掃描（流動性 → 動能 → 形態 → 相關性）
+│   └── market_scanner.py        # 四層掃描（流動性 → 動能 → 形態 → 板塊集中度）
 │
 └── .log/                        # Runtime 日誌（自動建立）
     ├── v6_bot.log
@@ -176,8 +178,9 @@ Bot 啟動
  ├─ _restore_positions()         恢復 positions.json
  ├─ _adopt_ghost_positions()     接管交易所孤立倉位
  └─ 主循環（每 60 秒）
-     ├─ scan_for_signals()           信號掃描 → 開倉
-     ├─ _sync_exchange_positions()   四重倉位同步
+     ├─ scan_for_signals()           信號掃描 → 開倉（含 Regime 路由）
+     ├─ _monitor_grid_state()        Grid 獨立 lifecycle（每 cycle 執行）
+     ├─ _sync_exchange_positions()   hedge-aware 倉位同步
      ├─ monitor_positions()          監控 → 加倉/減倉/平倉
      └─ sleep(CHECK_INTERVAL)
 ```
@@ -286,8 +289,9 @@ SIGNAL_STRATEGY_MAP = {
 
 **Regime 路由**：
 - `RANGING` → Grid 啟動，掃 BTC 1H tick
-- `TRENDING` → Grid converge（72h timeout → force_close），V53/V7 接手
+- `TRENDING` → Grid 同 cycle 立即全平（force_close_all），V54/V7 接手
 - `SQUEEZE` → Grid converge，趨勢暫停，等突破
+- Grid lifecycle 由 `_monitor_grid_state()` 獨立驅動，不受 trend 倉位影響
 
 **關鍵參數**：
 
@@ -328,7 +332,7 @@ SIGNAL_STRATEGY_MAP = {
 | 1 | 流動性過濾 | 24H 量 ≥ $30M |
 | 2 | 動能篩選 | ADX ≥ 20，RSI 40~70，ATR% 1.5~15 |
 | 3 | 形態匹配 | Swing Pivot + 量能確認 |
-| 4 | 相關性過濾 | 同板塊 ≤ 2，相關性 < 0.7 |
+| 4 | 板塊集中度 | 同板塊 ≤ 2 |
 
 輸出 `hot_symbols.json`，Bot 啟動時讀取。Scanner 永遠連接 Binance 正式網取得真實數據。
 
@@ -395,9 +399,9 @@ JSON key 自動映射大寫（`risk_per_trade` → `RISK_PER_TRADE`）。
 
 ```python
 SIGNAL_STRATEGY_MAP = {
-    "2B": "v7_structure",       # 結構加倉
-    "EMA_PULLBACK": "v53_sop",  # 分批減倉
-    "VOLUME_BREAKOUT": "v53_sop",
+    "2B": "v54_noscale",          # 純移損（主力）
+    "EMA_PULLBACK": "v54_noscale",
+    "VOLUME_BREAKOUT": "v54_noscale",
 }
 ```
 
@@ -416,17 +420,20 @@ SIGNAL_STRATEGY_MAP = {
 ### 啟動恢復
 
 1. `_restore_positions()` — 從 `positions.json` 恢復 PositionManager + Strategy state
-2. `_adopt_ghost_positions()` — 接管交易所未追蹤的倉位
-3. 主循環 `_sync_exchange_positions()` — 四重防護 reconciliation
+2. `_restore_grid_runtime_state()` — 從 `grid_positions.json` 恢復 GridState + PoolManager（schema v2，含 pool snapshot）
+3. `_adopt_ghost_positions()` — 接管交易所未追蹤的倉位
+4. 主循環 `_sync_exchange_positions()` — hedge-aware reconciliation
 
-### 四重同步防護
+### Hedge-Aware 倉位同步
+
+exchange map 使用 `(symbol, positionSide)` tuple key，支援 hedge mode 雙邊倉。internal map 同時包含 trend `active_trades` 與 grid `active_positions`。
 
 | # | 觸發 | 行為 |
 |---|------|------|
 | 1 | API 錯誤 | 跳過同步（防誤殺） |
 | 2 | bot 有、exchange 無 | hard_stop_hit → 平倉 |
 | 3 | size 差 > 5% | 告警 SIZE_MISMATCH |
-| 4 | exchange 有、bot 無 | 告警 GHOST_POSITION |
+| 4 | exchange 有、bot 無 | 告警 GHOST_POSITION（排除已追蹤的 grid 倉位） |
 
 ### 平倉失敗保護
 
@@ -436,7 +443,7 @@ SIGNAL_STRATEGY_MAP = {
 
 ## 測試
 
-405 個 pytest，全部通過。
+449 個 pytest，全部通過。
 
 ```bash
 python3 -m pytest trader/tests/ -v
@@ -462,7 +469,8 @@ python3 -m pytest trader/tests/test_regime.py trader/tests/test_grid.py -v  # V8
 | `test_regime.py` | 10 | RegimeEngine 三態偵測 + BBW ratio fallback |
 | `test_grid.py` | — | V8AtrGrid tick / activate / converge / sizing |
 | `test_pool_manager.py` | 9 | PoolManager 資金池 |
-| `test_grid_integration.py` | 8 | Regime→Grid 聯動 + persistence |
+| `test_grid_integration.py` | 8 | Regime→Grid 聯動 + persistence + schema v1 compat |
+| `test_grid_runtime_controls.py` | — | Grid lifecycle / partial failure retry / exchange flat check |
 | 其他 16 個模組 | 177 | 各子系統 |
 
 ---
@@ -476,7 +484,7 @@ python3 -m pytest trader/tests/test_regime.py trader/tests/test_grid.py -v  # V8
 | 指標 | pandas-ta（EMA / ATR / ADX / RSI） |
 | 數據 | pandas + numpy |
 | 通知 | Telegram Bot API |
-| 測試 | pytest（405 tests） |
+| 測試 | pytest（449 tests） |
 | 持久化 | JSON (atomic write) + SQLite (performance + scanner) |
 
 ---

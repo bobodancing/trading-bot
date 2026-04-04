@@ -77,10 +77,8 @@ class ScannerConfig:
     L3_MAX_PENETRATION_ATR = 2.0
     L3_PRE_2B_THRESHOLD = 0.5  # 距離前高/低 0.5 ATR 內視為「潛在 2B」
     
-    # Layer 4: 相關性過濾
-    L4_MAX_CORRELATION = 0.7
+    # Layer 4: sector concentration filter
     L4_MAX_PER_SECTOR = 2
-    L4_CORRELATION_PERIOD = 30  # 計算相關性的天數
     
     # 輸出設置（專案根目錄）
     _PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
@@ -408,6 +406,14 @@ class MarketScanner:
         df['atr_percent'] = (df['atr'] / df['close']) * 100
         
         return df
+
+    @staticmethod
+    def _drop_unfinished_candle(df: pd.DataFrame) -> pd.DataFrame:
+        if df is None or df.empty:
+            return df
+        if len(df) > 1:
+            return df.iloc[:-1].copy()
+        return df.copy()
     
     # ==================== Layer 1: 流動性過濾 ====================
     def layer1_liquidity_filter(self) -> List[str]:
@@ -505,6 +511,7 @@ class MarketScanner:
         self.btc_data = self.fetch_ohlcv('BTC/USDT', ScannerConfig.TIMEFRAME_SCAN, limit=100)
         if not self.btc_data.empty:
             self.btc_data = self.calculate_indicators(self.btc_data)
+            self.btc_data = self._drop_unfinished_candle(self.btc_data)
         
         passed = []
         total = len(symbols)
@@ -520,6 +527,9 @@ class MarketScanner:
                         continue
                     
                     df = self.calculate_indicators(df)
+                    df = self._drop_unfinished_candle(df)
+                    if df.empty or len(df) < 50:
+                        continue
                     latest = df.iloc[-1]
                     
                     conditions_met = 0
@@ -688,6 +698,7 @@ class MarketScanner:
 
     def _detect_2b_signal(self, df: pd.DataFrame, symbol: str, indicators: Dict) -> Optional[ScanResult]:
         """檢測 2B 信號"""
+        df = self._drop_unfinished_candle(df)
         if len(df) < 30:
             return None
         
@@ -808,6 +819,9 @@ class MarketScanner:
                 return False
             
             df_4h = self.calculate_indicators(df_4h)
+            df_4h = self._drop_unfinished_candle(df_4h)
+            if df_4h.empty:
+                return False
             latest = df_4h.iloc[-1]
             
             ema_20 = latest.get('ema_20', 0)
@@ -887,7 +901,7 @@ class MarketScanner:
         return round(score, 1)
     
     # ==================== Layer 4: 相關性過濾 ====================
-    def layer4_correlation_filter(self, results: List[ScanResult]) -> List[ScanResult]:
+    def layer4_sector_concentration_filter(self, results: List[ScanResult]) -> List[ScanResult]:
         """Layer 4: 相關性過濾"""
         logger.info("\n" + "="*60)
         logger.info("🔗 Layer 4: 相關性過濾")
@@ -922,6 +936,10 @@ class MarketScanner:
         
         logger.info(f"✅ Layer 4 通過: {len(filtered_results)} 個標的")
         return filtered_results
+
+    def layer4_correlation_filter(self, results: List[ScanResult]) -> List[ScanResult]:
+        """Backward-compatible alias for the old Layer 4 name."""
+        return self.layer4_sector_concentration_filter(results)
     
     # ==================== 主掃描流程 ====================
     def scan(self) -> Tuple[List[ScanResult], MarketSummary]:
@@ -938,7 +956,7 @@ class MarketScanner:
         l1_symbols = self.layer1_liquidity_filter()
         l2_candidates = self.layer2_momentum_filter(l1_symbols)
         l3_results = self.layer3_pattern_matching(l2_candidates)
-        final_results = self.layer4_correlation_filter(l3_results)
+        final_results = self.layer4_sector_concentration_filter(l3_results)
         
         self.results = final_results
         
@@ -985,7 +1003,7 @@ class MarketScanner:
         
         btc_trend = 'UNKNOWN'
         if self.btc_data is not None and not self.btc_data.empty:
-            latest = self.btc_data.iloc[-1]
+            latest = self._drop_unfinished_candle(self.btc_data).iloc[-1]
             ema_50 = latest.get('ema_50', 0)
             if pd.notna(ema_50) and ema_50 > 0:
                 btc_trend = 'BULLISH' if latest['close'] > ema_50 else 'BEARISH'

@@ -88,13 +88,46 @@ class TestGridStateRoundtrip:
             level_weights={1: 0.5, 2: 0.8, 3: 1.0, 4: 1.3, 5: 1.5},
         )
         path = str(tmp_path / "grid_test.json")
-        save_grid_state(state.to_dict(), path=path)
+        pool = PoolManager()
+        pool.activate_grid_pool(10000.0)
+        pool.grid_realized_pnl = 125.0
+
+        save_grid_state(state.to_dict(), path=path, pool_state=pool.to_dict())
         loaded = load_grid_state(path=path)
-        restored = GridState.from_dict(loaded)
+        restored = GridState.from_dict(loaded["grid_state"])
 
         assert restored.center == 87000
         assert len(restored.active_positions) == 1
         assert restored.level_weights[2] == 0.8
+        assert loaded["schema_version"] == 2
+        assert loaded["pool_state"]["grid_allocated"] == pool.grid_allocated
+
+    def test_load_schema_v1(self, tmp_path):
+        import json
+        from trader.persistence import load_grid_state
+
+        legacy = {
+            "schema_version": 1,
+            "grid_state": {
+                "center": 87000,
+                "upper": 88000,
+                "lower": 86000,
+                "grid_levels": 5,
+                "grid_spacing": 200,
+                "grid_balance": 3000,
+                "active_positions": [],
+                "level_weights": {"1": 0.5},
+            },
+        }
+        path = tmp_path / "grid_v1.json"
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(legacy, f)
+
+        loaded = load_grid_state(path=str(path))
+
+        assert loaded["schema_version"] == 1
+        assert loaded["pool_state"] == {}
+        assert loaded["grid_state"]["center"] == 87000
 
 
 class TestBotMainLoopGrid:

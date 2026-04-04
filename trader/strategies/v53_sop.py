@@ -4,7 +4,7 @@ V7 P2: V5.3 SOP 策略實作
 邏輯完整搬移自 positions.py _get_exit_decision() V5.3 路徑：
 - 結構破壞（冷卻 3 cycle）
 - 時間退出（TIME_EXIT）
-- 2.5R 減倉（PARTIAL_CLOSE close_pct）
+- 2.0R 減倉（PARTIAL_CLOSE close_pct）
 - 1.5R 減倉（PARTIAL_CLOSE close_pct）
 - 1.0R 移損（V53_1R_PROTECT）
 - ATR trailing
@@ -65,7 +65,7 @@ class V53SopStrategy(TradingStrategy):
         1. 共同前處理（SL hit / Early Stop）
         2. 結構破壞（冷卻 3 cycle，連續 2 根 1H close 確認）
         3. 時間退出（STAGE1_MAX_HOURS 且未觸發 first partial）
-        4. 2.5R 減倉
+        4. 2.0R 減倉
         5. 1.5R 減倉
         6. 1.0R 移損
         7. ATR trailing 移損
@@ -124,7 +124,7 @@ class V53SopStrategy(TradingStrategy):
             pm.exit_reason = 'stage1_timeout'
             return {**result, "action": Action.CLOSE, "reason": "TIME_EXIT"}
 
-        # === 2.5R 減倉 ===
+        # === 2.0R 減倉 ===
         if not self.is_second_partial and current_r >= 2.0:
             self.is_second_partial = True
             self.is_first_partial = True
@@ -138,7 +138,7 @@ class V53SopStrategy(TradingStrategy):
             return {
                 **result,
                 "action": Action.PARTIAL_CLOSE,
-                "reason": "V53_REDUCE_25R",
+                "reason": "V53_REDUCE_20R",
                 "new_sl": new_sl,
                 "close_pct": Cfg.SECOND_PARTIAL_PCT / 100.0,
             }

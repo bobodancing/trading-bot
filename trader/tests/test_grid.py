@@ -42,6 +42,21 @@ def _make_4h_df(center=87000, n=60):
     )
 
 
+def _make_flat_4h_df(close_value, n=60):
+    dates = pd.date_range('2026-01-01', periods=n, freq='4h')
+    close = [close_value] * n
+    return pd.DataFrame(
+        {
+            'open': close,
+            'high': [c + 100 for c in close],
+            'low': [c - 100 for c in close],
+            'close': close,
+            'volume': [500] * n,
+        },
+        index=dates,
+    )
+
+
 class TestGridConstruction:
     def test_activate_creates_state(self):
         grid = V8AtrGrid(api_client=None, notifier=None)
@@ -169,7 +184,12 @@ class TestGridReset:
         ]
         drift = grid.state.grid_spacing * 0.6
         shifted_close = [grid.state.center + drift] * 50
-        actions = grid.tick(grid.state.center + drift, _make_1h_df(shifted_close))
+        reset_df_4h = _make_flat_4h_df(grid.state.center + drift)
+        actions = grid.tick(
+            grid.state.center + drift,
+            _make_1h_df(shifted_close),
+            df_4h=reset_df_4h,
+        )
         assert any(a.type == 'CLOSE' for a in actions)
 
     def test_reset_rebuilds_after_close_confirm(self):
@@ -182,8 +202,13 @@ class TestGridReset:
         old_center = grid.state.center
         drift = grid.state.grid_spacing * 0.6
         shifted_price = old_center + drift
+        reset_df_4h = _make_flat_4h_df(shifted_price)
 
-        actions = grid.tick(shifted_price, _make_1h_df([shifted_price] * 50))
+        actions = grid.tick(
+            shifted_price,
+            _make_1h_df([shifted_price] * 50),
+            df_4h=reset_df_4h,
+        )
         closes = [action for action in actions if action.type == 'CLOSE']
 
         assert len(closes) == 1

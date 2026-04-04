@@ -17,7 +17,7 @@ import logging
 import logging.handlers
 from pathlib import Path
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 # 確保從專案根目錄 import v6 package
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -348,12 +348,15 @@ class TradingBotV6:
             btc_regime_context = self._update_btc_regime_context()
             regime = btc_regime_context.get('regime')
             if regime == "RANGING":
-                self._scan_grid_signals()
                 return  # skip trend scanning
             elif regime == "SQUEEZE":
                 if self.grid_engine.state and not self.grid_engine.state.converging:
-                    self.grid_engine.converge()
+                    self.grid_engine.converge(market_ts=self._get_regime_market_ts())
                 return  # both sides pause
+            elif regime == "TRENDING" and self.grid_engine.state:
+                if not self.grid_engine.state.converging:
+                    self.grid_engine.converge(market_ts=self._get_regime_market_ts())
+                return  # same cycle handles grid exit before any trend scan
             # TRENDING / ambiguous -> continue to trend scanning below
         if Config.BTC_TREND_FILTER_ENABLED:
             self._btc_trend_context = self._resolve_btc_trend_context(log_event=True)
@@ -633,13 +636,14 @@ class TradingBotV6:
             if elapsed < Config.GRID_COOLDOWN_HOURS * 3600:
                 return
 
+        btc_df_4h = self.data_provider.fetch_ohlcv("BTC/USDT", "4h", limit=60)
+        if btc_df_4h is None or btc_df_4h.empty:
+            return
+
         # Activate if needed
         if not self.grid_engine.state:
             balance = self.risk_manager.get_balance()
             if not self.pool_manager.activate_grid_pool(balance):
-                return
-            btc_df_4h = self.data_provider.fetch_ohlcv("BTC/USDT", "4h", limit=60)
-            if btc_df_4h is None or btc_df_4h.empty:
                 return
             grid_balance = self.pool_manager.get_grid_balance()
             self.grid_engine.activate(btc_df_4h, grid_balance)
@@ -660,10 +664,72 @@ class TradingBotV6:
         if btc_df_1h is None or btc_df_1h.empty:
             return
 
-        actions = self.grid_engine.tick(current_price, btc_df_1h)
+        market_ts = self._get_last_closed_candle_time(btc_df_1h)
+        if market_ts is None:
+            market_ts = self._get_last_closed_candle_time(btc_df_4h)
+
+        actions = self.grid_engine.tick(
+            current_price,
+            btc_df_1h,
+            df_4h=btc_df_4h,
+            market_ts=market_ts,
+        )
         for action in actions:
             self._execute_grid_action(action, current_price)
-        self.grid_engine.save_state()
+        self.grid_engine.save_state(self.pool_manager.to_dict())
+
+    def _monitor_grid_state(self):
+        """Drive grid lifecycle every cycle, even when no trend positions exist."""
+        if not Config.ENABLE_GRID_TRADING:
+            return
+
+        regime = str((self._btc_regime_context or {}).get('regime') or self.regime_engine.current_regime)
+
+        if not self.grid_engine.state:
+            if regime == "RANGING":
+                self._scan_grid_signals()
+            return
+
+        if self.grid_engine.state.converging:
+            if not self.grid_engine.state.active_positions:
+                self._finalize_grid_shutdown_if_flat()
+                return
+
+            ticker = self.fetch_ticker("BTC/USDT")
+            if not ticker:
+                self.grid_engine.save_state(self.pool_manager.to_dict())
+                return
+
+            current_price = ticker['last']
+            for action in self.grid_engine.force_close_all("regime_exit"):
+                self._execute_grid_action(action, current_price)
+
+            if self.grid_engine.state and not self.grid_engine.state.active_positions:
+                self._finalize_grid_shutdown_if_flat()
+            else:
+                self.grid_engine.save_state(self.pool_manager.to_dict())
+            return
+
+        if regime != "RANGING":
+            self.grid_engine.converge(market_ts=self._get_regime_market_ts())
+            TelegramNotifier.notify_grid_stopped("converge", f"→ {regime}")
+
+            ticker = self.fetch_ticker("BTC/USDT")
+            if not ticker:
+                self.grid_engine.save_state(self.pool_manager.to_dict())
+                return
+
+            current_price = ticker['last']
+            for action in self.grid_engine.force_close_all("regime_exit"):
+                self._execute_grid_action(action, current_price)
+
+            if self.grid_engine.state and not self.grid_engine.state.active_positions:
+                self._finalize_grid_shutdown_if_flat()
+            else:
+                self.grid_engine.save_state(self.pool_manager.to_dict())
+            return
+
+        self._scan_grid_signals()
 
     def _execute_grid_action(self, action, current_price: float):
         """執行網格動作（開倉/平倉）"""
@@ -758,7 +824,7 @@ class TradingBotV6:
             "tier_score": None,
             "strategy_name": "v8_atr_grid",
             "grid_level": action.level,
-            "grid_round": self.pool_manager._round_count,
+            "grid_round": self.pool_manager.round_count,
         })
 
     def _check_btc_trend(self) -> Optional[str]:
@@ -775,6 +841,136 @@ class TradingBotV6:
             candle_time = df['timestamp'].iloc[-1]
             return pd.Timestamp(candle_time) if not pd.isna(candle_time) else None
         return None
+
+    @staticmethod
+    def _get_last_closed_candle_time(df: pd.DataFrame) -> Optional[pd.Timestamp]:
+        if df is None or df.empty:
+            return None
+        closed_df = df.iloc[:-1] if len(df) > 1 else df
+        if closed_df.empty:
+            return TradingBotV6._get_last_candle_time(df)
+        return TradingBotV6._get_last_candle_time(closed_df)
+
+    def _get_regime_market_ts(self) -> Optional[pd.Timestamp]:
+        candle_time = (self._btc_regime_context or {}).get('candle_time')
+        if isinstance(candle_time, str) and candle_time and candle_time != "n/a":
+            return pd.Timestamp(candle_time)
+        if self.regime_engine.last_candle_time is not None:
+            return pd.Timestamp(self.regime_engine.last_candle_time)
+        return None
+
+    @staticmethod
+    def _symbol_to_exchange_id(symbol: str) -> str:
+        return symbol.replace('/', '').split(':')[0]
+
+    @staticmethod
+    def _exchange_id_to_symbol(symbol_id: str) -> str:
+        if symbol_id.endswith('USDT'):
+            return f"{symbol_id[:-4]}/USDT"
+        return symbol_id
+
+    @staticmethod
+    def _extract_position_size(position: dict) -> float:
+        raw_value = position.get('positionAmt', position.get('contracts', 0))
+        try:
+            return abs(float(raw_value or 0))
+        except (TypeError, ValueError):
+            return 0.0
+
+    @staticmethod
+    def _normalize_position_side(position: dict) -> Optional[str]:
+        raw_side = (
+            position.get('positionSide')
+            or position.get('info', {}).get('positionSide')
+            or position.get('side')
+            or position.get('info', {}).get('side')
+        )
+        if isinstance(raw_side, str):
+            normalized = raw_side.upper()
+            if normalized in ('LONG', 'SHORT'):
+                return normalized
+
+        raw_amt = position.get('positionAmt', position.get('contracts', 0))
+        try:
+            amount = float(raw_amt or 0)
+        except (TypeError, ValueError):
+            amount = 0.0
+        if amount > 0:
+            return 'LONG'
+        if amount < 0:
+            return 'SHORT'
+        return None
+
+    def _build_exchange_position_map(self, exchange_positions: Optional[list]) -> Dict[Tuple[str, str], float]:
+        exchange_map: Dict[Tuple[str, str], float] = {}
+        for position in exchange_positions or []:
+            symbol_id = position.get('symbol', '') or position.get('info', {}).get('symbol', '')
+            side = self._normalize_position_side(position)
+            size = self._extract_position_size(position)
+            if not symbol_id or side is None or size <= 0:
+                continue
+            key = (symbol_id, side)
+            exchange_map[key] = exchange_map.get(key, 0.0) + size
+        return exchange_map
+
+    def _build_internal_position_map(self) -> Dict[Tuple[str, str], float]:
+        internal_map: Dict[Tuple[str, str], float] = {}
+
+        for symbol, pm in self.active_trades.items():
+            if pm.is_closed:
+                continue
+            key = (self._symbol_to_exchange_id(symbol), pm.side)
+            internal_map[key] = internal_map.get(key, 0.0) + pm.total_size
+
+        if self.grid_engine.state:
+            for position in self.grid_engine.state.active_positions:
+                key = ('BTCUSDT', position['side'])
+                internal_map[key] = internal_map.get(key, 0.0) + float(position['size'])
+
+        return internal_map
+
+    def _is_grid_exchange_flat(self) -> bool:
+        if Config.V6_DRY_RUN:
+            return True
+        exchange_positions = self.risk_manager.get_positions()
+        if exchange_positions is None:
+            return False
+        exchange_map = self._build_exchange_position_map(exchange_positions)
+        long_amt = exchange_map.get(('BTCUSDT', 'LONG'), 0.0)
+        short_amt = exchange_map.get(('BTCUSDT', 'SHORT'), 0.0)
+        return long_amt <= 0 and short_amt <= 0
+
+    def _finalize_grid_shutdown_if_flat(self):
+        if not self.grid_engine.state:
+            return
+        if not self._is_grid_exchange_flat():
+            logger.info("Grid exit pending: internal state flat but exchange still shows BTC grid exposure")
+            self.grid_engine.save_state(self.pool_manager.to_dict())
+            return
+
+        logger.info("Grid converge complete -> deactivating")
+        self.pool_manager.deactivate_grid_pool()
+        self.grid_engine.deactivate()
+        self.grid_engine.save_state(self.pool_manager.to_dict())
+
+    def _restore_grid_runtime_state(self):
+        payload = self.grid_engine.load_state() or {}
+        if not self.grid_engine.state:
+            return
+
+        pool_state = payload.get('pool_state', {}) if payload else {}
+        if pool_state:
+            self.pool_manager.load_state(pool_state)
+            return
+
+        # Legacy v1 files only persisted grid_state; keep runtime balance semantics aligned.
+        self.pool_manager.load_state(
+            {
+                'grid_allocated': self.grid_engine.state.grid_balance,
+                'grid_realized_pnl': 0.0,
+                'round_count': max(1, self.pool_manager.round_count),
+            }
+        )
 
     @staticmethod
     def _format_candle_time(candle_time: Optional[pd.Timestamp]) -> str:
@@ -1302,7 +1498,7 @@ class TradingBotV6:
                     close_pct = decision.get('close_pct', 0.3)
                     pct_int = round(close_pct * 100)
                     reason = decision.get('reason', 'PARTIAL_CLOSE')
-                    label = "2.5R" if "25R" in reason else "1.5R"
+                    label = "2.0R" if "20R" in reason or "25R" in reason else "1.5R"
                     self._handle_v53_reduce(pm, pct_int, label, current_price)
                     state_changed = True
 
@@ -1413,31 +1609,6 @@ class TradingBotV6:
             'unrealized_pnl': f'{cycle_unrealized_pnl:.2f}',
             'net_pnl_pct': f'{net_pnl_pct:+.2f}',
         })
-
-        # === Grid monitoring ===
-        if Config.ENABLE_GRID_TRADING and self.grid_engine.state:
-            regime = self.regime_engine.current_regime
-            if regime != "RANGING" and not self.grid_engine.state.converging:
-                self.grid_engine.converge()
-                TelegramNotifier.notify_grid_stopped("converge", f"→ {regime}")
-
-            ticker = self.fetch_ticker("BTC/USDT")
-            if ticker:
-                current_price = ticker['last']
-                btc_df_1h = self.data_provider.fetch_ohlcv("BTC/USDT", Config.TIMEFRAME_SIGNAL, limit=50)
-                if btc_df_1h is not None and not btc_df_1h.empty:
-                    actions = self.grid_engine.tick(current_price, btc_df_1h)
-                    for action in actions:
-                        self._execute_grid_action(action, current_price)
-
-                    # Check if converge complete (no positions left)
-                    if self.grid_engine.state and self.grid_engine.state.converging and not self.grid_engine.state.active_positions:
-                        logger.info("Grid converge complete — deactivating")
-                        self.pool_manager.deactivate_grid_pool()
-                        self.grid_engine.deactivate()
-
-                    if self.grid_engine.state:
-                        self.grid_engine.save_state()
 
     def _fetch_exchange_stop_map(self) -> Dict[str, float]:
         """
@@ -1597,58 +1768,44 @@ class TradingBotV6:
         try:
             exchange_positions = self.risk_manager.get_positions()
 
-            # === 防護 1：API 錯誤 → 跳過同步 ===
             if exchange_positions is None:
-                logger.warning(
-                    "[SYNC] 交易所持倉查詢失敗，跳過本次同步（防止誤判 hard_stop_hit）"
-                )
+                logger.warning("[SYNC] exchange positions unavailable; skip reconciliation for this cycle")
                 return
 
-            # 建立 exchange position map: {symbol_id: amount}
-            exchange_map: Dict[str, float] = {}
-            for pos in exchange_positions:
-                sym = pos.get('symbol', '') or pos.get('info', {}).get('symbol', '')
-                if sym:
-                    amt = abs(float(pos.get('positionAmt', 0) or pos.get('contracts', 0)))
-                    exchange_map[sym] = amt
-
+            exchange_map = self._build_exchange_position_map(exchange_positions)
+            internal_map = self._build_internal_position_map()
             hard_stop_detected = False
 
-            # === 防護 2：正向檢查 — bot 有、exchange 無 → hard_stop_hit ===
             for symbol, pm in list(self.active_trades.items()):
-                symbol_id = symbol.replace('/', '')
-                ex_amt = exchange_map.get(symbol_id, exchange_map.get(symbol))
+                key = (self._symbol_to_exchange_id(symbol), pm.side)
+                ex_amt = exchange_map.get(key, 0.0)
 
-                if ex_amt is None or ex_amt == 0:
-                    logger.warning(
-                        f"[SYNC] {symbol} 交易所已無此持倉，推測硬止損已觸發（HARD_STOP_HIT）"
-                    )
+                if ex_amt <= 0:
+                    logger.warning(f"[SYNC] {symbol} {pm.side} missing on exchange -> HARD_STOP_HIT")
                     pm.exit_reason = 'hard_stop_hit'
                     pm.is_closed = True
                     hard_stop_detected = True
                     TelegramNotifier.notify_action(
-                        symbol, '硬止損觸發',
+                        symbol,
+                        'STOP HIT',
                         pm.current_sl,
-                        f"交易所已無持倉，推測硬止損已觸發"
+                        "Exchange no longer reports this tracked position",
                     )
-                else:
-                    # === 防護 3：Size 校驗 — 數量不一致 → 告警 ===
-                    bot_amt = pm.total_size
-                    if bot_amt > 0 and abs(ex_amt - bot_amt) / bot_amt > 0.05:
-                        logger.warning(
-                            f"[SIZE_MISMATCH] {symbol}: "
-                            f"bot={bot_amt:.6f} vs exchange={ex_amt:.6f} "
-                            f"(差異 {abs(ex_amt - bot_amt):.6f})"
-                        )
+                    continue
 
-            # === 防護 4：反向檢查 — exchange 有、bot 沒有 → 幽靈倉位 ===
-            bot_symbol_ids = {s.replace('/', '') for s in self.active_trades}
-            for sym, ex_amt in exchange_map.items():
-                if sym not in bot_symbol_ids and ex_amt > 0:
-                    ccxt_sym = sym[:-4] + '/' + sym[-4:] if sym.endswith('USDT') else sym
+                bot_amt = pm.total_size
+                if bot_amt > 0 and abs(ex_amt - bot_amt) / bot_amt > 0.05:
                     logger.warning(
-                        f"[GHOST_POSITION] {ccxt_sym}: "
-                        f"交易所有倉位 {ex_amt:.6f}，但 bot 未追蹤！請手動檢查。"
+                        f"[SIZE_MISMATCH] {symbol}: side={pm.side} "
+                        f"bot={bot_amt:.6f} vs exchange={ex_amt:.6f} "
+                        f"(差異 {abs(ex_amt - bot_amt):.6f})"
+                    )
+
+            for (symbol_id, side), ex_amt in exchange_map.items():
+                if ex_amt > 0 and (symbol_id, side) not in internal_map:
+                    logger.warning(
+                        f"[GHOST_POSITION] {self._exchange_id_to_symbol(symbol_id)}: "
+                        f"{side} {ex_amt:.6f}，但 bot 未追蹤！請手動檢查。"
                     )
 
             if hard_stop_detected:
@@ -2159,7 +2316,7 @@ class TradingBotV6:
                     self.execution_engine.hedge_mode = self.futures_client.get_position_side_dual()
                 except Exception as e:
                     logger.warning(f"Could not refresh hedge mode state after grid check: {e}")
-                self.grid_engine.load_state()
+                self._restore_grid_runtime_state()
 
         logger.info("機器人開始運行...\n")
 
@@ -2173,6 +2330,7 @@ class TradingBotV6:
                 logger.debug(f"[循環 #{cycle}]")
 
                 self.scan_for_signals()
+                self._monitor_grid_state()
                 self._sync_exchange_positions()  # 每 cycle 都執行，active_trades 為空時也偵測幽靈倉位
                 self.monitor_positions()
                 self.telegram_handler.poll()

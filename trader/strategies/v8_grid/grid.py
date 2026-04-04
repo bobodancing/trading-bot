@@ -57,6 +57,11 @@ class GridState:
             'level_weights': {str(k): v for k, v in self.level_weights.items()},
             'converging': self.converging,
             'converge_start_time': self.converge_start_time,
+            'converge_market_ts': (
+                pd.Timestamp(self.converge_market_ts).isoformat()
+                if self.converge_market_ts is not None
+                else None
+            ),
             'activated_at': self.activated_at,
             'last_cooldown_time': self.last_cooldown_time,
         }
@@ -67,6 +72,8 @@ class GridState:
         for key, value in d.items():
             if key == 'level_weights':
                 state.level_weights = {int(level): weight for level, weight in value.items()}
+            elif key == 'converge_market_ts' and value is not None:
+                state.converge_market_ts = pd.Timestamp(value)
             elif hasattr(state, key):
                 setattr(state, key, value)
         return state
@@ -130,39 +137,49 @@ class V8AtrGrid:
             f"{levels * 2} levels"
         )
 
-    def tick(self, current_price: float, df_1h: pd.DataFrame, market_ts=None) -> List[GridAction]:
+    def tick(
+        self,
+        current_price: float,
+        df_1h: pd.DataFrame,
+        df_4h: Optional[pd.DataFrame] = None,
+        market_ts=None,
+    ) -> List[GridAction]:
         """Return the actions for this cycle without mutating active_positions."""
         if self.state is None:
             return []
 
         df_1h = self._drop_unfinished_candle(df_1h)
+        df_4h = self._drop_unfinished_candle(df_4h) if df_4h is not None else None
         actions: List[GridAction] = []
         pending_open_positions = []
 
         sma_period = getattr(Config, 'GRID_SMA_PERIOD', 20)
-        current_sma = df_1h['close'].rolling(sma_period).mean().iloc[-1]
-        drift = abs(current_sma - self.state.center)
+        current_center = None
+        if df_4h is not None and not df_4h.empty:
+            current_center = df_4h['close'].rolling(sma_period).mean().iloc[-1]
+        drift = abs(current_center - self.state.center) if current_center is not None else 0.0
         drift_ratio = getattr(Config, 'GRID_RESET_DRIFT_RATIO', 0.5)
         near_center = (
             self.state.grid_spacing > 0
             and abs(current_price - self.state.center) < self.state.grid_spacing * 1.5
         )
         if (
-            not pd.isna(current_sma)
+            current_center is not None
+            and not pd.isna(current_center)
             and near_center
             and self.state.grid_spacing > 0
             and drift > drift_ratio * self.state.grid_spacing
         ):
             logger.info(
-                f"Grid reset: SMA drifted {drift:.0f} > "
+                f"Grid reset: 4H center drifted {drift:.0f} > "
                 f"{drift_ratio}*spacing({self.state.grid_spacing:.0f})"
             )
             close_actions = self.force_close_all("sma_drift_reset")
             actions.extend(close_actions)
             if close_actions:
-                self._pending_reset_df = df_1h.copy()
+                self._pending_reset_df = df_4h.copy()
             else:
-                self.activate(df_1h, self.state.grid_balance)
+                self.activate(df_4h, self.state.grid_balance)
             return actions
 
         max_dd = getattr(Config, 'GRID_MAX_DRAWDOWN', 0.05)
@@ -356,14 +373,14 @@ class V8AtrGrid:
         self._pending_reset_df = None
         self._pending_cooldown_time = 0.0
 
-    def save_state(self):
-        if self.state:
-            save_grid_state(self.state.to_dict())
+    def save_state(self, pool_state: Optional[dict] = None):
+        save_grid_state(self.state.to_dict() if self.state else {}, pool_state=pool_state)
 
     def load_state(self):
-        data = load_grid_state()
-        if data:
-            self.state = GridState.from_dict(data)
+        payload = load_grid_state()
+        grid_state = payload.get('grid_state', {}) if payload else {}
+        self.state = GridState.from_dict(grid_state) if grid_state else None
+        return payload
 
     def _calc_level_size(self, weight: float, price: float = 0.0) -> float:
         """Return BTC quantity for one grid level."""
