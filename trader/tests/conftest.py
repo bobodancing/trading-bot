@@ -1,4 +1,4 @@
-"""共用 fixtures for TradingBotV6 integration tests"""
+"""共用 fixtures for TradingBot integration tests"""
 
 import sys
 import pytest
@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from trader.bot import TradingBotV6
+from trader.bot import TradingBot
 from trader.positions import PositionManager
 from trader.risk.manager import PrecisionHandler
 
@@ -36,7 +36,7 @@ def make_pm(**kwargs) -> PositionManager:
 @pytest.fixture
 def mock_bot(tmp_path):
     """
-    TradingBotV6 instance，所有外部 I/O 已 mock：
+    TradingBot instance，所有外部 I/O 已 mock：
       - _init_exchange → MagicMock（阻斷 ccxt 網路連線）
       - PrecisionHandler._load_exchange_info → no-op（阻斷 Binance exchangeInfo HTTP）
       - _restore_positions → no-op（防止載入真實 positions.json）
@@ -46,12 +46,12 @@ def mock_bot(tmp_path):
     mock_exchange.load_markets.return_value = {}
     mock_exchange.markets = {}
 
-    with patch.object(TradingBotV6, '_init_exchange', return_value=mock_exchange), \
+    with patch.object(TradingBot, '_init_exchange', return_value=mock_exchange), \
          patch.object(PrecisionHandler, '_load_exchange_info'), \
-         patch.object(TradingBotV6, '_restore_positions'), \
+         patch.object(TradingBot, '_restore_positions'), \
          patch('trader.bot.Config.POSITIONS_JSON_PATH', str(tmp_path / 'positions.json')), \
          patch('trader.bot.Config.DB_PATH', str(tmp_path / 'perf.db')):
-        bot = TradingBotV6()
+        bot = TradingBot()
 
     # 覆蓋 perf_db 寫入（避免 SQLite 問題）
     bot.perf_db.record_trade = MagicMock()
@@ -196,7 +196,7 @@ class FaultInjector:
 @pytest.fixture
 def integration_bot(tmp_path):
     """
-    Integration test 用的 TradingBotV6：
+    Integration test 用的 TradingBot：
     - StatefulMockEngine（有狀態的 execution engine）
     - FaultInjector（可注入故障）
     - V6_DRY_RUN = False（走完整 _execute_trade / _handle_close 路徑）
@@ -217,12 +217,12 @@ def integration_bot(tmp_path):
     pos_path = str(tmp_path / 'positions.json')
     db_path = str(tmp_path / 'perf.db')
 
-    with patch.object(TradingBotV6, '_init_exchange', return_value=mock_exchange), \
+    with patch.object(TradingBot, '_init_exchange', return_value=mock_exchange), \
          patch.object(PrecisionHandler, '_load_exchange_info'), \
-         patch.object(TradingBotV6, '_restore_positions'), \
+         patch.object(TradingBot, '_restore_positions'), \
          patch('trader.bot.Config.POSITIONS_JSON_PATH', pos_path), \
          patch('trader.bot.Config.DB_PATH', db_path):
-        bot = TradingBotV6()
+        bot = TradingBot()
 
     # 注入 StatefulMockEngine
     bot.execution_engine = engine

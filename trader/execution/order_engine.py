@@ -1,8 +1,8 @@
 """
 訂單執行引擎
 
-將 TradingBotV6 中所有「發送 API 下單」的底層方法集中封裝，
-讓 TradingBotV6（大腦/策略）只需呼叫 self.execution_engine.xxx()，
+將 TradingBot 中所有「發送 API 下單」的底層方法集中封裝，
+讓 TradingBot（大腦/策略）只需呼叫 self.execution_engine.xxx()，
 未來可輕易替換為模擬交易引擎。
 
 從 v6/bot.py 提取的方法：

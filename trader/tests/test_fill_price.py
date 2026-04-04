@@ -20,7 +20,7 @@ from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from trader.bot import TradingBotV6
+from trader.bot import TradingBot
 
 
 # ──────────────────────────────────────────────
@@ -32,31 +32,31 @@ class TestExtractFillPrice:
     def test_binance_avgprice_string(self):
         """BinanceFuturesClient 路徑：avgPrice 字串 → 正確轉 float"""
         result = {'avgPrice': '66850.25', 'executedQty': '0.007'}
-        assert TradingBotV6._extract_fill_price(result, 66812.30) == 66850.25
+        assert TradingBot._extract_fill_price(result, 66812.30) == 66850.25
 
     def test_ccxt_average_float(self):
         """CCXT 路徑：average float → 直接回傳"""
         result = {'average': 85.42, 'filled': 5.98}
-        assert TradingBotV6._extract_fill_price(result, 85.0) == 85.42
+        assert TradingBot._extract_fill_price(result, 85.0) == 85.42
 
     def test_fallback_when_avgprice_missing(self):
         """avgPrice 欄位不存在 → fallback 到信號價"""
         result = {'orderId': 123, 'status': 'FILLED'}
-        assert TradingBotV6._extract_fill_price(result, 85.0) == 85.0
+        assert TradingBot._extract_fill_price(result, 85.0) == 85.0
 
     def test_fallback_when_avgprice_zero(self):
         """avgPrice 為 '0' → fallback（Binance 偶爾在 FILLED 前回 0）"""
         result = {'avgPrice': '0', 'executedQty': '0.007'}
-        assert TradingBotV6._extract_fill_price(result, 66812.30) == 66812.30
+        assert TradingBot._extract_fill_price(result, 66812.30) == 66812.30
 
     def test_fallback_when_empty_dict(self):
         """空 dict → fallback，不拋 Exception"""
-        assert TradingBotV6._extract_fill_price({}, 1990.0) == 1990.0
+        assert TradingBot._extract_fill_price({}, 1990.0) == 1990.0
 
     def test_fallback_when_avgprice_invalid(self):
         """avgPrice 非數字字串 → fallback，不拋 Exception"""
         result = {'avgPrice': 'N/A'}
-        assert TradingBotV6._extract_fill_price(result, 1990.0) == 1990.0
+        assert TradingBot._extract_fill_price(result, 1990.0) == 1990.0
 
 
 # ──────────────────────────────────────────────

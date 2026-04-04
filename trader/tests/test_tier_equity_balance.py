@@ -135,12 +135,12 @@ class TestV53EquityCap:
 
     def _make_mock_bot(self):
         """建立最小 bot mock，執行 V5.3 _execute_trade 分支"""
-        from trader.bot import TradingBotV6
+        from trader.bot import TradingBot
         from trader.config import Config as Cfg
 
         with patch.object(Cfg, 'PYRAMID_ENABLED', True), \
              patch('trader.bot.BinanceFuturesClient'):
-            bot = MagicMock(spec=TradingBotV6)
+            bot = MagicMock(spec=TradingBot)
             bot.active_trades = {}
             bot.risk_manager = MagicMock()
             bot.precision_handler = MagicMock()

@@ -60,8 +60,8 @@ def _trade_log(fields: dict):
     logger.info(f"[TRADE] {parts}")
 
 
-class TradingBotV6:
-    """V6.0 終極滾倉版交易機器人"""
+class TradingBot:
+    """Primary trading bot runtime."""
 
     def __init__(self):
         self.exchange = self._init_exchange()
@@ -181,7 +181,7 @@ class TradingBotV6:
     def _log_startup(self):
         """啟動日誌"""
         logger.info("=" * 60)
-        logger.info("交易機器人 V6.0 已啟動")
+        logger.info("TradingBot 已啟動")
         logger.info("=" * 60)
         logger.info(f"模式: {Config.TRADING_MODE} ({Config.TRADING_DIRECTION})")
         logger.info(f"槓桿: {Config.LEVERAGE}x")
@@ -848,8 +848,8 @@ class TradingBotV6:
             return None
         closed_df = df.iloc[:-1] if len(df) > 1 else df
         if closed_df.empty:
-            return TradingBotV6._get_last_candle_time(df)
-        return TradingBotV6._get_last_candle_time(closed_df)
+            return TradingBot._get_last_candle_time(df)
+        return TradingBot._get_last_candle_time(closed_df)
 
     def _get_regime_market_ts(self) -> Optional[pd.Timestamp]:
         candle_time = (self._btc_regime_context or {}).get('candle_time')
@@ -2326,6 +2326,8 @@ class TradingBotV6:
                 time.sleep(Config.CHECK_INTERVAL)
 
 
+TradingBotV6 = TradingBot
+
 # ==================== 入口 ====================
 if __name__ == "__main__":
     import argparse
@@ -2333,7 +2335,7 @@ if __name__ == "__main__":
     # SIGTERM → KeyboardInterrupt（systemd stop 時 graceful flush positions）
     signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))
 
-    parser = argparse.ArgumentParser(description='Trading Bot V6.0')
+    parser = argparse.ArgumentParser(description='Trading Bot')
     parser.add_argument('--dry-run', action='store_true', help='Dry run mode')
     parser.add_argument('--debug', action='store_true', help='Debug mode')
     args = parser.parse_args()
@@ -2344,7 +2346,7 @@ if __name__ == "__main__":
     log_dir.mkdir(exist_ok=True)
 
     # 設定 logging
-    log_file = str(log_dir / 'v6_bot.log')
+    log_file = str(log_dir / 'bot.log')
     log_level = logging.DEBUG if args.debug else logging.INFO
 
     logging.basicConfig(
@@ -2358,14 +2360,14 @@ if __name__ == "__main__":
         ],
     )
 
-    # [TRADE] 日誌分流到 .log/v6_trades.log
+    # [TRADE] 日誌分流到 .log/trades.log
     class _TradeFilter(logging.Filter):
         def filter(self, record):
             msg = record.getMessage()
             return isinstance(msg, str) and '[TRADE]' in msg
 
     _trade_handler = logging.handlers.RotatingFileHandler(
-        str(log_dir / 'v6_trades.log'), maxBytes=5*1024*1024, backupCount=5, encoding='utf-8'
+        str(log_dir / 'trades.log'), maxBytes=5*1024*1024, backupCount=5, encoding='utf-8'
     )
     _trade_handler.setFormatter(logging.Formatter('%(message)s'))
     _trade_handler.addFilter(_TradeFilter())
@@ -2413,7 +2415,7 @@ if __name__ == "__main__":
         if args.dry_run:
             Config.V6_DRY_RUN = True  # type: ignore[assignment]
 
-        bot = TradingBotV6()
+        bot = TradingBot()
         bot.run()
     except Exception as e:
         logger.error(f"機器人啟動失敗: {e}")
