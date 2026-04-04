@@ -13,14 +13,9 @@ from trader.indicators.technical import TechnicalAnalysis
 from trader.infrastructure.notifier import TelegramNotifier
 from trader.positions import PositionManager
 from trader.strategies.base import Action
+from trader.utils import trade_log as _trade_log, calculate_pnl, get_close_side, build_log_base
 
 logger = logging.getLogger(__name__)
-
-
-def _trade_log(fields: dict):
-    """Emit structured [TRADE] log line for log_summarizer.py"""
-    parts = ' | '.join(f'{k}={v}' for k, v in fields.items())
-    logger.info(f"[TRADE] {parts}")
 
 
 class PositionMonitor:
@@ -114,7 +109,7 @@ class PositionMonitor:
                 )
 
                 _trade_log({
-                    **bot._build_log_base('POSITION_UPDATE', pm.trade_id, symbol, pm.side),
+                    **build_log_base('POSITION_UPDATE', pm.trade_id, symbol, pm.side),
                     'price': f'{current_price:.2f}',
                     'pnl_pct': f'{profit_pct:+.2f}',
                     'sl': f'{pm.current_sl:.2f}',
@@ -211,7 +206,7 @@ class PositionMonitor:
                 except Exception:
                     current_price = pm.avg_entry
 
-            final_pnl = bot._calculate_pnl(pm.side, pm.total_size, current_price, pm.avg_entry)
+            final_pnl = calculate_pnl(pm.side, pm.total_size, current_price, pm.avg_entry)
 
             pnl_usdt = final_pnl + pm.realized_partial_pnl
             original_notional = pm.original_size * pm.avg_entry
@@ -241,7 +236,7 @@ class PositionMonitor:
             if Config.V6_DRY_RUN:
                 logger.info(f"[DRY_RUN] Close {pm.symbol} {pm.side} size={pm.total_size:.6f}")
                 _trade_log({
-                    **bot._build_log_base('TRADE_CLOSE', pm.trade_id, pm.symbol, pm.side),
+                    **build_log_base('TRADE_CLOSE', pm.trade_id, pm.symbol, pm.side),
                     'exit_price': f'{current_price:.2f}',
                     'entry': f'{pm.avg_entry:.2f}',
                     'size': f'{pm.total_size:.6f}',
@@ -276,7 +271,7 @@ class PositionMonitor:
             logger.info(f"{pm.symbol} closed: {pm.side} size={pm.total_size:.6f}")
 
             _trade_log({
-                **bot._build_log_base('TRADE_CLOSE', pm.trade_id, pm.symbol, pm.side),
+                **build_log_base('TRADE_CLOSE', pm.trade_id, pm.symbol, pm.side),
                 'exit_price': f'{current_price:.2f}',
                 'entry': f'{pm.avg_entry:.2f}',
                 'size': f'{pm.total_size:.6f}',
@@ -391,7 +386,7 @@ class PositionMonitor:
                 pm.add_stage2(entry_price, add_size, new_sl=v7_sl)
                 return
 
-            order_side = bot._get_close_side(pm.side)
+            order_side = get_close_side(pm.side)
             order_result = bot._futures_create_order(pm.symbol, order_side, add_size)
 
             fill_price = bot._extract_fill_price(order_result, entry_price)
@@ -494,7 +489,7 @@ class PositionMonitor:
                 pm.add_stage3(entry_price, add_size, swing_stop)
                 return
 
-            order_side = bot._get_close_side(pm.side)
+            order_side = get_close_side(pm.side)
             order_result = bot._futures_create_order(pm.symbol, order_side, add_size)
 
             fill_price = bot._extract_fill_price(order_result, entry_price)
@@ -529,7 +524,7 @@ class PositionMonitor:
             reduce_size = float(bot.precision_handler.format_quantity(pm.symbol, reduce_size))
 
             if Config.V6_DRY_RUN:
-                partial_pnl = bot._calculate_pnl(pm.side, reduce_size, current_price, pm.avg_entry)
+                partial_pnl = calculate_pnl(pm.side, reduce_size, current_price, pm.avg_entry)
                 pm.realized_partial_pnl += partial_pnl
                 logger.info(
                     f"[DRY_RUN] {pm.symbol} {label} reduce: -{reduce_size:.6f} "
@@ -542,7 +537,7 @@ class PositionMonitor:
                 )
                 pm.total_size -= reduce_size
                 _trade_log({
-                    **bot._build_log_base('PARTIAL_CLOSE', pm.trade_id, pm.symbol, pm.side),
+                    **build_log_base('PARTIAL_CLOSE', pm.trade_id, pm.symbol, pm.side),
                     'label': label,
                     'reduce_size': f'{reduce_size:.6f}',
                     'reduce_price': f'{current_price:.2f}',
@@ -561,7 +556,7 @@ class PositionMonitor:
                     f"ticker${current_price:.4f} -> actual${fill_price:.4f}"
                 )
 
-            partial_pnl = bot._calculate_pnl(pm.side, reduce_size, fill_price, pm.avg_entry)
+            partial_pnl = calculate_pnl(pm.side, reduce_size, fill_price, pm.avg_entry)
             pm.realized_partial_pnl += partial_pnl
 
             pm.total_size -= reduce_size
@@ -580,7 +575,7 @@ class PositionMonitor:
             )
 
             _trade_log({
-                **bot._build_log_base('PARTIAL_CLOSE', pm.trade_id, pm.symbol, pm.side),
+                **build_log_base('PARTIAL_CLOSE', pm.trade_id, pm.symbol, pm.side),
                 'label': label,
                 'reduce_size': f'{reduce_size:.6f}',
                 'reduce_price': f'{fill_price:.2f}',

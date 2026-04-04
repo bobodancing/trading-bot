@@ -47,14 +47,13 @@ from trader.grid_manager import GridManager
 from trader.btc_context import BTCContextManager, get_last_candle_time, get_last_closed_candle_time, format_candle_time
 from trader.position_monitor import PositionMonitor
 from trader.signal_scanner import SignalScanner
+from trader.utils import trade_log, calculate_pnl, get_close_side, build_log_base
 
 logger = logging.getLogger(__name__)
 
 
-def _trade_log(fields: dict):
-    """Emit structured [TRADE] log line for log_summarizer.py"""
-    parts = ' | '.join(f'{k}={v}' for k, v in fields.items())
-    logger.info(f"[TRADE] {parts}")
+# Backward-compat alias
+_trade_log = trade_log
 
 
 class TradingBot:
@@ -491,8 +490,7 @@ class TradingBot:
 
     @staticmethod
     def _get_close_side(side: str) -> str:
-        """Return exchange order side for closing a position."""
-        return 'BUY' if side == 'LONG' else 'SELL'
+        return get_close_side(side)
 
     def _validate_position_size(self, symbol: str, raw_size: float, entry_price: float,
                                  label: str = "") -> Optional[float]:
@@ -505,22 +503,11 @@ class TradingBot:
 
     @staticmethod
     def _calculate_pnl(side: str, size: float, price: float, avg_entry: float) -> float:
-        """Calculate unrealised/realised PnL for a position."""
-        if side == 'LONG':
-            return size * (price - avg_entry)
-        return size * (avg_entry - price)
+        return calculate_pnl(side, size, price, avg_entry)
 
     @staticmethod
     def _build_log_base(event: str, trade_id: str, symbol: str, side: str) -> dict:
-        """Build common fields for _trade_log calls."""
-        return {
-            'event': event,
-            'trade_id': trade_id,
-            'ts': datetime.now(timezone.utc).isoformat(),
-            'bot': 'v7.0',
-            'symbol': symbol,
-            'side': side,
-        }
+        return build_log_base(event, trade_id, symbol, side)
 
     def _check_total_risk(self, active_positions: List[PositionManager]) -> bool:
         """總風險檢查（改用 PositionManager）"""
