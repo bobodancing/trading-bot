@@ -1,441 +1,255 @@
-# Trading Bot — Pluggable Crypto Futures Trading Platform
+# Trading Bot `feat/btc-atr-grid` Code Review
 
-基於 Swing Point 結構分析的加密貨幣期貨交易平台，支援策略拔插（Plugin Architecture）。
+> 最後校驗：2026-04-04
+> 範圍：`projects/trading_bot/.worktrees/feat-grid`
+> 狀態：`449 passed`
+> 本文件與 code 衝突時，以 code 為準。
 
-> 最後更新：2026-03-28 | 362 tests passed
+## 摘要
 
-## 目錄
-
-- [概覽](#概覽)
-- [專案結構](#專案結構)
-- [快速開始](#快速開始)
-- [架構設計](#架構設計)
-- [策略系統](#策略系統)
-- [Market Scanner](#market-scanner)
-- [風險管理](#風險管理)
-- [配置系統](#配置系統)
-- [持久化與 Crash Recovery](#持久化與-crash-recovery)
-- [測試](#測試)
-- [技術棧](#技術棧)
-
----
-
-## 概覽
-
-本系統為**策略平台**，核心引擎處理進場、監控、平倉、風控的完整交易生命週期，策略模組透過 Registry Pattern 以插件形式載入。
-
-**內建策略**：
-
-| 策略 | 進場信號 | 持倉管理 |
-|------|----------|----------|
-| **V7 Structure** | 2B Swing Pivot Breakout | 三段結構加倉（Swing-based SL 棘輪）+ 反向 2B + 超時退出 |
-| **V53 SOP** | EMA Pullback / Volume Breakout | 1.0R / 1.5R / 2.0R 分批減倉 |
-| ~~V6 Pyramid~~ | ~~2B~~ | ~~deprecated，既有倉位仍可運行~~ |
-
-**新增策略**只需：寫 class → `StrategyFactory.register()` → config 映射，不動 bot.py。
-
-**交易所**: Binance Futures（支援 Testnet）
-**信號來源**: 2B Swing Pivot Detection + Market Scanner 動態標的
+- 核心編排層為 `trader/bot.py::TradingBot`；舊別名 `TradingBotV6 = TradingBot` 保留相容。
+- Phase 3 拆分已完成：`bot.py` 現在是薄編排層 + 委派方法。
+- 此 worktree 的方向性進場路由：
+  - `2B` -> `v54_noscale`
+  - `EMA_PULLBACK` -> `v54_noscale`
+  - `VOLUME_BREAKOUT` -> `v54_noscale`
+- 舊策略仍保留，位於 `trader/strategies/legacy/`。
+- `v8_atr_grid` 和 `RegimeEngine` 是 feat-grid 獨有功能。
+- 嚴格複查結論：Phase 3 重構未改變進出場/策略語義。後續修正僅涉及 telemetry。
 
 ---
 
-## 專案結構
+## 複查結論
 
-```
-trading_bot/
-├── bot_config.json              # 交易參數（不含 secrets，可 commit）
-├── secrets.json                 # API keys + Telegram tokens（.gitignore）
-├── requirements.txt
-│
-├── trader/                      # 核心引擎（Python package）
-│   ├── bot.py                   # 主引擎 TradingBotV6 — 交易主循環
-│   ├── config.py                # Config — 集中參數管理
-│   ├── positions.py             # PositionManager — 倉位生命週期
-│   ├── signals.py               # 2B Pivot 偵測（穿透深度過濾）
-│   ├── structure.py             # Swing Point + Neckline + BOS 追蹤
-│   ├── persistence.py           # Atomic write + Crash recovery
-│   │
-│   ├── strategies/              # 策略插件層（Registry Pattern）
-│   │   ├── base.py              # Action enum + DecisionDict + TradingStrategy ABC + StrategyFactory
-│   │   ├── v7_structure.py      # V7 結構加倉（Swing-based 三段加倉 + 反向 2B + 超時）
-│   │   ├── v53_sop.py           # V5.3 SOP 出場（1.0R/1.5R/2.0R 減倉）
-│   │   └── v6_pyramid.py        # [deprecated] V6 滾倉（既有倉位保留）
-│   │
-│   ├── infrastructure/          # 基礎設施
-│   │   ├── api_client.py        # BinanceFuturesClient（HMAC + rate limit）
-│   │   ├── notifier.py          # TelegramNotifier
-│   │   ├── data_provider.py     # MarketDataProvider（retry + sandbox fallback）
-│   │   └── performance_db.py    # PerformanceDB（SQLite — MFE/MAE/R/Tier）
-│   │
-│   ├── indicators/
-│   │   └── technical.py         # TechnicalAnalysis / DynamicThresholdManager / MTF / MarketFilter
-│   │
-│   ├── risk/
-│   │   └── manager.py           # PrecisionHandler / RiskManager / SignalTierSystem
-│   │
-│   ├── execution/
-│   │   └── order_engine.py      # OrderExecutionEngine（下單 / 止損 / 平倉）
-│   │
-│   └── tests/                   # 362 tests
-│       ├── conftest.py
-│       ├── test_integration.py  # StatefulMockEngine + FaultInjector
-│       └── test_*.py            # 28 test modules
-│
-├── scanner/                     # Market Scanner（獨立服務）
-│   └── market_scanner.py        # 四層掃描（流動性 → 動能 → 形態 → 相關性）
-│
-└── .log/                        # Runtime 日誌（自動建立）
-    ├── v6_bot.log
-    ├── v6_trades.log
-    └── scanner.log
-```
-
-Runtime 自動產生（`.gitignore`）：
-- `positions.json` — 持倉持久化
-- `performance.db` — 交易績效 SQLite
-- `hot_symbols.json` — Scanner 掃描結果
-- `scanner_results.db` — Scanner 歷史
-
----
-
-## 快速開始
-
-### 1. 安裝依賴
-
-```bash
-pip install -r requirements.txt
-```
-
-### 2. 設定 secrets.json
-
-```json
-{
-    "api_key": "your Binance API Key",
-    "api_secret": "your Binance API Secret",
-    "telegram_bot_token": "optional",
-    "telegram_chat_id": "optional"
-}
-```
-
-### 3. 設定 bot_config.json
-
-```json
-{
-  "sandbox_mode": true,
-  "telegram_enabled": false,
-  "symbols": ["BTC/USDT", "ETH/USDT", "SOL/USDT"],
-  "trading_direction": "both",
-  "leverage": 3,
-  "risk_per_trade": 0.017,
-  "pyramid_enabled": true,
-  "DB_PATH": "performance.db"
-}
-```
-
-### 4. 執行
-
-```bash
-# Bot
-python3 trader/bot.py
-
-# Scanner（另開終端）
-python3 -m scanner.market_scanner
-```
-
-**systemd 部署**：
-
-```bash
-sudo systemctl start trader.service
-sudo systemctl start scanner.service
-```
-
-### 5. 執行流程
-
-```
-Bot 啟動
- ├─ startup_diagnostics()        驗證 API / Balance / 數據
- ├─ _restore_positions()         恢復 positions.json
- ├─ _adopt_ghost_positions()     接管交易所孤立倉位
- └─ 主循環（每 60 秒）
-     ├─ scan_for_signals()           信號掃描 → 開倉
-     ├─ _sync_exchange_positions()   四重倉位同步
-     ├─ monitor_positions()          監控 → 加倉/減倉/平倉
-     └─ sleep(CHECK_INTERVAL)
-```
-
----
-
-## 架構設計
-
-### 分層架構
-
-| 層 | 模組 | 職責 |
-|----|------|------|
-| **主引擎** | `bot.py` | 交易主循環、信號掃描、倉位監控 |
-| **倉位管理** | `positions.py` | 單 symbol 生命週期、Stage 管理、序列化 |
-| **策略插件** | `strategies/` | 出場邏輯（Registry 模式，可拔插） |
-| **信號偵測** | `signals.py` + `structure.py` | 2B Pivot 偵測、Swing Point、Neckline |
-| **風控** | `risk/manager.py` | 精度處理、倉位計算、Tier 分級 |
-| **執行** | `execution/order_engine.py` | 下單、止損、平倉 |
-| **基礎設施** | `infrastructure/` | API client、Telegram、數據、績效 DB |
-| **指標** | `indicators/technical.py` | TA / DTM / MTF / MarketFilter |
-
-### 策略插件系統
-
-```python
-# 通用 Action 類型
-class Action(str, Enum):
-    HOLD          = "HOLD"           # 繼續持有
-    CLOSE         = "CLOSE"          # 全平
-    PARTIAL_CLOSE = "PARTIAL_CLOSE"  # 部分平倉
-    ADD           = "ADD"            # 加倉
-    UPDATE_SL     = "UPDATE_SL"      # 更新止損
-
-# 策略 ABC
-class TradingStrategy(ABC):
-    def get_decision(self, pm, current_price, df_1h, df_4h) -> DecisionDict: ...
-    def get_state(self) -> dict: ...       # 策略內部 state 序列化
-    def load_state(self, state: dict): ... # state 還原
-
-# Registry — 新策略只需 register
-StrategyFactory.register("v7_structure", V7StructureStrategy)
-StrategyFactory.register("v53_sop", V53SopStrategy)
-StrategyFactory.register("v6_pyramid", V6PyramidStrategy)  # deprecated
-# StrategyFactory.register("grid", GridStrategy)  # 未來擴充
-```
-
-bot.py 通過 `SIGNAL_STRATEGY_MAP` config 將信號類型映射到策略：
-
-```python
-SIGNAL_STRATEGY_MAP = {
-    "2B": "v7_structure",       # V7 結構加倉（新）
-    "EMA_PULLBACK": "v53_sop",
-    "VOLUME_BREAKOUT": "v53_sop",
-}
-```
-
----
-
-## 策略系統
-
-### V7 Structure（結構驅動三段加倉）
-
-#### 信號偵測
-
-使用 Swing Point Pivot（左 7 根 + 右 3 根確認），穿透深度 ≥ 0.3 ATR 過濾噪音。
-
-- **Bullish 2B**：價格跌破 confirmed swing low 後放量收回
-- **Bearish 2B**：價格突破 confirmed swing high 後放量收回
-
-#### 三段結構加倉
-
-| Stage | 觸發 | 倉位 | 止損 |
-|-------|------|------|------|
-| 1 — 建倉 | 2B 信號 | `risk_per_trade` (1.7%) | swing point ± ATR buffer |
-| 2 — 第一加倉 | Lower High（SHORT）/ Higher Low（LONG）+ 順勢K + 量能 | `risk_per_trade` (1.7%) | 新 swing point |
-| 3 — 第二加倉 | 再次結構確認 | `risk_per_trade` (1.7%) | 最新 swing point |
-
-加倉三條件 AND：**Swing Point 確認 + 順勢K（body/range ≥ 0.3）+ 量能（≥ vol_ma）**
-
-#### 出場機制
-
-1. **結構 Trailing SL**：棘輪追蹤最新 swing point（只往有利方向移動）
-2. **反向 2B**：穿透深度 ≥ 0.3 ATR + 下根確認 → 全平
-3. **Stage 1 超時**：36h 未觸發加倉 → 平倉釋放資金
-
-### V53 SOP（分批減倉）
-
-| 階段 | 觸發 | 動作 |
+| 項目 | 結論 | 備註 |
 |------|------|------|
-| 1.0R | 獲利達 1R | 移損至 +0.3R |
-| 1.5R | 獲利達 1.5R | 減倉 30%，移損至 +1.0R，啟動 ATR trailing |
-| 2.0R | 獲利達 2.0R | 減倉 30%，移損至 +1.5R |
-| Structure Break | 連續 2 根收破 swing | 全平 |
+| 進場信號 | 未發現語義變更 | `detect_2b_with_pivots` / `detect_ema_pullback` / `detect_volume_breakout` 搬入 `signal_scanner.py`，呼叫語義不變 |
+| 信號優先級 | 不變 | 仍為 `2B > VOLUME_BREAKOUT > EMA_PULLBACK` |
+| BTC 趨勢過濾 | 不變 | `RANGING` 阻擋方向性進場；逆勢乘數邏輯保留 |
+| Tier 過濾 / 冷卻 | 不變 | Tier 門檻、2h/1h/12h 冷卻、同幣虧損冷卻全部保留 |
+| 持倉出場 | 未發現語義變更 | `CLOSE` / `ADD` / `PARTIAL_CLOSE` dispatch 搬入 `position_monitor.py` |
+| Grid 生命週期 | 未發現語義變更 | OPEN / CLOSE / confirm 路徑保留於 `grid_manager.py` |
+| BTC regime context | 未發現語義變更 | 解析優先級仍為 `regime > 1D EMA20/50 fallback` |
+| 非交易後續修正 | 已修 | `CYCLE_SUMMARY` 已補回空持倉時的發送；`V6_STAGE2_DEBUG_LOG` 移除僅影響 log 行為 |
 
-### V6 Pyramid（已廢棄，歷史參考）
+### 值得記住的複查筆記
 
-既有 V6 持倉仍可正常平倉，新進場不再使用。
-
----
-
-### 風控 Guard（Risk Guard V1）
-
-| Guard | 規則 | 效果 |
-|-------|------|------|
-| BTC Trend Filter | BTC 1D EMA20 < EMA50 時禁 LONG | 避免逆勢進場 |
-| BTC RANGING Filter | BTC EMA20/50 差距 < 0.5% → 完全停止進場 | 橫盤市場不做趨勢單 |
-| Tier C Filter | V7 進場信號 Tier < B → 跳過 | 去除低品質信號 |
-| SL Distance Cap | SL 距離 > 6% 入場價 → 跳過 | 防止大波動吃大虧 |
-| Symbol Cooldown | 同幣虧損後 24h 內不再進場 | 防連虧 |
+- `CYCLE_SUMMARY` 現在透過 `_emit_cycle_summary()` 發送，`active_trades` 為空時也會打。
+- `V6_STAGE2_DEBUG_LOG` 已移除；Stage 2 診斷 log 改為無條件輸出。這是 log 行為變更，非交易邏輯變更。
 
 ---
 
-## Market Scanner
+## 當前架構
 
-四層過濾，從 Binance Futures 全市場篩選最符合 2B 策略的標的。
+### 核心 Runtime
 
-| Layer | 功能 | 關鍵參數 |
-|-------|------|----------|
-| 1 | 流動性過濾 | 24H 量 ≥ $30M |
-| 2 | 動能篩選 | ADX ≥ 20，RSI 40~70，ATR% 1.5~15 |
-| 3 | 形態匹配 | Swing Pivot + 量能確認 |
-| 4 | 相關性過濾 | 同板塊 ≤ 2，相關性 < 0.7 |
-
-輸出 `hot_symbols.json`，Bot 啟動時讀取。Scanner 永遠連接 Binance 正式網取得真實數據。
-
----
-
-## 風險管理
-
-### 倉位計算
-
-```
-V7:  每段 = balance × risk_per_trade / sl_distance_pct（每次加倉獨立計算）
-V53: size = risk_amount / stop_distance，上限 equity × V53_CAP(10%) × leverage
-```
-
-### Tier 系統
-
-| Tier | 倍率 | 影響 |
-|------|------|------|
-| A | 1.0x | 全額進場 |
-| B | 0.7x | 縮小倉位 |
-| C | 0.5x | 最小倉位 |
-
-### 風險上限
-
-| 參數 | 值 |
+| 檔案 | 角色 |
 |------|------|
-| `RISK_PER_TRADE` | 1.7%（V7 每段加倉） |
-| `MAX_TOTAL_RISK` | 6.42%（三段合計上限） |
-| `V53_EQUITY_CAP_PERCENT` | 10% |
-| `MAX_POSITIONS_PER_GROUP` | 6 |
-| `LEVERAGE` | 3x |
+| `trader/bot.py` | 主編排層，啟動 / 還原 / 對帳 / 主循環 |
+| `trader/signal_scanner.py` | 方向性信號掃描、優先級排序、冷卻檢查 |
+| `trader/position_monitor.py` | 持倉管理、平倉 / 加倉 / 減倉 dispatch、績效紀錄 |
+| `trader/grid_manager.py` | V8 ATR Grid 生命週期，regime 驅動的開/平/converge |
+| `trader/btc_context.py` | BTC regime context + 1D EMA fallback |
+| `trader/utils.py` | 共用 trade log / PnL 工具 |
+| `trader/positions.py` | `PositionManager`，策略狀態，持久化 payload |
+| `trader/persistence.py` | `positions.json` atomic write，schema v2 envelope |
+| `trader/regime.py` | `RegimeEngine`（`TRENDING / RANGING / SQUEEZE`，遲滯確認） |
+| `trader/infrastructure/performance_db.py` | `performance.db` 交易紀錄器 |
+
+### 策略註冊表
+
+| 路徑 | 狀態 | 備註 |
+|------|------|------|
+| `trader/strategies/v54_noscale.py` | 啟用 | 當前方向性 runtime 策略 |
+| `trader/strategies/v8_grid/` | 啟用 | Grid 專用（`V8AtrGrid`, `PoolManager`） |
+| `trader/strategies/legacy/v7_structure.py` | Legacy | 舊倉位/還原倉位及測試仍使用 |
+| `trader/strategies/legacy/v53_sop.py` | Legacy | 舊倉位可繼續在此策略下運行 |
+| `trader/strategies/legacy/v6_pyramid.py` | 廢棄 | 僅保留相容性 |
+
+### Bot 主循環
+
+當前循環順序：
+
+1. `scan_for_signals()`
+2. `_monitor_grid_state()`
+3. `_sync_exchange_positions()`
+4. `monitor_positions()`
+5. `telegram_handler.poll()`
+
+重要細節：
+
+- Grid 生命週期獨立於 `active_trades`。
+- `_sync_exchange_positions()` 每個 cycle 都執行，包括空倉時。
+- `bot.py` 保留薄委派方法，確保舊測試和 mock 不會斷裂。
 
 ---
 
-## 配置系統
+## 策略路由
 
-`Config` 集中管理所有參數。
-
-**載入流程**：`Config.load_from_json("bot_config.json")` → 自動讀取 `secrets.json` → `validate()`
-
-JSON key 自動映射大寫（`risk_per_trade` → `RISK_PER_TRADE`）。
-
-### 關鍵參數
-
-| 參數 | 值 | 說明 |
-|------|------|------|
-| `PYRAMID_ENABLED` | true | 三段滾倉 |
-| `SWING_LEFT_BARS` / `RIGHT` | 7 / 3 | Swing Point 確認 |
-| `SL_ATR_BUFFER` | 0.8 | 止損 ATR 緩衝 |
-| `V6_BREAKEVEN_MFE_R` | 1.5 | Tier 1 保本觸發（MFE≥1.5R） |
-| `MIN_FAKEOUT_ATR` | 0.3 | 2B 最小穿透深度 |
-| `BTC_TREND_FILTER_ENABLED` | true | BTC 趨勢過濾 |
-| `BTC_EMA_RANGING_THRESHOLD` | 0.005 | EMA20/50 差距 < 0.5% → RANGING |
-| `V7_MIN_SIGNAL_TIER` | 'B' | V7 最低進場 Tier |
-| `MAX_SL_DISTANCE_PCT` | 0.06 | SL 距離上限 |
-| `SYMBOL_LOSS_COOLDOWN_HOURS` | 24 | 同幣虧損冷卻 |
-
-### 策略映射
+feat-grid 當前 `SIGNAL_STRATEGY_MAP`：
 
 ```python
 SIGNAL_STRATEGY_MAP = {
-    "2B": "v7_structure",       # 結構加倉
-    "EMA_PULLBACK": "v53_sop",  # 分批減倉
-    "VOLUME_BREAKOUT": "v53_sop",
+    "2B": "v54_noscale",
+    "EMA_PULLBACK": "v54_noscale",
+    "VOLUME_BREAKOUT": "v54_noscale",
 }
 ```
 
+### `v54_noscale`
+
+- 此 worktree 的主力方向性策略
+- 不加倉、不減倉
+- `1.0R` -> breakeven `+0.1R`
+- `1.5R` / `2.0R` -> 鎖定，reason code `V54_LOCK_15R` / `V54_LOCK_20R`
+- 主要出場：structure break / `stage1_timeout` / ATR trailing
+
+### `v7_structure`
+
+- 保留供 legacy 相容，非此 worktree 的預設進場路由
+- 三段結構加倉邏輯
+- 加倉條件仍為 結構 + K 棒 body/range + 量能
+
+### `v53_sop`
+
+- 在 feat-grid 中已非預設進場路由
+- 舊倉位/還原倉位可繼續在 `v53_sop` 下完成
+- 減倉路徑保留於 `position_monitor.handle_v53_reduce()`
+
+### `v6_pyramid`
+
+- 已廢棄
+- 僅保留供相容性和舊狀態處理
+
+### `v8_atr_grid`
+
+- 與方向性進場分離的獨立 runtime
+- 交易紀錄寫入 `strategy_name = "v8_atr_grid"`
+- Regime exit：非 `RANGING` 時立即全平
+
 ---
 
-## 持久化與 Crash Recovery
+## 關鍵 Runtime 行為
 
-### Atomic Write
+### 信號掃描
 
+- `signal_scanner.py` 是當前進場守門員
+- `_check_cooldowns()` 集中管理冷卻邏輯；行為保留不變
+- Scanner 在決策前丟棄未完成 K 線
+- Tier 門檻仍使用 `Config.V7_MIN_SIGNAL_TIER`
+
+### BTC Context
+
+- `btc_context.py` 提供：
+  - BTC 4H regime context（透過 `RegimeEngine`）
+  - BTC 1D EMA20/50 fallback
+  - 最終解析 context（透過 `resolve_btc_trend_context()`）
+- `BTC_EMA_RANGING_THRESHOLD = 0.005` 意即 EMA 差距 `< 0.5%` => `RANGING`
+
+### 持倉監控
+
+- `monitor_positions()` 是當前核心 dispatch 層
+- `handle_close()` 仍保留失敗時的 rollback 語義
+- `handle_stage2()` / `handle_stage3()` 仍依策略分支
+- `handle_v53_reduce()` 仍累積 partial realized PnL
+- MFE / MAE / `realized_r` / `capture_ratio` 等交易統計仍寫入 `performance.db`
+
+### Grid Runtime
+
+- `grid_manager.monitor_grid_state()` 負責 regime 路由
+- `grid_manager.scan_grid_signals()` 處理 RANGING 啟動
+- `grid_manager.execute_grid_action()` 負責 OPEN / CLOSE 執行
+- Grid runtime 在 exchange 對帳時具備 hedge 感知
+
+---
+
+## 持久化、DB 與 Log
+
+### 持久化
+
+- `positions.json` 仍使用 atomic temp-file rename 寫入
+- Envelope schema 目前為：
+
+```json
+{
+  "schema_version": 2,
+  "positions": { ... }
+}
 ```
-1. 寫入 .positions.json.tmp_XXXX
-2. flush + fsync
-3. rename → positions.json（OS atomic）
-```
 
-### 啟動恢復
+- Grid persistence v2 包含 pool snapshot 欄位：
+  - `grid_allocated`
+  - `grid_realized_pnl`
+  - `grid_round_count`
 
-1. `_restore_positions()` — 從 `positions.json` 恢復 PositionManager + Strategy state
-2. `_adopt_ghost_positions()` — 接管交易所未追蹤的倉位
-3. 主循環 `_sync_exchange_positions()` — 四重防護 reconciliation
+### Runtime 檔案
 
-### 四重同步防護
-
-| # | 觸發 | 行為 |
-|---|------|------|
-| 1 | API 錯誤 | 跳過同步（防誤殺） |
-| 2 | bot 有、exchange 無 | hard_stop_hit → 平倉 |
-| 3 | size 差 > 5% | 告警 SIZE_MISMATCH |
-| 4 | exchange 有、bot 無 | 告警 GHOST_POSITION |
-
-### 平倉失敗保護
-
-`_handle_close()` try-except + rollback：失敗 → `pm.is_closed = False` → 下週期重試。
+| 路徑 | 用途 |
+|------|------|
+| `.log/positions.json` | 本機 runtime position 來源 |
+| `performance.db` | 交易/績效 SQLite |
+| `hot_symbols.json` | Scanner 選出的熱門標的 |
+| `.log/bot.log` | 主 runtime log |
+| `.log/trades.log` | 交易專用 log stream |
+| `.log/scanner.log` | Scanner log |
 
 ---
 
 ## 測試
 
-362 個 pytest，全部通過。
+當前本機狀態：
 
-```bash
-python3 -m pytest trader/tests/ -v
-python3 -m pytest trader/tests/test_v7_structure.py -v  # V7 單一模組
-```
+- `python -m pytest trader/tests -q`
+- 結果：`449 passed`
 
-### 測試覆蓋
+測試佈局：
 
-| 模組 | 數量 | 覆蓋 |
-|------|------|------|
-| `test_v7_structure.py` | 28 | V7 加倉觸發 / SL 棘輪 / 反向 2B / 超時 / sizing |
-| `test_structure.py` | 9 | Swing Point / Neckline |
-| `test_signals.py` | 13 | 2B Bullish/Bearish / 穿透過濾 |
-| `test_risk.py` | 13 | Stage sizing / risk cap |
-| `test_persistence.py` | 30 | Atomic write / 出場決策 16 場景 |
-| `test_integration.py` | 18 | StatefulMockEngine + FaultInjector |
-| `test_risk_guard.py` | 21 | BTC Filter / RANGING Filter / SL Cap / Cooldown |
-| `test_v7p2.py` | 16 | Strategy dispatch |
-| `test_tier_equity_balance.py` | 13 | Tier mult / equity cap |
-| `test_reverse_2b_exit.py` | 9 | 穿透深度 + 雙根確認 |
-| 其他 16 個模組 | 183 | 各子系統 |
+- `trader/tests/` 存放當前 runtime 覆蓋
+- `trader/tests/legacy/` 存放 legacy 策略相容性覆蓋
+- `trader/tests/test_v54_noscale.py` 覆蓋啟用中的方向性策略
+- Grid 覆蓋分布在 `test_grid_integration.py`、`test_grid_runtime_controls.py`、`test_pool_manager.py`
 
 ---
 
-## 技術棧
+## 工具相容性
 
-| 類別 | 技術 |
-|------|------|
-| 語言 | Python 3.10+ |
-| 交易所 | CCXT + Binance Futures 直接 API（HMAC 簽章） |
-| 指標 | pandas-ta（EMA / ATR / ADX / RSI） |
-| 數據 | pandas + numpy |
-| 通知 | Telegram Bot API |
-| 測試 | pytest（362 tests） |
-| 持久化 | JSON (atomic write) + SQLite (performance + scanner) |
+Bot runtime 之外的近期同步工作：
 
----
+### `tools/Backtesting`
 
-## 日誌
+- 已更新為使用 `Config`（移除的 `ConfigV6` 已替換）
+- 已更新 legacy 策略 import 路徑至 `trader/strategies/legacy/`
+- 新增 `v54` 相容，feat-grid 交易不會被誤標為 `v53`
+- 當前結果：
+  - 預設根目錄：通過
+  - `TRADING_BOT_ROOT=...\\.worktrees\\feat-grid`：通過
 
-`.log/` 目錄，`RotatingFileHandler`（5MB × 3 備份）：
+### `tools/quantDashboard`
 
-| 檔案 | 說明 |
-|------|------|
-| `v6_bot.log` | 主日誌（信號/開倉/移損/平倉） |
-| `v6_trades.log` | 純交易記錄（`[TRADE]` 標籤） |
-| `scanner.log` | Scanner 掃描日誌 |
+- 已更新策略分類：
+  - `v54_noscale` -> `V54`
+  - `v8_atr_grid` -> `GRID`
+- 防止 feat-grid 交易被歸入 `V53`
+- README 和 DB 路徑文件已對齊至 `performance.db`
 
 ---
 
 ## 注意事項
 
-- `secrets.json` 含 API keys，**不可** commit
-- Scanner 永遠連 Binance 正式網；Bot 的 `sandbox_mode` 只控制下單端
-- `V6_DRY_RUN=True` 時所有訂單只 log 不送出
-- 硬止損掛單確保 Bot 斷線時交易所仍執行止損
+- `_execute_trade()` 仍有一段歷史遺留的 2B 路徑（與 `use_v6` 相關），不要誤讀為「V6 策略仍是啟用中的 runtime 策略」。
+- 硬止損更新仍為 `cancel -> place`，存在短暫非原子曝險窗口。
+- Production `positions.json` 真實來源在 rwUbuntu；本機副本可能過時。
+- 若涉及進出場/策略語義，先問。
+
+---
+
+## 優先閱讀檔案
+
+1. `trader/config.py`
+2. `trader/bot.py`
+3. `trader/signal_scanner.py`
+4. `trader/position_monitor.py`
+5. `trader/grid_manager.py`
+6. `trader/btc_context.py`
+7. `trader/strategies/base.py`
+8. `trader/strategies/v54_noscale.py`
