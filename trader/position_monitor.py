@@ -28,6 +28,7 @@ class PositionMonitor:
         """Monitor all active positions."""
         bot = self.bot
         if not bot.active_trades:
+            self._emit_cycle_summary(closed_count=0)
             return
 
         logger.debug(f"Monitoring {len(bot.active_trades)} positions...")
@@ -152,7 +153,11 @@ class PositionMonitor:
             bot._save_positions()
 
         logger.debug(f"Monitor done | remaining: {len(bot.active_trades)}")
+        self._emit_cycle_summary(closed_count=len(closed_symbols))
 
+    def _emit_cycle_summary(self, closed_count: int = 0):
+        """Emit CYCLE_SUMMARY trade log -- called even when active_trades is empty."""
+        bot = self.bot
         active_summary = ','.join(
             f'{s}({t.side}/S{t.stage}/${t.total_size * t.avg_entry:.0f})'
             for s, t in bot.active_trades.items()
@@ -182,7 +187,7 @@ class PositionMonitor:
             'cycle': getattr(bot, 'cycle_count', 0),
             'active': len(bot.active_trades),
             'active_trades_count': len(bot.active_trades),
-            'closed': len(closed_symbols),
+            'closed': closed_count,
             'symbols': active_summary,
             'balance': f'{cycle_balance:.2f}',
             'unrealized_pnl': f'{cycle_unrealized_pnl:.2f}',
