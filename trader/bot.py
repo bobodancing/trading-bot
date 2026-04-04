@@ -32,14 +32,9 @@ from trader.infrastructure.telegram_handler import TelegramCommandHandler
 from trader.infrastructure.data_provider import MarketDataProvider
 from trader.infrastructure.performance_db import PerformanceDB
 # 技術指標層
-from trader.indicators.technical import (
-    TechnicalAnalysis,
-    DynamicThresholdManager,
-    MTFConfirmation,
-    MarketFilter,
-)
+from trader.indicators.technical import TechnicalAnalysis
 # 風險管理層
-from trader.risk.manager import PrecisionHandler, RiskManager, SignalTierSystem
+from trader.risk.manager import PrecisionHandler, RiskManager
 from trader.regime import RegimeEngine
 from trader.strategies.v8_grid import V8AtrGrid, PoolManager
 # 訂單執行層
@@ -47,11 +42,11 @@ from trader.execution.order_engine import OrderExecutionEngine
 from trader.config import Config
 from trader.positions import PositionManager
 from trader.persistence import PositionPersistence
-from trader.signals import detect_2b_with_pivots, detect_ema_pullback, detect_volume_breakout
 from trader.strategies.base import Action
 from trader.grid_manager import GridManager
 from trader.btc_context import BTCContextManager, get_last_candle_time, get_last_closed_candle_time, format_candle_time
 from trader.position_monitor import PositionMonitor
+from trader.signal_scanner import SignalScanner
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +123,7 @@ class TradingBot:
         self.grid_manager = GridManager(self)
         self.btc_context_manager = BTCContextManager(self)
         self.position_monitor = PositionMonitor(self)
+        self.signal_scanner = SignalScanner(self)
 
     def _init_exchange(self):
         """初始化交易所（沿用 V5.3）"""
@@ -341,292 +337,7 @@ class TradingBot:
     # ==================== 信號掃描 ====================
 
     def scan_for_signals(self):
-        """掃描交易信號"""
-        symbols = self.load_scanner_results() if Config.USE_SCANNER_SYMBOLS else Config.SYMBOLS
-        logger.debug(f"開始掃描 {len(symbols)} 個標的...")  # 降噪
-
-        self._btc_regime_context = {}
-        self._btc_trend_context = {}
-
-        # === RegimeEngine routing (only when grid trading enabled) ===
-        if Config.ENABLE_GRID_TRADING:
-            btc_regime_context = self._update_btc_regime_context()
-            regime = btc_regime_context.get('regime')
-            if regime == "RANGING":
-                return  # skip trend scanning
-            elif regime == "SQUEEZE":
-                if self.grid_engine.state and not self.grid_engine.state.converging:
-                    self.grid_engine.converge(market_ts=self._get_regime_market_ts())
-                return  # both sides pause
-            elif regime == "TRENDING" and self.grid_engine.state:
-                if not self.grid_engine.state.converging:
-                    self.grid_engine.converge(market_ts=self._get_regime_market_ts())
-                return  # same cycle handles grid exit before any trend scan
-            # TRENDING / ambiguous -> continue to trend scanning below
-        if Config.BTC_TREND_FILTER_ENABLED:
-            self._btc_trend_context = self._resolve_btc_trend_context(log_event=True)
-
-        for symbol in symbols:
-            try:
-                # 跳過已有持倉
-                if symbol in self.active_trades:
-                    t = self.active_trades[symbol]
-                    logger.debug(f"{symbol}: 跳過（已有持倉 {t.side}/階段{t.stage}）")
-                    continue
-
-                # 冷卻檢查
-                if symbol in self.recently_exited:
-                    hours = (datetime.now(timezone.utc) - self.recently_exited[symbol]).total_seconds() / 3600
-                    if hours < 2:
-                        logger.debug(f"{symbol}: 跳過（冷卻中 {hours:.1f}h）")
-                        continue
-                    else:
-                        del self.recently_exited[symbol]
-
-                # 下單失敗黑名單
-                if symbol in self.order_failed_symbols:
-                    hours = (datetime.now(timezone.utc) - self.order_failed_symbols[symbol]).total_seconds() / 3600
-                    if hours < 1:
-                        logger.debug(f"{symbol}: 跳過（下單失敗黑名單）")
-                        continue
-                    else:
-                        del self.order_failed_symbols[symbol]
-
-                # 12h 冷卻（快速止損/超時退出）
-                if symbol in self.early_exit_cooldown:
-                    hours = (datetime.now(timezone.utc) - self.early_exit_cooldown[symbol]).total_seconds() / 3600
-                    if hours < Config.EARLY_EXIT_COOLDOWN_HOURS:
-                        logger.debug(f"{symbol}: 跳過（早期退出冷卻中 {hours:.1f}h/{Config.EARLY_EXIT_COOLDOWN_HOURS}h）")
-                        continue
-                    else:
-                        del self.early_exit_cooldown[symbol]
-
-                # === Risk Guard: 同幣虧損冷卻（persistent，基於 perf_db）===
-                if Config.SYMBOL_LOSS_COOLDOWN_HOURS > 0:
-                    last_loss_exit = self.perf_db.get_last_loss_exit_time(symbol)
-                    if last_loss_exit:
-                        try:
-                            exit_dt = datetime.fromisoformat(last_loss_exit)
-                            if exit_dt.tzinfo is None:
-                                exit_dt = exit_dt.replace(tzinfo=timezone.utc)
-                            hours_since = (datetime.now(timezone.utc) - exit_dt).total_seconds() / 3600
-                            if hours_since < Config.SYMBOL_LOSS_COOLDOWN_HOURS:
-                                logger.info(
-                                    f"{symbol}: 跳過（上次虧損 {hours_since:.1f}h 前，"
-                                    f"冷卻 {Config.SYMBOL_LOSS_COOLDOWN_HOURS}h）"
-                                )
-                                continue
-                        except (ValueError, TypeError):
-                            pass  # 解析失敗不阻塞
-
-                # 總風險檢查
-                active_list = list(self.active_trades.values())
-                if not self._check_total_risk(active_list):
-                    logger.debug("總風險已達上限，停止掃描")  # 降噪
-                    break
-
-                # 獲取數據
-                df_trend = self.fetch_ohlcv(symbol, Config.TIMEFRAME_TREND, limit=250)
-                df_signal = self.fetch_ohlcv(symbol, Config.TIMEFRAME_SIGNAL, limit=100)
-                df_mtf = pd.DataFrame()
-                if Config.ENABLE_MTF_CONFIRMATION:
-                    df_mtf = self.fetch_ohlcv(symbol, Config.TIMEFRAME_MTF, limit=100)
-
-                if df_trend.empty or len(df_trend) < 100:
-                    logger.debug(f"{symbol}: 跳過（趨勢數據不足: {len(df_trend) if not df_trend.empty else 0}根）")
-                    continue
-                if df_signal.empty or len(df_signal) < 50:
-                    logger.debug(f"{symbol}: 跳過（信號數據不足: {len(df_signal) if not df_signal.empty else 0}根）")
-                    continue
-
-                df_trend = TechnicalAnalysis.calculate_indicators(df_trend)
-                df_signal = TechnicalAnalysis.calculate_indicators(df_signal)
-                if not df_mtf.empty:
-                    df_mtf = TechnicalAnalysis.calculate_indicators(df_mtf)
-
-                # 移除當前未關閉 K 線，確保信號偵測基於已確認數據
-                # Binance API 回傳的最後一根 K 線是正在形成中的，用中間值做判斷會產生假信號
-                df_signal = df_signal.iloc[:-1]
-
-                # 市場過濾
-                market_ok, market_reason, is_strong_market = MarketFilter.check_market_condition(df_trend, symbol)
-                if not market_ok:
-                    logger.info(f"{symbol}: 跳過（市場過濾: {market_reason}）")
-                    continue
-
-                # === 多策略信號掃描 ===
-                signals_found = []
-
-                # V6.0: 升級版 2B（用 swing pivot + neckline）
-                has_2b, details_2b = detect_2b_with_pivots(
-                    df_signal,
-                    left_bars=Config.SWING_LEFT_BARS,
-                    right_bars=Config.SWING_RIGHT_BARS,
-                    vol_minimum_threshold=Config.VOL_MINIMUM_THRESHOLD,
-                    accept_weak_signals=Config.ACCEPT_WEAK_SIGNALS,
-                    enable_volume_grading=Config.ENABLE_VOLUME_GRADING,
-                    vol_explosive_threshold=Config.VOL_EXPLOSIVE_THRESHOLD,
-                    vol_strong_threshold=Config.VOL_STRONG_THRESHOLD,
-                    vol_moderate_threshold=Config.VOL_MODERATE_THRESHOLD,
-                    min_fakeout_atr=Config.MIN_FAKEOUT_ATR,
-                )
-                if has_2b and details_2b is not None:
-                    details_2b['signal_type'] = '2B'
-                    signals_found.append(('2B', details_2b))
-
-                # EMA 回撤信號
-                if Config.ENABLE_EMA_PULLBACK:
-                    has_pb, details_pb = detect_ema_pullback(
-                        df_signal,
-                        ema_pullback_threshold=Config.EMA_PULLBACK_THRESHOLD,
-                    )
-                    if has_pb and details_pb is not None:
-                        details_pb['signal_type'] = 'EMA_PULLBACK'
-                        signals_found.append(('EMA_PULLBACK', details_pb))
-
-                # 量能突破信號
-                if Config.ENABLE_VOLUME_BREAKOUT:
-                    has_bo, details_bo = detect_volume_breakout(
-                        df_signal,
-                        volume_breakout_mult=Config.VOLUME_BREAKOUT_MULT,
-                    )
-                    if has_bo and details_bo is not None:
-                        details_bo['signal_type'] = 'VOLUME_BREAKOUT'
-                        signals_found.append(('VOLUME_BREAKOUT', details_bo))
-
-                if not signals_found:
-                    logger.debug(f"{symbol}: 無信號（市場OK: {market_reason}）")
-                    continue
-
-                # 優先級排序：2B > VOLUME_BREAKOUT > EMA_PULLBACK
-                _signal_priority = {'2B': 1, 'VOLUME_BREAKOUT': 2, 'EMA_PULLBACK': 3}
-                signals_found.sort(key=lambda x: _signal_priority.get(x[0], 99))
-
-                # 列出所有偵測到的信號
-                all_sigs = ', '.join(
-                    f"{t} {d['side']} 量能={d.get('vol_ratio',0):.2f}x"
-                    for t, d in signals_found
-                )
-                best_type, signal_details = signals_found[0]
-                logger.info(f"{symbol}: 偵測到信號 [{all_sigs}]")
-                signal_side = signal_details['side']
-
-                # 交易方向過濾
-                trading_dir = Config.TRADING_DIRECTION.lower()
-                if trading_dir == 'long' and signal_side != 'LONG':
-                    logger.debug(f"{symbol}: 跳過（{best_type} {signal_side} 不符合方向=做多）")
-                    continue
-                if trading_dir == 'short' and signal_side != 'SHORT':
-                    logger.debug(f"{symbol}: 跳過（{best_type} {signal_side} 不符合方向=做空）")
-                    continue
-
-                # 趨勢檢查
-                trend_ok, trend_desc = TechnicalAnalysis.check_trend(df_trend, signal_side)
-                if not trend_ok:
-                    logger.info(f"{symbol}: 跳過（趨勢={trend_desc}，信號={signal_side} 方向不符）")
-                    continue
-
-                # MTF 確認
-                mtf_aligned = True
-                mtf_reason = "MTF 未啟用"
-                if Config.ENABLE_MTF_CONFIRMATION and not df_mtf.empty:
-                    mtf_aligned, mtf_reason = MTFConfirmation.check_mtf_alignment(df_mtf, signal_side)
-                    logger.info(f"{symbol}: MTF {mtf_reason}")
-
-                # 信號等級
-                signal_tier, tier_multiplier, tier_score = SignalTierSystem.calculate_signal_tier(
-                    signal_details, mtf_aligned, is_strong_market,
-                    signal_details.get('signal_strength', 'moderate')
-                )
-                signal_details['signal_tier'] = signal_tier
-                signal_details['market_regime'] = 'STRONG' if is_strong_market else 'TRENDING'
-                signal_details['entry_adx'] = (
-                    round(float(df_signal['adx'].iloc[-1]), 2)
-                    if 'adx' in df_signal.columns and not pd.isna(df_signal['adx'].iloc[-1])
-                    else None
-                )
-                signal_details['_market_reason'] = market_reason
-                signal_details['_trend_desc'] = trend_desc
-                signal_details['_mtf_reason'] = mtf_reason
-                # Tier diagnostic fields（數據蒐集，不影響交易邏輯）
-                signal_details['tier_score'] = tier_score
-                signal_details['mtf_aligned'] = mtf_aligned
-                signal_details['volume_grade'] = signal_details.get('signal_strength', 'moderate')
-                # trend_adx: 用 df_trend (1D) 的 ADX，而非 df_signal (1H)
-                signal_details['trend_adx'] = (
-                    round(float(df_trend['adx'].iloc[-1]), 2)
-                    if 'adx' in df_trend.columns and len(df_trend) > 0
-                    and not pd.isna(df_trend['adx'].iloc[-1])
-                    else None
-                )
-
-                # === Risk Guard: Tier 過濾 ===
-                _tier_rank = {'A': 3, 'B': 2, 'C': 1}
-                _min_tier = getattr(Config, 'V7_MIN_SIGNAL_TIER', 'C')
-                if _tier_rank.get(signal_tier, 0) < _tier_rank.get(_min_tier, 0):
-                    logger.info(
-                        f"{symbol}: 跳過（Tier {signal_tier} < 最低要求 {_min_tier}，score={tier_score}）"
-                    )
-                    continue
-
-                # === Risk Guard: BTC Trend Filter ===
-                if Config.BTC_TREND_FILTER_ENABLED and "BTC" not in symbol:
-                    btc_context = self._btc_trend_context or self._resolve_btc_trend_context()
-                    btc_trend = btc_context.get('trend')
-                    signal_details['btc_trend'] = btc_trend or "UNKNOWN"
-
-                    if btc_trend in ("RANGING", None):
-                        # BTC 橫盤或數據失敗 → 完全停止趨勢進場
-                        ranging_label = "RANGING" if btc_trend == "RANGING" else "UNKNOWN"
-                        pause_msg = (
-                            f"{symbol}: 跳過（BTC {ranging_label}，"
-                            f"趨勢策略暫停，等待網格策略接手）"
-                        )
-                        logger.info(pause_msg)
-                        continue
-
-                    elif signal_side != btc_trend:
-                        if Config.BTC_COUNTER_TREND_MULT <= 0:
-                            logger.info(
-                                f"{symbol}: 跳過（BTC 趨勢={btc_trend}，信號={signal_side} 逆勢，"
-                                f"BTC_COUNTER_TREND_MULT=0）"
-                            )
-                            continue
-                        else:
-                            tier_multiplier *= Config.BTC_COUNTER_TREND_MULT
-                            logger.info(
-                                f"{symbol}: BTC 逆勢（BTC={btc_trend}，信號={signal_side}），"
-                                f"倉位乘數 ×{Config.BTC_COUNTER_TREND_MULT}"
-                            )
-
-                logger.info(
-                    f"準備進場: {symbol} {best_type} {signal_side} | "
-                    f"等級={signal_tier} 量能={signal_details.get('vol_ratio', 0):.2f}x | "
-                    f"市場={market_reason} 趨勢={trend_desc} MTF={'通過' if mtf_aligned else '未通過'}"
-                )
-
-                # 執行開倉
-                self._execute_trade(symbol, signal_details, best_type, tier_multiplier, df_signal)
-
-            except Exception as e:
-                logger.error(f"{symbol} 掃描錯誤: {e}")
-
-        active_str = ', '.join(
-            f'{s}({t.side}/階段{t.stage}/${t.total_size * t.avg_entry:.0f})'
-            for s, t in self.active_trades.items()
-        ) or "無"
-        logger.debug(f"掃描完成 | 活躍持倉: {active_str}")  # 降噪
-
-        # Structured scan summary (will be supplemented by monitor CYCLE_SUMMARY)
-        _trade_log({
-            'event': 'CYCLE_SUMMARY',
-            'ts': datetime.now(timezone.utc).isoformat(),
-            'bot': 'v7.0',
-            'cycle': getattr(self, 'cycle_count', 0),
-            'active': len(self.active_trades),
-            'closed': 0,
-            'symbols': active_str.replace(' ', ''),
-        })
+        self.signal_scanner.scan_for_signals()
 
     # ==================== Private Helpers ====================
 
