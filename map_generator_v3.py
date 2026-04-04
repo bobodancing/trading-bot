@@ -8,11 +8,10 @@ PROJECT_ROOT = r"/home/rwfunder/文件/tradingbot/trading_bot"
 OUTPUT_FILE = "project_structure_map_v3.md"
 
 IGNORE_DIRS = {".git", "__pycache__", ".venv", "venv", "env", "build", "dist", "tests", ".pytest_cache", ".log"}
-IGNORE_FILES = {"__init__.py", "tempCodeRunnerFile.py"}
+IGNORE_FILES = {"__init__.py"}
 
 # 已廢棄的檔案，只顯示標記不展開（rel_path → 說明，避免不同目錄同名誤判）
 DEPRECATED_STUBS = {
-    "core.py":          "re-export stub（拆分四層後廢棄，勿直接 import）",
     "tradingStart.py":  "舊入口點（Bot/Scanner 分離後廢棄，改用 systemd trader/scanner.service）",
 }
 
@@ -41,40 +40,46 @@ ARCHITECTURE_OVERVIEW = """\
 ## 🗺 架構總覽
 
 > 雙 systemd 服務：trader.service（trader/bot.py）+ scanner.service（scanner/market_scanner.py）
-> tradingStart.py 已廢棄（Bot/Scanner 分離後不再需要）
+> Phase 3 拆分完成（2026-04-04）：bot.py 2441→1150 行，5 個 Manager 模組抽出
 
 ```
 scanner/
-└── market_scanner.py    ← 四層 Scanner（流動性→動能→形態→板塊集中度）[scanner.service]
+└── market_scanner.py       ← 四層 Scanner（流動性→動能→形態→板塊集中度）[scanner.service]
 
-trader/                  ← [trader.service]
-├── bot.py               ← TradingBotV6 主引擎（scan→_monitor_grid_state→hedge-aware sync→monitor）
-├── positions.py         ← PositionManager（strategy_name 插件 + Stage 管理 + 出場委派）
-├── signals.py           ← detect_2b_with_pivots / ema_pullback / volume_breakout（入場信號）
-├── structure.py         ← StructureAnalysis（swing point / neckline / BOS 追蹤）
-├── config.py            ← Config（交易參數 + SIGNAL_STRATEGY_MAP；secrets 另存 secrets.json）
-├── persistence.py       ← PositionPersistence（atomic write）+ grid state persistence（schema v2）
-├── regime.py            ← RegimeEngine（TRENDING/RANGING/SQUEEZE，ADX+BBW+ATR，3-candle hysteresis）
+trader/                     ← [trader.service]
+├── bot.py                  ← TradingBot 主引擎（1150行，編排層：init + 主循環 + _execute_trade + exchange sync + diagnostics）
+├── grid_manager.py         ← GridManager（V8 Grid lifecycle，scan/monitor/execute/record）
+├── btc_context.py          ← BTCContextManager（BTC trend/regime context，4H regime + 1D EMA fallback）
+├── position_monitor.py     ← PositionMonitor（monitor_positions/close/stage2/stage3/v53_reduce）
+├── signal_scanner.py       ← SignalScanner（scan_for_signals + cooldowns + filters + regime routing）
+├── utils.py                ← 共用工具（trade_log/calculate_pnl/get_close_side/build_log_base）
+├── positions.py            ← PositionManager（strategy_name 插件 + Stage 管理 + 出場委派）
+├── signals.py              ← detect_2b_with_pivots / ema_pullback / volume_breakout（入場信號）
+├── structure.py            ← StructureAnalysis（swing point / neckline / BOS 追蹤）
+├── config.py               ← Config（交易參數 + SIGNAL_STRATEGY_MAP；secrets 另存 secrets.json）
+├── persistence.py          ← PositionPersistence（atomic write）+ grid state persistence（schema v2）
+├── regime.py               ← RegimeEngine（TRENDING/RANGING/SQUEEZE，ADX+BBW+ATR，3-candle hysteresis）
 ├── infrastructure/
-│   ├── api_client.py    ← BinanceFuturesClient（HMAC 簽章 + recvWindow + hedge mode）
-│   ├── data_provider.py ← MarketDataProvider（retry + sandbox fallback + DatetimeIndex）
-│   ├── notifier.py      ← TelegramNotifier
-│   └── performance_db.py← PerformanceDB（SQLite performance.db，平倉自動寫入）
+│   ├── api_client.py       ← BinanceFuturesClient（HMAC 簽章 + recvWindow + hedge mode）
+│   ├── data_provider.py    ← MarketDataProvider（retry + sandbox fallback + DatetimeIndex）
+│   ├── notifier.py         ← TelegramNotifier
+│   └── performance_db.py   ← PerformanceDB（SQLite performance.db，平倉自動寫入）
 ├── indicators/
-│   └── technical.py     ← TechnicalAnalysis, DynamicThresholdManager,
-│                           MTFConfirmation, MarketFilter
+│   └── technical.py        ← TechnicalAnalysis, DynamicThresholdManager,
+│                              MTFConfirmation, MarketFilter
 ├── risk/
-│   └── manager.py       ← PrecisionHandler, RiskManager, SignalTierSystem
+│   └── manager.py          ← PrecisionHandler, RiskManager, SignalTierSystem
 ├── execution/
-│   └── order_engine.py  ← OrderExecutionEngine（下單封裝）
-└── strategies/          ← 策略插件層（Registry Pattern，新策略 register 即可）
-    ├── base.py          ← Action enum + DecisionDict + TradingStrategy ABC + StrategyFactory
-    ├── v54_noscale.py   ← V54NoScaleStrategy（主力；1.0R/1.5R/2.0R 純移損 + ATR trailing）
-    ├── v53_sop.py       ← V53SopStrategy（1.0R/1.5R/2.0R 分批減倉；新進場停用）
-    ├── v7_structure.py  ← V7StructureStrategy（三段結構加倉 + 反向 2B + 超時）
-    ├── v6_pyramid.py    ← [deprecated] V6PyramidStrategy（既有倉位保留）
-    └── v8_grid/         ← V8 ATR Grid 策略插件（BTC RANGING 網格）
-        ├── grid.py      ← V8AtrGrid（SMA±k*ATR 虛擬網格，4H canonical，regime exit 全平）
+│   └── order_engine.py     ← OrderExecutionEngine（下單封裝）
+└── strategies/             ← 策略插件層（Registry Pattern，新策略 register 即可）
+    ├── base.py             ← Action enum + DecisionDict + TradingStrategy ABC + StrategyFactory
+    ├── v54_noscale.py      ← V54NoScaleStrategy（主力；1.0R/1.5R/2.0R 純移損 + ATR trailing）
+    ├── legacy/             ← 廢棄策略（代碼保留供舊倉位平倉）
+    │   ├── v53_sop.py      ← V53SopStrategy（1.0R/1.5R/2.0R 分批減倉；新進場停用）
+    │   ├── v7_structure.py ← V7StructureStrategy（三段結構加倉 + 反向 2B + 超時）
+    │   └── v6_pyramid.py   ← V6PyramidStrategy（既有倉位保留）
+    └── v8_grid/            ← V8 ATR Grid 策略插件（BTC RANGING 網格）
+        ├── grid.py         ← V8AtrGrid（SMA±k*ATR 虛擬網格，4H canonical，regime exit 全平）
         └── pool_manager.py ← PoolManager（Grid/Trend 資金池隔離 + pool snapshot 持久化）
 ```
 """
