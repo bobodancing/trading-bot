@@ -11,7 +11,7 @@ import numpy as np
 from unittest.mock import patch, MagicMock
 
 from trader.positions import PositionManager
-from trader.strategies.v6_pyramid import V6PyramidStrategy
+from trader.strategies.legacy.v6_pyramid import V6PyramidStrategy
 from trader.structure import StructureAnalysis
 
 

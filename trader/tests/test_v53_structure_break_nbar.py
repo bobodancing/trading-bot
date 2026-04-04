@@ -10,7 +10,7 @@ import pandas as pd
 from unittest.mock import patch
 
 from trader.positions import PositionManager
-from trader.strategies.v53_sop import V53SopStrategy
+from trader.strategies.legacy.v53_sop import V53SopStrategy
 from trader.structure import StructureAnalysis
 
 

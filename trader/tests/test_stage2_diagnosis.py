@@ -10,7 +10,7 @@ from datetime import datetime, timezone, timedelta
 from unittest.mock import MagicMock, patch
 import pandas as pd
 
-from trader.strategies.v6_pyramid import V6PyramidStrategy
+from trader.strategies.legacy.v6_pyramid import V6PyramidStrategy
 from trader.config import Config as Cfg
 
 
@@ -90,7 +90,7 @@ class TestV6TimeoutConfig:
 
     def test_v53_uses_24h_timeout(self):
         """V53 仍用 STAGE1_MAX_HOURS (24h)"""
-        from trader.strategies.v53_sop import V53SopStrategy
+        from trader.strategies.legacy.v53_sop import V53SopStrategy
         strategy = V53SopStrategy()
         pm = make_pm(entry_time_offset_hours=24.5)
         pm.is_v6_pyramid = False

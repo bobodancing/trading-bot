@@ -82,9 +82,9 @@ def _make_swing_df_short_lh(n=25):
 class TestV7AddTrigger:
     """加倉觸發（三條件 AND）"""
 
-    @patch('trader.strategies.v7_structure._apply_common_pre', return_value=None)
+    @patch('trader.strategies.legacy.v7_structure._apply_common_pre', return_value=None)
     def test_stage1_to_stage2_long(self, mock_pre):
-        from trader.strategies.v7_structure import V7StructureStrategy
+        from trader.strategies.legacy.v7_structure import V7StructureStrategy
         strategy = V7StructureStrategy()
         pm = make_pm(side='LONG', entry_price=100.0, stop_loss=88.0, stage=1)
         df = _make_swing_df_long_hl()
@@ -93,9 +93,9 @@ class TestV7AddTrigger:
         assert decision['add_stage'] == 2
         assert decision['reason'] == 'V7_STRUCTURE_ADD'
 
-    @patch('trader.strategies.v7_structure._apply_common_pre', return_value=None)
+    @patch('trader.strategies.legacy.v7_structure._apply_common_pre', return_value=None)
     def test_stage2_to_stage3_long(self, mock_pre):
-        from trader.strategies.v7_structure import V7StructureStrategy
+        from trader.strategies.legacy.v7_structure import V7StructureStrategy
         strategy = V7StructureStrategy()
         pm = make_pm(side='LONG', entry_price=100.0, stop_loss=88.0, stage=2)
         df = _make_swing_df_long_hl()
@@ -103,9 +103,9 @@ class TestV7AddTrigger:
         assert decision['action'] == Action.ADD
         assert decision['add_stage'] == 3
 
-    @patch('trader.strategies.v7_structure._apply_common_pre', return_value=None)
+    @patch('trader.strategies.legacy.v7_structure._apply_common_pre', return_value=None)
     def test_stage1_to_stage2_short(self, mock_pre):
-        from trader.strategies.v7_structure import V7StructureStrategy
+        from trader.strategies.legacy.v7_structure import V7StructureStrategy
         strategy = V7StructureStrategy()
         pm = make_pm(side='SHORT', entry_price=100.0, stop_loss=112.0, stage=1)
         df = _make_swing_df_short_lh()
@@ -113,9 +113,9 @@ class TestV7AddTrigger:
         assert decision['action'] == Action.ADD
         assert decision['add_stage'] == 2
 
-    @patch('trader.strategies.v7_structure._apply_common_pre', return_value=None)
+    @patch('trader.strategies.legacy.v7_structure._apply_common_pre', return_value=None)
     def test_no_trigger_without_volume(self, mock_pre):
-        from trader.strategies.v7_structure import V7StructureStrategy
+        from trader.strategies.legacy.v7_structure import V7StructureStrategy
         strategy = V7StructureStrategy()
         pm = make_pm(side='LONG', entry_price=100.0, stop_loss=88.0, stage=1)
         df = _make_swing_df_long_hl()
@@ -123,9 +123,9 @@ class TestV7AddTrigger:
         decision = strategy.get_decision(pm, 102.0, df)
         assert decision['action'] == Action.HOLD
 
-    @patch('trader.strategies.v7_structure._apply_common_pre', return_value=None)
+    @patch('trader.strategies.legacy.v7_structure._apply_common_pre', return_value=None)
     def test_no_trigger_without_reversal_candle(self, mock_pre):
-        from trader.strategies.v7_structure import V7StructureStrategy
+        from trader.strategies.legacy.v7_structure import V7StructureStrategy
         strategy = V7StructureStrategy()
         pm = make_pm(side='LONG', entry_price=100.0, stop_loss=88.0, stage=1)
         df = _make_swing_df_long_hl()
@@ -134,19 +134,19 @@ class TestV7AddTrigger:
         decision = strategy.get_decision(pm, 97.0, df)
         assert decision['action'] == Action.HOLD
 
-    @patch('trader.strategies.v7_structure._apply_common_pre', return_value=None)
+    @patch('trader.strategies.legacy.v7_structure._apply_common_pre', return_value=None)
     def test_stage3_no_further_add(self, mock_pre):
-        from trader.strategies.v7_structure import V7StructureStrategy
+        from trader.strategies.legacy.v7_structure import V7StructureStrategy
         strategy = V7StructureStrategy()
         pm = make_pm(side='LONG', entry_price=100.0, stop_loss=88.0, stage=3)
         df = _make_swing_df_long_hl()
         decision = strategy.get_decision(pm, 102.0, df)
         assert decision['action'] != Action.ADD
 
-    @patch('trader.strategies.v7_structure._apply_common_pre', return_value=None)
+    @patch('trader.strategies.legacy.v7_structure._apply_common_pre', return_value=None)
     def test_no_trigger_doji_candle(self, mock_pre):
         """body/range < 0.3 → 不觸發"""
-        from trader.strategies.v7_structure import V7StructureStrategy
+        from trader.strategies.legacy.v7_structure import V7StructureStrategy
         strategy = V7StructureStrategy()
         pm = make_pm(side='LONG', entry_price=100.0, stop_loss=88.0, stage=1)
         df = _make_swing_df_long_hl()
@@ -158,10 +158,10 @@ class TestV7AddTrigger:
         decision = strategy.get_decision(pm, 100.1, df)
         assert decision['action'] == Action.HOLD
 
-    @patch('trader.strategies.v7_structure._apply_common_pre', return_value=None)
+    @patch('trader.strategies.legacy.v7_structure._apply_common_pre', return_value=None)
     def test_no_trigger_empty_swings(self, mock_pre):
         """Insufficient data → no swing points → no trigger"""
-        from trader.strategies.v7_structure import V7StructureStrategy
+        from trader.strategies.legacy.v7_structure import V7StructureStrategy
         strategy = V7StructureStrategy()
         pm = make_pm(side='LONG', entry_price=100.0, stop_loss=88.0, stage=1)
         df = make_df([(100, 102, 98, 101, 120, 100, 2.0)] * 3)  # too few bars
@@ -172,9 +172,9 @@ class TestV7AddTrigger:
 class TestV7Reverse2B:
     """反向 2B 全平"""
 
-    @patch('trader.strategies.v7_structure._apply_common_pre', return_value=None)
+    @patch('trader.strategies.legacy.v7_structure._apply_common_pre', return_value=None)
     def test_reverse_2b_long_close(self, mock_pre):
-        from trader.strategies.v7_structure import V7StructureStrategy
+        from trader.strategies.legacy.v7_structure import V7StructureStrategy
         strategy = V7StructureStrategy()
         pm = make_pm(side='LONG', entry_price=100.0, stop_loss=95.0, stage=1, atr=2.0)
 
@@ -193,9 +193,9 @@ class TestV7Reverse2B:
         assert decision['action'] == Action.CLOSE
         assert decision['reason'] == 'REVERSE_2B'
 
-    @patch('trader.strategies.v7_structure._apply_common_pre', return_value=None)
+    @patch('trader.strategies.legacy.v7_structure._apply_common_pre', return_value=None)
     def test_reverse_2b_short_close(self, mock_pre):
-        from trader.strategies.v7_structure import V7StructureStrategy
+        from trader.strategies.legacy.v7_structure import V7StructureStrategy
         strategy = V7StructureStrategy()
         pm = make_pm(side='SHORT', entry_price=100.0, stop_loss=105.0, stage=1, atr=2.0)
 
@@ -218,9 +218,9 @@ class TestV7Reverse2B:
 class TestV7Timeout:
     """Stage 1 超時退出"""
 
-    @patch('trader.strategies.v7_structure._apply_common_pre', return_value=None)
+    @patch('trader.strategies.legacy.v7_structure._apply_common_pre', return_value=None)
     def test_stage1_timeout(self, mock_pre):
-        from trader.strategies.v7_structure import V7StructureStrategy
+        from trader.strategies.legacy.v7_structure import V7StructureStrategy
         strategy = V7StructureStrategy()
         old_time = datetime.now(timezone.utc) - timedelta(hours=40)
         pm = make_pm(stage=1, entry_time=old_time)
@@ -229,9 +229,9 @@ class TestV7Timeout:
         assert decision['action'] == Action.CLOSE
         assert decision['reason'] == 'TIME_EXIT'
 
-    @patch('trader.strategies.v7_structure._apply_common_pre', return_value=None)
+    @patch('trader.strategies.legacy.v7_structure._apply_common_pre', return_value=None)
     def test_stage2_no_timeout(self, mock_pre):
-        from trader.strategies.v7_structure import V7StructureStrategy
+        from trader.strategies.legacy.v7_structure import V7StructureStrategy
         strategy = V7StructureStrategy()
         old_time = datetime.now(timezone.utc) - timedelta(hours=40)
         pm = make_pm(stage=2, entry_time=old_time)
@@ -243,10 +243,10 @@ class TestV7Timeout:
 class TestV7SLRatchet:
     """SL 棘輪 + 結構 Trailing"""
 
-    @patch('trader.strategies.v7_structure._apply_common_pre', return_value=None)
+    @patch('trader.strategies.legacy.v7_structure._apply_common_pre', return_value=None)
     def test_trailing_sl_long_ratchet_up(self, mock_pre):
         """LONG Stage 3: swing low 上移 → SL 上移 (stage=3 so ADD won't fire)"""
-        from trader.strategies.v7_structure import V7StructureStrategy
+        from trader.strategies.legacy.v7_structure import V7StructureStrategy
         strategy = V7StructureStrategy()
         pm = make_pm(side='LONG', entry_price=100.0, stop_loss=88.0, stage=3, atr=2.0)
         df = _make_swing_df_long_hl()
@@ -256,10 +256,10 @@ class TestV7SLRatchet:
         assert decision['action'] == Action.UPDATE_SL
         assert decision['new_sl'] is not None and decision['new_sl'] > 88.0
 
-    @patch('trader.strategies.v7_structure._apply_common_pre', return_value=None)
+    @patch('trader.strategies.legacy.v7_structure._apply_common_pre', return_value=None)
     def test_trailing_sl_short_ratchet_down(self, mock_pre):
         """SHORT Stage 3: swing high 下移 → SL 下移"""
-        from trader.strategies.v7_structure import V7StructureStrategy
+        from trader.strategies.legacy.v7_structure import V7StructureStrategy
         strategy = V7StructureStrategy()
         pm = make_pm(side='SHORT', entry_price=100.0, stop_loss=112.0, stage=3, atr=2.0)
         df = _make_swing_df_short_lh()
@@ -270,7 +270,7 @@ class TestV7SLRatchet:
 
     def test_sl_no_retreat_long(self):
         """LONG: new SL < current SL → no update"""
-        from trader.strategies.v7_structure import V7StructureStrategy
+        from trader.strategies.legacy.v7_structure import V7StructureStrategy
         strategy = V7StructureStrategy()
         pm = make_pm(side='LONG', entry_price=100.0, stop_loss=95.0, stage=2, atr=2.0)
         from trader.config import Config as Cfg
@@ -280,7 +280,7 @@ class TestV7SLRatchet:
 
     def test_sl_no_retreat_short(self):
         """SHORT: new SL > current SL → no update"""
-        from trader.strategies.v7_structure import V7StructureStrategy
+        from trader.strategies.legacy.v7_structure import V7StructureStrategy
         strategy = V7StructureStrategy()
         pm = make_pm(side='SHORT', entry_price=100.0, stop_loss=105.0, stage=2, atr=2.0)
         from trader.config import Config as Cfg
@@ -293,7 +293,7 @@ class TestV7PositionSizing:
     """加倉倉位計算"""
 
     def test_basic_sizing(self):
-        from trader.strategies.v7_structure import V7StructureStrategy
+        from trader.strategies.legacy.v7_structure import V7StructureStrategy
         size = V7StructureStrategy.calculate_add_size(
             balance=10000, risk_per_trade=0.017,
             entry_price=100.0, new_sl=95.0,  # 5% dist
@@ -302,7 +302,7 @@ class TestV7PositionSizing:
         assert abs(size - 34.0) < 0.01
 
     def test_max_position_cap(self):
-        from trader.strategies.v7_structure import V7StructureStrategy
+        from trader.strategies.legacy.v7_structure import V7StructureStrategy
         size = V7StructureStrategy.calculate_add_size(
             balance=10000, risk_per_trade=0.017,
             entry_price=100.0, new_sl=99.9,  # 0.1% dist → huge
@@ -311,7 +311,7 @@ class TestV7PositionSizing:
         assert abs(size - 14.6) < 0.01
 
     def test_max_total_risk_cap(self):
-        from trader.strategies.v7_structure import V7StructureStrategy
+        from trader.strategies.legacy.v7_structure import V7StructureStrategy
         size = V7StructureStrategy.calculate_add_size(
             balance=10000, risk_per_trade=0.017,
             entry_price=100.0, new_sl=95.0,
@@ -320,7 +320,7 @@ class TestV7PositionSizing:
         assert size < 34.0
 
     def test_zero_budget_returns_zero(self):
-        from trader.strategies.v7_structure import V7StructureStrategy
+        from trader.strategies.legacy.v7_structure import V7StructureStrategy
         size = V7StructureStrategy.calculate_add_size(
             balance=10000, risk_per_trade=0.017,
             entry_price=100.0, new_sl=95.0,
@@ -329,7 +329,7 @@ class TestV7PositionSizing:
         assert size == 0.0
 
     def test_zero_sl_distance(self):
-        from trader.strategies.v7_structure import V7StructureStrategy
+        from trader.strategies.legacy.v7_structure import V7StructureStrategy
         size = V7StructureStrategy.calculate_add_size(
             balance=10000, risk_per_trade=0.017,
             entry_price=100.0, new_sl=100.0,
@@ -341,7 +341,7 @@ class TestV7StatePersistence:
     """State round-trip"""
 
     def test_round_trip(self):
-        from trader.strategies.v7_structure import V7StructureStrategy
+        from trader.strategies.legacy.v7_structure import V7StructureStrategy
         s = V7StructureStrategy()
         s.last_structure_swing = 92.5
         s.add_trigger_swings = [90.0, 92.5]
@@ -352,7 +352,7 @@ class TestV7StatePersistence:
         assert s2.add_trigger_swings == [90.0, 92.5]
 
     def test_load_empty_state(self):
-        from trader.strategies.v7_structure import V7StructureStrategy
+        from trader.strategies.legacy.v7_structure import V7StructureStrategy
         s = V7StructureStrategy()
         s.load_state({})
         assert s.last_structure_swing is None
@@ -364,19 +364,19 @@ class TestV7Registration:
 
     def test_factory_create_v7(self):
         from trader.strategies.base import StrategyFactory
-        from trader.strategies.v7_structure import V7StructureStrategy
+        from trader.strategies.legacy.v7_structure import V7StructureStrategy
         s = StrategyFactory.create("v7_structure")
         assert isinstance(s, V7StructureStrategy)
 
     def test_factory_legacy_v7(self):
         from trader.strategies.base import StrategyFactory
-        from trader.strategies.v7_structure import V7StructureStrategy
+        from trader.strategies.legacy.v7_structure import V7StructureStrategy
         s = StrategyFactory.create_strategy("v7")
         assert isinstance(s, V7StructureStrategy)
 
     def test_factory_legacy_V7(self):
         from trader.strategies.base import StrategyFactory
-        from trader.strategies.v7_structure import V7StructureStrategy
+        from trader.strategies.legacy.v7_structure import V7StructureStrategy
         s = StrategyFactory.create_strategy("V7")
         assert isinstance(s, V7StructureStrategy)
 
@@ -387,7 +387,7 @@ class TestV7BreakevenSL:
 
     def test_stage2_to_3_breakeven_long(self):
         """LONG Stage 2→3：SL 拉到 avg_entry"""
-        from trader.strategies.v7_structure import V7StructureStrategy
+        from trader.strategies.legacy.v7_structure import V7StructureStrategy
         from trader.config import Config
         Config.SL_ATR_BUFFER = 0.8
 
@@ -402,7 +402,7 @@ class TestV7BreakevenSL:
 
     def test_stage1_to_2_no_breakeven_long(self):
         """LONG Stage 1→2：不強制 breakeven，SL 可低於 avg_entry"""
-        from trader.strategies.v7_structure import V7StructureStrategy
+        from trader.strategies.legacy.v7_structure import V7StructureStrategy
         from trader.config import Config
         Config.SL_ATR_BUFFER = 0.8
 
@@ -418,7 +418,7 @@ class TestV7BreakevenSL:
 
     def test_stage2_to_3_breakeven_short(self):
         """SHORT Stage 2→3：SL 拉到 avg_entry"""
-        from trader.strategies.v7_structure import V7StructureStrategy
+        from trader.strategies.legacy.v7_structure import V7StructureStrategy
         from trader.config import Config
         Config.SL_ATR_BUFFER = 0.8
 
@@ -436,10 +436,10 @@ class TestV7BreakevenSL:
 class TestV7Integration:
     """V7 full lifecycle + calculate_add_size integration"""
 
-    @patch('trader.strategies.v7_structure._apply_common_pre', return_value=None)
+    @patch('trader.strategies.legacy.v7_structure._apply_common_pre', return_value=None)
     def test_full_cycle_long(self, mock_pre):
         """LONG: Stage 1 HOLD -> ADD Stage 2 -> ADD Stage 3 -> no more adds"""
-        from trader.strategies.v7_structure import V7StructureStrategy
+        from trader.strategies.legacy.v7_structure import V7StructureStrategy
         strategy = V7StructureStrategy()
 
         # Stage 1: HOLD (no swing structure yet)
@@ -478,7 +478,7 @@ class TestV7Integration:
 
     def test_add_size_within_total_risk(self):
         """三段加倉後 total risk 不超過 max_total_risk"""
-        from trader.strategies.v7_structure import V7StructureStrategy
+        from trader.strategies.legacy.v7_structure import V7StructureStrategy
 
         balance = 10000.0
         risk_per_trade = 0.017

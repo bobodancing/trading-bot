@@ -572,7 +572,7 @@ class TestProfitPullbackMFEThreshold:
 
     def test_strategy_dispatch_v53_no_pullback(self):
         """non-V6 trade should use V53SopStrategy (no profit_pullback)"""
-        from trader.strategies.v53_sop import V53SopStrategy
+        from trader.strategies.legacy.v53_sop import V53SopStrategy
         pm = PositionManager(
             symbol='TEST/USDT', side='LONG',
             entry_price=100.0, stop_loss=98.0,

@@ -28,17 +28,17 @@
 
 | 策略 | 適用市況 | 進場信號 | 持倉管理 |
 |------|---------|----------|----------|
-| **V7 Structure** | TRENDING | 2B Swing Pivot Breakout | 三段結構加倉（Swing-based SL 棘輪）+ 反向 2B + 超時退出 |
-| **V54 NoScale** | TRENDING | 2B / EMA Pullback / Volume Breakout | 不加倉不減倉，1.0R/1.5R/2.0R 純移損 + ATR trailing |
-| **V53 SOP** | TRENDING | EMA Pullback / Volume Breakout | 1.0R / 1.5R / 2.0R 分批減倉（新進場停用） |
+| **V54 NoScale** | TRENDING | 2B / EMA Pullback / Volume Breakout | 不加倉不減倉，1.0R/1.5R/2.0R 純移損 + ATR trailing（主力策略）|
 | **V8 ATR Grid** | RANGING | RegimeEngine 自動切換 | SMA±k*ATR 虛擬網格，金字塔權重，regime exit 立即全平（`ENABLE_GRID_TRADING=False`）|
-| ~~V6 Pyramid~~ | — | ~~2B~~ | ~~deprecated，既有倉位仍可運行~~ |
+| ~~V53 SOP~~ | — | ~~EMA Pullback / Volume Breakout~~ | ~~deprecated，新進場停用，舊倉位繼續~~ |
+| ~~V7 Structure~~ | — | ~~2B~~ | ~~deprecated~~ |
+| ~~V6 Pyramid~~ | — | ~~2B~~ | ~~deprecated~~ |
 
 **市場 Regime 路由**（`ENABLE_GRID_TRADING=True` 時）：
 
 ```
 RANGING  → V8 ATR Grid（BTC/USDT 專用）
-TRENDING → Grid 立即全平 → V54 NoScale + V7 Structure 接手
+TRENDING → Grid 立即全平 → V54 NoScale 接手
 SQUEEZE  → Grid converge + 趨勢暫停
 ```
 
@@ -222,19 +222,19 @@ class TradingStrategy(ABC):
     def load_state(self, state: dict): ... # state 還原
 
 # Registry — 新策略只需 register
-StrategyFactory.register("v7_structure", V7StructureStrategy)
-StrategyFactory.register("v53_sop", V53SopStrategy)
-StrategyFactory.register("v6_pyramid", V6PyramidStrategy)  # deprecated
-# StrategyFactory.register("grid", GridStrategy)  # 未來擴充
+StrategyFactory.register("v54_noscale", V54NoScaleStrategy)  # 主力策略
+StrategyFactory.register("v53_sop", V53SopStrategy)           # deprecated（舊倉位保留）
+StrategyFactory.register("v7_structure", V7StructureStrategy)  # deprecated
+StrategyFactory.register("v6_pyramid", V6PyramidStrategy)      # deprecated
 ```
 
 bot.py 通過 `SIGNAL_STRATEGY_MAP` config 將信號類型映射到策略：
 
 ```python
 SIGNAL_STRATEGY_MAP = {
-    "2B": "v7_structure",       # V7 結構加倉（新）
-    "EMA_PULLBACK": "v53_sop",
-    "VOLUME_BREAKOUT": "v53_sop",
+    "2B": "v54_noscale",          # 純移損（主力）
+    "EMA_PULLBACK": "v54_noscale",
+    "VOLUME_BREAKOUT": "v54_noscale",
 }
 ```
 
@@ -242,7 +242,9 @@ SIGNAL_STRATEGY_MAP = {
 
 ## 策略系統
 
-### V7 Structure（結構驅動三段加倉）
+### V54 NoScale（純移損，主力策略）
+
+全 3 信號路由（2B / EMA_PULLBACK / VOLUME_BREAKOUT），不加倉不減倉。
 
 #### 信號偵測
 
@@ -251,23 +253,16 @@ SIGNAL_STRATEGY_MAP = {
 - **Bullish 2B**：價格跌破 confirmed swing low 後放量收回
 - **Bearish 2B**：價格突破 confirmed swing high 後放量收回
 
-#### 三段結構加倉
+#### 出場機制（階梯移損 + ATR Trailing）
 
-| Stage | 觸發 | 倉位 | 止損 |
-|-------|------|------|------|
-| 1 — 建倉 | 2B 信號 | `risk_per_trade` (1.7%) | swing point ± ATR buffer |
-| 2 — 第一加倉 | Lower High（SHORT）/ Higher Low（LONG）+ 順勢K + 量能 | `risk_per_trade` (1.7%) | 新 swing point |
-| 3 — 第二加倉 | 再次結構確認 | `risk_per_trade` (1.7%) | 最新 swing point |
+| 階段 | 觸發 | 動作 |
+|------|------|------|
+| 1.0R | 獲利達 1R | 移損至 +0.3R |
+| 1.5R | 獲利達 1.5R | 移損至 +1.0R，啟動 ATR trailing |
+| 2.0R | 獲利達 2.0R | 移損至 +1.5R |
+| ATR Trailing | 1.5R 後持續 | ATR-based trailing stop（只往有利方向） |
 
-加倉三條件 AND：**Swing Point 確認 + 順勢K（body/range ≥ 0.3）+ 量能（≥ vol_ma × 1.2）**
-
-#### 出場機制
-
-1. **結構 Trailing SL**：棘輪追蹤最新 swing point（只往有利方向移動）
-2. **反向 2B**：穿透深度 ≥ 0.3 ATR + 下根確認 → 全平
-3. **Stage 1 超時**：36h 未觸發加倉 → 平倉釋放資金
-
-### V53 SOP（分批減倉）
+### V53 SOP（分批減倉，deprecated — 新進場停用，舊倉位繼續）
 
 | 階段 | 觸發 | 動作 |
 |------|------|------|
@@ -289,7 +284,7 @@ SIGNAL_STRATEGY_MAP = {
 
 **Regime 路由**：
 - `RANGING` → Grid 啟動，掃 BTC 1H tick
-- `TRENDING` → Grid 同 cycle 立即全平（force_close_all），V54/V7 接手
+- `TRENDING` → Grid 同 cycle 立即全平（force_close_all），V54 接手
 - `SQUEEZE` → Grid converge，趨勢暫停，等突破
 - Grid lifecycle 由 `_monitor_grid_state()` 獨立驅動，不受 trend 倉位影響
 
@@ -302,9 +297,13 @@ SIGNAL_STRATEGY_MAP = {
 | `GRID_ATR_MULTIPLIER` | 2.5 | 上下軌 SMA ± k*ATR |
 | `GRID_CONVERGE_TIMEOUT_HOURS` | 72 | 均值回歸等待上限 |
 
-### V6 Pyramid（已廢棄，歷史參考）
+### V7 Structure（已廢棄）
 
-既有 V6 持倉仍可正常平倉，新進場不再使用。
+結構驅動三段加倉，已被 V54 NoScale 取代。既有倉位可正常平倉。
+
+### V6 Pyramid（已廢棄）
+
+既有倉位可正常平倉，新進場不再使用。
 
 ---
 

@@ -171,9 +171,9 @@ class StrategyFactory:
         resolved = _legacy.get(name, name)
         if resolved not in cls._registry:
             # Lazy import fallback for first call before registration
-            from trader.strategies.v6_pyramid import V6PyramidStrategy
-            from trader.strategies.v53_sop import V53SopStrategy
-            from trader.strategies.v7_structure import V7StructureStrategy
+            from trader.strategies.legacy.v6_pyramid import V6PyramidStrategy
+            from trader.strategies.legacy.v53_sop import V53SopStrategy
+            from trader.strategies.legacy.v7_structure import V7StructureStrategy
             from trader.strategies.v54_noscale import V54NoScaleStrategy
             cls.register("v6_pyramid", V6PyramidStrategy)
             cls.register("v53_sop", V53SopStrategy)

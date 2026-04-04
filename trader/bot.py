@@ -1958,7 +1958,7 @@ class TradingBot:
 
             # V7: 用策略的 calculate_add_size + decision 中的 new_sl
             if pm.strategy_name == 'v7_structure':
-                from trader.strategies.v7_structure import V7StructureStrategy
+                from trader.strategies.legacy.v7_structure import V7StructureStrategy
                 new_sl = decision.get('new_sl') if decision else None
                 if new_sl is None:
                     logger.error(f"{pm.symbol} V7 Stage 2: decision 缺少 new_sl")
@@ -2043,7 +2043,7 @@ class TradingBot:
 
             # V7: 用策略的 calculate_add_size + decision 中的 new_sl
             if pm.strategy_name == 'v7_structure':
-                from trader.strategies.v7_structure import V7StructureStrategy
+                from trader.strategies.legacy.v7_structure import V7StructureStrategy
                 new_sl = decision.get('new_sl') if decision else None
                 if new_sl is None:
                     logger.error(f"{pm.symbol} V7 Stage 3: decision 缺少 new_sl")
