@@ -55,7 +55,6 @@
     "v53_equity_cap_percent": 0.10,
     "stage2_volume_mult": 1.2,
     "stage3_ema_period": 20,
-    "stage3_volume_reduced": true,
     "swing_left_bars": 7,
     "swing_right_bars": 3,
     "sl_atr_buffer": 0.8,
@@ -68,19 +67,12 @@
     "v7_stage1_max_hours": 36,
     "v7_stage_volume_mult": 1.0,
     "early_stop_r_threshold": 0.75,
-    "profit_pullback_threshold": 0.55,
     "early_exit_cooldown_hours": 10,
     "signal_strategy_map": {
         "2B": "v54_noscale",
         "EMA_PULLBACK": "v54_noscale",
         "VOLUME_BREAKOUT": "v54_noscale"
     },
-    "strategy_use_v6": {
-        "2B_BREAKOUT": false,
-        "EMA_PULLBACK": false,
-        "VOLUME_BREAKOUT": false
-    },
-    "v6_debug_mode": false,
     "v6_dry_run": false,
     "positions_json_path": "positions.json",
     "auto_backup_on_stage_change": true,

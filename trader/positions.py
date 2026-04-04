@@ -283,7 +283,7 @@ class PositionManager:
 
         _tag = "V7" if self.strategy_name == "v7_structure" else "V6"
         prefix = f"[{_tag}] {self.symbol} Stage2Check"
-        log_fn = logger.info if Cfg.V6_STAGE2_DEBUG_LOG else logger.debug
+        log_fn = logger.info
 
         if self.stage != 1 or self.neckline is None:
             log_fn(

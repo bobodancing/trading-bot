@@ -136,10 +136,8 @@ class Config:
     # Stage 觸發條件
     STAGE2_VOLUME_MULT = 1.2
     STAGE3_EMA_PERIOD = 20
-    STAGE3_VOLUME_REDUCED = True
 
     # ===== 診斷設定 =====
-    V6_STAGE2_DEBUG_LOG = True   # Stage 2 trigger 診斷 log（True → INFO level 輸出）
 
     # ===== 從 hardcode 提取的參數（2026-03-21 cleanup）=====
 
@@ -201,8 +199,6 @@ class Config:
     V6_FAST_TRAIL_REQUIRE_BOS = False  # Stage 1 不要求 BOS，只要 HL/LH
 
     # === 舊 pullback 參數（V53 fallback 用，V6 已改為三段式防守）===
-    PROFIT_PULLBACK_THRESHOLD = 0.55
-    MIN_MFE_R_FOR_PULLBACK = 0.3
 
     # 快速止損（虧損達 0.67R 即平倉）
     EARLY_STOP_R_THRESHOLD = 0.75
@@ -271,10 +267,6 @@ class Config:
     SYMBOL_LOSS_COOLDOWN_HOURS = 24
 
     # 策略選擇器
-    STRATEGY_USE_V6 = {
-        '2B_BREAKOUT': True,
-        # EMA_PULLBACK / VOLUME_BREAKOUT 固定走 V5.3 路徑，不在此控制
-    }
 
     # Signal → Strategy 映射（新增策略只需在此加一行 + register class）
     # V6/V7 pyramiding deprecated — 所有新進場走 V54 純移損
@@ -285,7 +277,6 @@ class Config:
     }
 
     # Debug & 日誌
-    V6_DEBUG_MODE = False
     V6_DRY_RUN = False
 
     # --- Strategy ---
