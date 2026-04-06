@@ -7,12 +7,14 @@ Polling 模式接收 Telegram 指令，回覆倉位/狀態/餘額資訊。
 import html
 import logging
 import time
+from collections import Counter
 from datetime import datetime, timezone
 from typing import Optional
 
 import requests
 
 from trader.config import Config
+from trader.infrastructure.notifier import format_strategy_label
 
 logger = logging.getLogger(__name__)
 
@@ -121,7 +123,10 @@ class TelegramCommandHandler:
         for symbol, pm in trades.items():
             now = datetime.now(timezone.utc)
             hold_hours = (now - pm.entry_time).total_seconds() / 3600
-            strategy = 'V6' if pm.is_v6_pyramid else 'V53'
+            strategy = format_strategy_label(
+                getattr(pm, 'strategy_name', None),
+                getattr(pm, 'is_v6_pyramid', None),
+            )
 
             # 未實現 PnL 估算（用 highest/lowest 近似，無即時價格）
             if pm.side == 'LONG':
@@ -156,16 +161,32 @@ class TelegramCommandHandler:
         else:
             uptime_str = "N/A"
 
-        # 策略分佈
-        v6_count = sum(1 for pm in trades.values() if pm.is_v6_pyramid)
-        v53_count = active_count - v6_count
+        # 新舊策略共存時，Telegram 以 strategy_name 為準避免誤報。
+        counts = Counter(
+            format_strategy_label(
+                getattr(pm, 'strategy_name', None),
+                getattr(pm, 'is_v6_pyramid', None),
+            )
+            for pm in trades.values()
+        )
+        label_order = [
+            "V54 NoScale",
+            "V7 Structure",
+            "V53 SOP",
+            "V6 Pyramid",
+            "V8 ATR Grid",
+        ]
+        parts = [f"{label}: {counts[label]}" for label in label_order if counts.get(label)]
+        extra_labels = sorted(label for label in counts.keys() if label not in label_order)
+        parts.extend(f"{label}: {counts[label]}" for label in extra_labels)
+        distribution = " | ".join(parts) if parts else "None"
 
         lines = [
             "<b>Bot Status</b>",
             "──────────────────",
             f"運行時間: {uptime_str}",
             f"活躍倉位: {active_count}",
-            f"  V6: {v6_count} | V53: {v53_count}",
+            f"策略分佈: {distribution}",
             f"監控幣種: {len(Config.SYMBOLS)}",
             f"DRY RUN: {'Yes' if Config.V6_DRY_RUN else 'No'}",
         ]

@@ -63,6 +63,28 @@ class TestNotifierEscape:
         assert 'V6 Pyramid' in text
 
     @patch('trader.infrastructure.notifier.requests.post')
+    def test_notify_signal_uses_strategy_name_label_for_v54(self, mock_post):
+        mock_post.return_value = MagicMock(ok=True)
+        details = {
+            'signal_strength': 'moderate',
+            'signal_tier': 'A',
+            'side': 'SHORT',
+            'market_regime': 'TRENDING',
+            'vol_ratio': 1.2,
+            'entry_price': 100.0,
+            'stop_loss': 105.0,
+            'target_ref': 'neckline',
+            'position_size': 0.02,
+            'is_v6': False,
+            'strategy_name': 'v54_noscale',
+        }
+        TelegramNotifier.notify_signal('BTCUSDT', details)
+        payload = mock_post.call_args.kwargs.get('data', {})
+        text = payload.get('text', '')
+        assert 'V54 NoScale' in text
+        assert 'V53 SOP' not in text
+
+    @patch('trader.infrastructure.notifier.requests.post')
     def test_notify_exit_escapes_reason(self, mock_post):
         mock_post.return_value = MagicMock(ok=True)
         details = {

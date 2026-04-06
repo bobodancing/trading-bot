@@ -723,7 +723,8 @@ class TradingBot:
                 **signal_details,
                 'position_size': position_size,
                 'stop_loss': stop_loss,
-                'is_v6': False,
+                'is_v6': strategy_name == 'v6_pyramid',
+                'strategy_name': strategy_name,
                 'neckline': neckline,
             })
 

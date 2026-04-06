@@ -7,11 +7,31 @@ Telegram 通知器
 import html
 import logging
 import requests
-from typing import Dict
+from typing import Dict, Optional
 
 from trader.config import Config
 
 logger = logging.getLogger(__name__)
+
+
+STRATEGY_LABELS = {
+    "v6_pyramid": "V6 Pyramid",
+    "v7_structure": "V7 Structure",
+    "v53_sop": "V53 SOP",
+    "v54_noscale": "V54 NoScale",
+    "v8_atr_grid": "V8 ATR Grid",
+}
+
+
+def format_strategy_label(strategy_name: Optional[str] = None, is_v6: Optional[bool] = None) -> str:
+    """Resolve legacy/new strategy identifiers to a stable Telegram label."""
+    if strategy_name:
+        return STRATEGY_LABELS.get(strategy_name, strategy_name)
+    if is_v6 is True:
+        return "V6 Pyramid"
+    if is_v6 is False:
+        return "V53 SOP"
+    return "Unknown"
 
 
 class TelegramNotifier:
@@ -68,13 +88,16 @@ class TelegramNotifier:
         else:
             r15 = "N/A"
 
-        strategy = 'V6 Pyramid' if details.get('is_v6') else 'V53 SOP'
+        strategy = format_strategy_label(
+            details.get('strategy_name'),
+            details.get('is_v6'),
+        )
 
         msg = f"""
 {emoji} <b>交易信號 - {strength.upper()} ({side})</b>
 {tier_emoji.get(tier, '')} 信號等級: {tier}
 ──────────────────
-策略: {strategy}
+策略: {esc(strategy)}
 幣種: {esc(symbol)}
 方向: {side}
 市場狀態: {market}

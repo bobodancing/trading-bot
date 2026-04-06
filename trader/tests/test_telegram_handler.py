@@ -38,6 +38,7 @@ class TestTelegramCommands:
         pm = MagicMock()
         pm.side = 'LONG'
         pm.is_v6_pyramid = True
+        pm.strategy_name = 'v6_pyramid'
         pm.avg_entry = 100.0
         pm.current_sl = 95.0
         pm.total_size = 0.5
@@ -55,6 +56,26 @@ class TestTelegramCommands:
         assert 'Stage 2' in result
         assert '開倉部位 (1)' in result
 
+    def test_cmd_positions_shows_v54_strategy_name(self, handler):
+        pm = MagicMock()
+        pm.side = 'SHORT'
+        pm.is_v6_pyramid = False
+        pm.strategy_name = 'v54_noscale'
+        pm.avg_entry = 100.0
+        pm.current_sl = 105.0
+        pm.total_size = 0.25
+        pm.stage = 1
+        pm.signal_tier = 'A'
+        pm.entry_time = datetime.now(timezone.utc) - timedelta(hours=1)
+        pm.highest_price = 101.0
+        pm.lowest_price = 96.0
+        handler.bot.active_trades = {'ETH/USDT': pm}
+
+        result = handler._cmd_positions()
+        assert 'ETH/USDT' in result
+        assert 'V54 NoScale' in result
+        assert 'V53' not in result
+
     def test_cmd_status(self, handler):
         with patch('trader.infrastructure.telegram_handler.Config') as mock_cfg:
             mock_cfg.V6_DRY_RUN = False
@@ -62,6 +83,28 @@ class TestTelegramCommands:
             result = handler._cmd_status()
         assert 'Bot Status' in result
         assert '活躍倉位: 0' in result
+        assert '策略分佈: None' in result
+
+    def test_cmd_status_counts_v54_separately(self, handler):
+        pm_v54 = MagicMock()
+        pm_v54.is_v6_pyramid = False
+        pm_v54.strategy_name = 'v54_noscale'
+        pm_v53 = MagicMock()
+        pm_v53.is_v6_pyramid = False
+        pm_v53.strategy_name = 'v53_sop'
+        handler.bot.active_trades = {
+            'BTC/USDT': pm_v54,
+            'ETH/USDT': pm_v53,
+        }
+
+        with patch('trader.infrastructure.telegram_handler.Config') as mock_cfg:
+            mock_cfg.V6_DRY_RUN = False
+            mock_cfg.SYMBOLS = ['BTC/USDT', 'ETH/USDT']
+            result = handler._cmd_status()
+
+        assert '活躍倉位: 2' in result
+        assert 'V54 NoScale: 1' in result
+        assert 'V53 SOP: 1' in result
 
     def test_cmd_balance(self, handler):
         with patch('trader.infrastructure.telegram_handler.Config') as mock_cfg:
