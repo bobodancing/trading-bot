@@ -4,42 +4,57 @@
 ## 🗺 架構總覽
 
 > 雙 systemd 服務：trader.service（trader/bot.py）+ scanner.service（scanner/market_scanner.py）
-> tradingStart.py 已廢棄（Bot/Scanner 分離後不再需要）
+> Phase 3 拆分完成（2026-04-04）：bot.py 2441→1150 行，5 個 Manager 模組抽出
 
 ```
 scanner/
-└── market_scanner.py    ← 四層 Scanner（流動性→動能→形態→板塊集中度）[scanner.service]
+└── market_scanner.py       ← 四層 Scanner（流動性→動能→形態→板塊集中度）[scanner.service]
 
-trader/                  ← [trader.service]
-├── bot.py               ← TradingBotV6 主引擎（scan→_monitor_grid_state→hedge-aware sync→monitor）
-├── positions.py         ← PositionManager（strategy_name 插件 + Stage 管理 + 出場委派）
-├── signals.py           ← detect_2b_with_pivots / ema_pullback / volume_breakout（入場信號）
-├── structure.py         ← StructureAnalysis（swing point / neckline / BOS 追蹤）
-├── config.py            ← Config（交易參數 + SIGNAL_STRATEGY_MAP；secrets 另存 secrets.json）
-├── persistence.py       ← PositionPersistence（atomic write）+ grid state persistence（schema v2）
-├── regime.py            ← RegimeEngine（TRENDING/RANGING/SQUEEZE，ADX+BBW+ATR，3-candle hysteresis）
+trader/                     ← [trader.service]
+├── bot.py                  ← TradingBot 主引擎（1150行，編排層：init + 主循環 + _execute_trade + exchange sync + diagnostics）
+├── grid_manager.py         ← GridManager（V8 Grid lifecycle，scan/monitor/execute/record）
+├── btc_context.py          ← BTCContextManager（BTC trend/regime context，4H regime + 1D EMA fallback）
+├── position_monitor.py     ← PositionMonitor（monitor_positions/close/stage2/stage3/v53_reduce）
+├── signal_scanner.py       ← SignalScanner（scan_for_signals + cooldowns + filters + regime routing + confirmed-candle hygiene）
+├── utils.py                ← 共用工具（trade_log/calculate_pnl/get_close_side/build_log_base/drop_unfinished_candle）
+├── positions.py            ← PositionManager（strategy_name 插件 + Stage 管理 + 出場委派 + signal_type persistence）
+├── signals.py              ← detect_2b_with_pivots / ema_pullback / volume_breakout（入場信號）
+├── structure.py            ← StructureAnalysis（swing point / neckline / BOS 追蹤）
+├── config.py               ← Config（交易參數 + SIGNAL_STRATEGY_MAP；feat-grid 現況為 2B-only / A-tier-only / Grid-off）
+├── persistence.py          ← PositionPersistence（atomic write）+ grid state persistence（schema v2）
+├── regime.py               ← RegimeEngine（TRENDING/RANGING/SQUEEZE，ADX+BBW+ATR，3-candle hysteresis）
 ├── infrastructure/
-│   ├── api_client.py    ← BinanceFuturesClient（HMAC 簽章 + recvWindow + hedge mode）
-│   ├── data_provider.py ← MarketDataProvider（retry + sandbox fallback + DatetimeIndex）
-│   ├── notifier.py      ← TelegramNotifier
-│   └── performance_db.py← PerformanceDB（SQLite performance.db，平倉自動寫入）
+│   ├── api_client.py       ← BinanceFuturesClient（HMAC 簽章 + recvWindow + hedge mode）
+│   ├── data_provider.py    ← MarketDataProvider（retry + sandbox fallback + DatetimeIndex）
+│   ├── notifier.py         ← TelegramNotifier
+│   └── performance_db.py   ← PerformanceDB（SQLite performance.db，fill-aware close + signal/protection telemetry）
 ├── indicators/
-│   └── technical.py     ← TechnicalAnalysis, DynamicThresholdManager,
-│                           MTFConfirmation, MarketFilter
+│   └── technical.py        ← TechnicalAnalysis, DynamicThresholdManager,
+│                              MTFConfirmation, MarketFilter
 ├── risk/
-│   └── manager.py       ← PrecisionHandler, RiskManager, SignalTierSystem
+│   └── manager.py          ← PrecisionHandler, RiskManager, SignalTierSystem
 ├── execution/
-│   └── order_engine.py  ← OrderExecutionEngine（下單封裝）
-└── strategies/          ← 策略插件層（Registry Pattern，新策略 register 即可）
-    ├── base.py          ← Action enum + DecisionDict + TradingStrategy ABC + StrategyFactory
-    ├── v54_noscale.py   ← V54NoScaleStrategy（主力；1.0R/1.5R/2.0R 純移損 + ATR trailing）
-    ├── v53_sop.py       ← V53SopStrategy（1.0R/1.5R/2.0R 分批減倉；新進場停用）
-    ├── v7_structure.py  ← V7StructureStrategy（三段結構加倉 + 反向 2B + 超時）
-    ├── v6_pyramid.py    ← [deprecated] V6PyramidStrategy（既有倉位保留）
-    └── v8_grid/         ← V8 ATR Grid 策略插件（BTC RANGING 網格）
-        ├── grid.py      ← V8AtrGrid（SMA±k*ATR 虛擬網格，4H canonical，regime exit 全平）
+│   └── order_engine.py     ← OrderExecutionEngine（下單封裝）
+└── strategies/             ← 策略插件層（Registry Pattern，新策略 register 即可）
+    ├── base.py             ← Action enum + DecisionDict + TradingStrategy ABC + StrategyFactory
+    ├── v54_noscale.py      ← V54NoScaleStrategy（主力；1.0R/1.5R/2.0R 純移損 + ATR trailing）
+    ├── legacy/             ← 廢棄策略（代碼保留供舊倉位平倉）
+    │   ├── v53_sop.py      ← V53SopStrategy（1.0R/1.5R/2.0R 分批減倉；新進場停用）
+    │   ├── v7_structure.py ← V7StructureStrategy（三段結構加倉 + 反向 2B + 超時）
+    │   └── v6_pyramid.py   ← V6PyramidStrategy（既有倉位保留）
+    └── v8_grid/            ← V8 ATR Grid 策略插件（BTC RANGING 網格）
+        ├── grid.py         ← V8AtrGrid（SMA±k*ATR 虛擬網格，4H canonical，regime exit 全平）
         └── pool_manager.py ← PoolManager（Grid/Trend 資金池隔離 + pool snapshot 持久化）
 ```
+
+### Runtime defaults (feat-grid, 2026-04-06)
+
+- `SIGNAL_STRATEGY_MAP`: only `2B -> v54_noscale`
+- `V7_MIN_SIGNAL_TIER='A'`
+- `ENABLE_EMA_PULLBACK=False`
+- `ENABLE_VOLUME_BREAKOUT=False`
+- `ENABLE_GRID_TRADING=False`
+- `performance.db` is the canonical research source for alpha review
 
 ---
 ## 📄 File: `map_generator_v3.py`
@@ -101,10 +116,9 @@ trader/                  ← [trader.service]
 ---
 
 ## 📄 File: `trader/bot.py`
-**Dependencies:** `ccxt, pandas, trader.infrastructure.api_client.(BinanceFuturesClient), trader.infrastructure.notifier.(TelegramNotifier), trader.infrastructure.telegram_handler.(TelegramCommandHandler), trader.infrastructure.data_provider.(MarketDataProvider), trader.infrastructure.performance_db.(PerformanceDB), trader.indicators.technical.(TechnicalAnalysis, DynamicThresholdManager, MTFConfirmation, MarketFilter), trader.risk.manager.(PrecisionHandler, RiskManager, SignalTierSystem), trader.regime.(RegimeEngine), trader.strategies.v8_grid.(V8AtrGrid, PoolManager), trader.indicators.technical.(_bbw, _adx), trader.execution.order_engine.(OrderExecutionEngine), trader.config.(ConfigV6), trader.positions.(PositionManager), trader.persistence.(PositionPersistence), trader.signals.(detect_2b_with_pivots, detect_ema_pullback, detect_volume_breakout), trader.strategies.base.(Action)`
-- Function: `_trade_log(fields)` — Emit structured [TRADE] log line for log_summarizer.py
-### Class: `TradingBotV6` — V6.0 終極滾倉版交易機器人
-    - **Properties:** `_btc_regime_context, _btc_trend_context, _init_exchange, _log_startup, _restore_positions, _start_time, active_trades, data_provider, early_exit_cooldown, exchange, execution_engine, futures_client` ... (+12 more)
+**Dependencies:** `ccxt, pandas, trader.infrastructure.api_client.(BinanceFuturesClient), trader.infrastructure.notifier.(TelegramNotifier), trader.infrastructure.telegram_handler.(TelegramCommandHandler), trader.infrastructure.data_provider.(MarketDataProvider), trader.infrastructure.performance_db.(PerformanceDB), trader.indicators.technical.(TechnicalAnalysis), trader.risk.manager.(PrecisionHandler, RiskManager), trader.regime.(RegimeEngine), trader.strategies.v8_grid.(V8AtrGrid, PoolManager), trader.execution.order_engine.(OrderExecutionEngine), trader.config.(Config), trader.positions.(PositionManager), trader.persistence.(PositionPersistence), trader.strategies.base.(Action), trader.grid_manager.(GridManager), trader.btc_context.(BTCContextManager, get_last_candle_time, get_last_closed_candle_time, format_candle_time), trader.position_monitor.(PositionMonitor), trader.signal_scanner.(SignalScanner), trader.utils.(trade_log, calculate_pnl, get_close_side, build_log_base)`
+### Class: `TradingBot` — Primary trading bot runtime.
+    - **Properties:** `_btc_regime_context, _btc_trend_context, _init_exchange, _log_startup, _restore_positions, _start_time, active_trades, btc_context_manager, data_provider, early_exit_cooldown, exchange, execution_engine` ... (+16 more)
   - Method: `__init__(self)` [Calls: _init_exchange, _restore_positions, _log_startup]
   - Method: `_init_exchange(self)` — 初始化交易所（沿用 V5.3）
   - Method: `_log_startup(self)` — 啟動日誌
@@ -120,12 +134,12 @@ trader/                  ← [trader.service]
   - Method: `_place_hard_stop_loss(self, symbol, side, size, stop_price)` -> Optional[str] — 設置硬止損單，回傳 order ID
   - Method: `_cancel_stop_loss_order(self, symbol, order_id)` -> bool — 取消止損單
   - Method: `_update_hard_stop_loss(self, pm, new_stop)` — 更新硬止損單
-  - Method: `scan_for_signals(self)` [Calls: load_scanner_results, _update_btc_regime_context, _resolve_btc_trend_context, fetch_ohlcv, _execute_trade, _check_total_risk, _get_regime_market_ts] — 掃描交易信號
-  - Method: `_scan_grid_signals(self)` [Calls: fetch_ticker, _get_last_closed_candle_time, _execute_grid_action] — 網格策略掃描 — 僅 BTC/USDT
-  - Method: `_monitor_grid_state(self)` [Calls: _scan_grid_signals, fetch_ticker, _finalize_grid_shutdown_if_flat, _execute_grid_action, _get_regime_market_ts] — Drive grid lifecycle every cycle, even when no trend positions exist.
-  - Method: `_execute_grid_action(self, action, current_price)` [Calls: _extract_fill_price, _record_grid_trade] — 執行網格動作（開倉/平倉）
-  - Method: `_record_grid_trade(self, action, entry_price, exit_price, pnl)` — 記錄 grid 交易到 performance.db
-  - Method: `_check_btc_trend(self)` -> Optional[str] [Calls: _get_daily_btc_trend_context] — Fetch BTC 1D EMA20/50 trend. Returns 'LONG', 'SHORT', 'RANGING', or None on failure.
+  - Method: `scan_for_signals(self)`
+  - Method: `_scan_grid_signals(self)`
+  - Method: `_monitor_grid_state(self)`
+  - Method: `_execute_grid_action(self, action, current_price)`
+  - Method: `_record_grid_trade(self, action, entry_price, exit_price, pnl)`
+  - Method: `_check_btc_trend(self)` -> Optional[str]
   - Method: `_get_last_candle_time(df)` -> Optional[pd.Timestamp]
   - Method: `_get_last_closed_candle_time(df)` -> Optional[pd.Timestamp]
   - Method: `_get_regime_market_ts(self)` -> Optional[pd.Timestamp]
@@ -135,30 +149,30 @@ trader/                  ← [trader.service]
   - Method: `_normalize_position_side(position)` -> Optional[str]
   - Method: `_build_exchange_position_map(self, exchange_positions)` -> Dict[Tuple[str, str], float] [Calls: _normalize_position_side, _extract_position_size]
   - Method: `_build_internal_position_map(self)` -> Dict[Tuple[str, str], float] [Calls: _symbol_to_exchange_id]
-  - Method: `_is_grid_exchange_flat(self)` -> bool [Calls: _build_exchange_position_map]
-  - Method: `_finalize_grid_shutdown_if_flat(self)` [Calls: _is_grid_exchange_flat]
+  - Method: `_is_grid_exchange_flat(self)` -> bool
+  - Method: `_finalize_grid_shutdown_if_flat(self)`
   - Method: `_restore_grid_runtime_state(self)`
   - Method: `_format_candle_time(candle_time)` -> str
-  - Method: `_make_btc_context(self)` -> Dict[str, object] [Calls: _format_candle_time]
-  - Method: `_update_btc_regime_context(self)` -> Dict[str, object] [Calls: _get_last_candle_time, _make_btc_context] — Update 4H BTC regime state once per cycle for routing + trend guard.
-  - Method: `_get_daily_btc_trend_context(self)` -> Dict[str, object] [Calls: _make_btc_context, _get_last_candle_time] — Resolve BTC trend from the conservative 1D EMA20/50 fallback.
-  - Method: `_resolve_btc_trend_context(self, log_event)` -> Dict[str, object] [Calls: _get_daily_btc_trend_context, _make_btc_context] — Resolve BTC trend once per cycle with 4H regime priority and 1D fallback.
+  - Method: `_make_btc_context(self)` -> Dict[str, object]
+  - Method: `_update_btc_regime_context(self)` -> Dict[str, object]
+  - Method: `_get_daily_btc_trend_context(self)` -> Dict[str, object]
+  - Method: `_resolve_btc_trend_context(self, log_event)` -> Dict[str, object]
   - Method: `_refresh_stop_loss(self, pm, new_sl)` [Calls: _cancel_stop_loss_order, _place_hard_stop_loss] — Cancel existing SL order, place new one, update pm.stop_order_id.
   - Method: `_calc_total_risk_pct(self, balance)` -> float — 計算所有活躍持倉的總風險佔比
-  - Method: `_get_close_side(side)` -> str — Return exchange order side for closing a position.
+  - Method: `_get_close_side(side)` -> str
   - Method: `_validate_position_size(self, symbol, raw_size, entry_price, label)` -> Optional[float] — Round amount and check limits. Returns size or None if below minimum.
-  - Method: `_calculate_pnl(side, size, price, avg_entry)` -> float — Calculate unrealised/realised PnL for a position.
-  - Method: `_build_log_base(event, trade_id, symbol, side)` -> dict — Build common fields for _trade_log calls.
+  - Method: `_calculate_pnl(side, size, price, avg_entry)` -> float
+  - Method: `_build_log_base(event, trade_id, symbol, side)` -> dict
   - Method: `_check_total_risk(self, active_positions)` -> bool — 總風險檢查（改用 PositionManager）
-  - Method: `_execute_trade(self, symbol, signal_details, signal_type, tier_multiplier, df_signal)` [Calls: _get_close_side, _extract_fill_price, _place_hard_stop_loss, _save_positions, _validate_position_size, _futures_create_order, _build_log_base] — 執行開倉
-  - Method: `monitor_positions(self)` [Calls: _save_positions, fetch_ticker, fetch_ohlcv, _update_hard_stop_loss, _handle_close, _build_log_base, _handle_stage2, _handle_stage3, _handle_v53_reduce] — 監控持倉
+  - Method: `_execute_trade(self, symbol, signal_details, signal_type, tier_multiplier, df_signal)` [Calls: _get_close_side, _extract_fill_price, _place_hard_stop_loss, _save_positions, _futures_create_order, _build_log_base] — 執行開倉（hard guard unmapped signal；`initial_r` 使用 actual risk）
+  - Method: `monitor_positions(self)`
   - Method: `_fetch_exchange_stop_map(self)` -> Dict[str, float] — 從交易所取得開放中的止損單。
   - Method: `_adopt_ghost_positions(self)` [Calls: _fetch_exchange_stop_map, _save_positions] — 啟動後一次性接管幽靈倉位（exchange 有、positions.json 未記錄）。
   - Method: `_sync_exchange_positions(self)` [Calls: _build_exchange_position_map, _build_internal_position_map, _save_positions, _symbol_to_exchange_id, _exchange_id_to_symbol] — 交易所倉位 reconciliation（每次 monitor_positions 都執行）。
-  - Method: `_handle_close(self, pm, current_price)` -> bool [Calls: _calculate_pnl, _futures_close_position, fetch_ticker, _save_positions, _build_log_base] — 處理平倉。
-  - Method: `_handle_stage2(self, pm, current_price, df_1h, decision)` [Calls: _validate_position_size, _get_close_side, _futures_create_order, _extract_fill_price, _refresh_stop_loss, _calc_total_risk_pct] — 處理 Stage 2 加倉
-  - Method: `_handle_stage3(self, pm, current_price, df_1h, decision)` [Calls: _validate_position_size, _get_close_side, _futures_create_order, _extract_fill_price, _refresh_stop_loss, _calc_total_risk_pct] — 處理 Stage 3 加倉
-  - Method: `_handle_v53_reduce(self, pm, pct, label, current_price)` [Calls: _futures_close_position, _extract_fill_price, _calculate_pnl, _refresh_stop_loss, _build_log_base] — 處理 V5.3 減倉
+  - Method: `_handle_close(self, pm, current_price)` -> bool
+  - Method: `_handle_stage2(self, pm, current_price, df_1h, decision)`
+  - Method: `_handle_stage3(self, pm, current_price, df_1h, decision)`
+  - Method: `_handle_v53_reduce(self, pm, pct, label, current_price)`
   - Method: `startup_diagnostics(self)` -> bool [Calls: fetch_ohlcv] — 啟動診斷
   - Method: `run(self)` [Calls: _adopt_ghost_positions, startup_diagnostics, _restore_grid_runtime_state, scan_for_signals, _monitor_grid_state, _sync_exchange_positions, monitor_positions, _save_positions] — 主運行循環
 ### Class: `_TradeFilter` (Inherits: logging.Filter)
@@ -170,15 +184,43 @@ trader/                  ← [trader.service]
 
 ---
 
+## 📄 File: `trader/btc_context.py`
+**Dependencies:** `pandas, trader.config.(Config), trader.indicators.technical.(TechnicalAnalysis, _bbw, _adx), trader.infrastructure.notifier.(TelegramNotifier)`
+### Class: `BTCContextManager` — Owns BTC regime and trend context state, resolves once per cycle.
+    - **Properties:** `bot`
+  - Method: `__init__(self, bot)`
+  - Method: `check_btc_trend(self)` -> Optional[str] [Calls: get_daily_btc_trend_context] — Fetch BTC 1D EMA20/50 trend. Returns 'LONG', 'SHORT', 'RANGING', or None.
+  - Method: `make_btc_context(self)` -> Dict[str, object]
+  - Method: `update_btc_regime_context(self)` -> Dict[str, object] [Calls: make_btc_context] — Update 4H BTC regime state once per cycle for routing + trend guard.
+  - Method: `get_daily_btc_trend_context(self)` -> Dict[str, object] [Calls: make_btc_context] — Resolve BTC trend from the conservative 1D EMA20/50 fallback.
+  - Method: `resolve_btc_trend_context(self, log_event)` -> Dict[str, object] [Calls: get_daily_btc_trend_context, make_btc_context] — Resolve BTC trend once per cycle with 4H regime priority and 1D fallback.
+- Function: `get_last_candle_time(df)` -> Optional[pd.Timestamp]
+- Function: `get_last_closed_candle_time(df)` -> Optional[pd.Timestamp]
+- Function: `format_candle_time(candle_time)` -> str
+
+---
+
 ## 📄 File: `trader/config.py`
 ### Class: `Config` — Trading Bot 配置類（獨立版）
   - Method: `get_strategy(cls)` -> 'TradingStrategy'
   - Method: `validate(cls)` — 驗證 V6.0 config 參數合理性
   - Method: `load_from_json(cls, config_file)` — 從 JSON 配置文件加載設置
+  - Current defaults: `SIGNAL_STRATEGY_MAP={"2B": "v54_noscale"}`, `V7_MIN_SIGNAL_TIER='A'`, `ENABLE_EMA_PULLBACK=False`, `ENABLE_VOLUME_BREAKOUT=False`, `ENABLE_GRID_TRADING=False`
 
 ---
 
-## 📄 File: `trader/core.py` ⚠️ Deprecated — re-export stub（拆分四層後廢棄，勿直接 import）
+## 📄 File: `trader/grid_manager.py`
+**Dependencies:** `trader.config.(Config), trader.infrastructure.notifier.(TelegramNotifier)`
+### Class: `GridManager` — Manages V8 ATR Grid lifecycle, delegating exchange operations to bot.
+    - **Properties:** `bot`
+  - Method: `__init__(self, bot)`
+  - Method: `scan_grid_signals(self)` [Calls: execute_grid_action] — Grid strategy scan -- BTC/USDT only.
+  - Method: `monitor_grid_state(self)` [Calls: finalize_grid_shutdown_if_flat, execute_grid_action] — Drive grid lifecycle every cycle, even when no trend positions exist.
+  - Method: `restore_runtime_state(self)` — Restore grid + pool state from persisted JSON.
+  - Method: `is_exchange_flat(self)` -> bool — Check if exchange has zero BTC grid exposure.
+  - Method: `execute_grid_action(self, action, current_price)` [Calls: record_grid_trade] — Execute grid action (open/close).
+  - Method: `record_grid_trade(self, action, entry_price, exit_price, pnl)` — Record grid trade to performance.db.
+  - Method: `finalize_grid_shutdown_if_flat(self)` [Calls: is_exchange_flat] — Deactivate grid if exchange confirms zero BTC exposure.
 
 ---
 
@@ -196,12 +238,30 @@ trader/                  ← [trader.service]
 
 ---
 
+## 📄 File: `trader/position_monitor.py`
+**Dependencies:** `trader.config.(Config), trader.indicators.technical.(TechnicalAnalysis), trader.infrastructure.notifier.(TelegramNotifier), trader.positions.(PositionManager), trader.strategies.base.(Action), trader.utils.(trade_log, calculate_pnl, get_close_side, build_log_base, drop_unfinished_candle)`
+### Class: `PositionMonitor` — Manages position monitoring, close, staging, and partial reduce.
+    - **Properties:** `bot`
+  - Method: `__init__(self, bot)`
+  - Method: `monitor_positions(self)` [Calls: _emit_cycle_summary, handle_close, handle_stage2, handle_stage3, handle_v53_reduce] — Monitor all active positions.
+  - Method: `_emit_cycle_summary(self, closed_count)` — Emit CYCLE_SUMMARY trade log -- called even when active_trades is empty.
+  - Method: `_calc_max_r_reached(pm)` -> Optional[float] — Convert tracked favorable excursion into R for DB telemetry.
+  - Method: `_get_v54_protection_state(pm)` -> Optional[str] — Snapshot V54 lock/breakeven state at exit.
+  - Method: `handle_close(self, pm, current_price)` -> bool — Handle position close.
+    - Notes: indicators are refreshed before dropping the unfinished candle; full close uses actual fill price and writes `signal_type`, `max_r_reached`, `protection_state`, `protected_exit` into `performance.db`.
+  - Method: `handle_stage2(self, pm, current_price, df_1h, decision)` — Handle Stage 2 add.
+  - Method: `handle_stage3(self, pm, current_price, df_1h, decision)` — Handle Stage 3 add.
+  - Method: `handle_v53_reduce(self, pm, pct, label, current_price)` — Handle V5.3 partial reduce.
+
+---
+
 ## 📄 File: `trader/positions.py`
 **Dependencies:** `trader.strategies.(TradingStrategy)`
+**Notes:** `PositionManager` now persists `signal_type` through `positions.json`, so entry archetype survives restart/recovery.
 ### Class: `EntryRecord` — 單次入場紀錄
 ### Class: `PositionManager` — 單一 symbol 的倉位管理器
     - **Properties:** `atr, avg_entry, btc_trend_aligned, current_sl, entries, entry_adx, entry_time, equity_base, exit_reason, fakeout_depth_atr, highest_price, initial_r` ... (+24 more)
-  - Method: `__init__(self, symbol, side, entry_price, stop_loss, position_size, strategy_name, is_v6_pyramid, neckline, equity_base, initial_r, signal_tier, trade_id, market_regime, strategy)`
+  - Method: `__init__(self, symbol, side, entry_price, stop_loss, position_size, strategy_name, is_v6_pyramid, neckline, equity_base, initial_r, signal_tier, signal_type, trade_id, market_regime, strategy)`
   - Method: `is_v6_pyramid(self)` -> bool — 是否為 V6 金字塔策略（向下相容）
   - Method: `is_v6_pyramid(self, value)` — 設定策略（向下相容 legacy setter）
   - Method: `is_1r_protected(self)` -> bool
@@ -240,6 +300,17 @@ trader/                  ← [trader.service]
 
 ---
 
+## 📄 File: `trader/signal_scanner.py`
+**Dependencies:** `pandas, trader.config.(Config), trader.indicators.technical.(TechnicalAnalysis, MTFConfirmation, MarketFilter), trader.risk.manager.(SignalTierSystem), trader.signals.(detect_2b_with_pivots, detect_ema_pullback, detect_volume_breakout)`
+**Notes:** scanner path drops unfinished candles before entry decisions; feat-grid runtime currently routes only 2B A-tier entries.
+### Class: `SignalScanner` — Scans symbols for entry signals, applies all filters, dispatches trades.
+    - **Properties:** `bot`
+  - Method: `__init__(self, bot)`
+  - Method: `scan_for_signals(self)` [Calls: _check_cooldowns] — Scan all configured symbols for trading signals.
+  - Method: `_check_cooldowns(self, symbol)` -> bool — Check all cooldown conditions for a symbol. Returns True if clear.
+
+---
+
 ## 📄 File: `trader/signals.py`
 **Dependencies:** `pandas, trader.config.(Config), trader.structure.(StructureAnalysis)`
 - Function: `detect_2b_with_pivots(df, left_bars, right_bars, vol_minimum_threshold, accept_weak_signals, enable_volume_grading, vol_explosive_threshold, vol_strong_threshold, vol_moderate_threshold, min_fakeout_atr)` -> Tuple[bool, Optional[Dict]] — 升級版 2B 偵測（V6.0）
@@ -257,6 +328,15 @@ trader/                  ← [trader.service]
   - Method: `get_validated_trailing_swing(df, side, current_sl, left_bars, right_bars)` -> Optional[float] — 尋找符合 Temporal BOS + HL/LH 條件的結構移損點
   - Method: `get_fast_trailing_swing(df, side, current_sl, left_bars, right_bars)` -> Optional[float] — Tier 2 加速結構追蹤 — 只要求 HL/LH，不要求 BOS 確認
   - Method: `find_latest_confirmed_swing(df, direction, left_bars, right_bars)` -> Optional[float] — 找出最新的 confirmed swing point（用於 Stage 3 移損）
+
+---
+
+## 📄 File: `trader/utils.py`
+- Function: `trade_log(fields)` — Emit structured [TRADE] log line for log_summarizer.py
+- Function: `calculate_pnl(side, size, price, avg_entry)` -> float — Calculate unrealised/realised PnL for a position.
+- Function: `get_close_side(side)` -> str — Return exchange order side for closing a position.
+- Function: `build_log_base(event, trade_id, symbol, side)` -> dict — Build common fields for trade_log calls.
+- Function: `drop_unfinished_candle(df)` -> pd.DataFrame — Shared confirmed-candle helper used by scanner/monitor/grid paths.
 
 ---
 
@@ -321,17 +401,6 @@ trader/                  ← [trader.service]
 
 ---
 
-## 📄 File: `trader/strategies/v53_sop.py`
-**Dependencies:** `pandas, trader.positions.(PositionManager), trader.strategies.base.(Action, TradingStrategy, DecisionDict, _apply_common_pre), trader.strategies.base.(StrategyFactory)`
-### Class: `V53SopStrategy` (Inherits: TradingStrategy) — V5.3 統一出場 SOP 策略
-    - **Properties:** `is_1r_protected, is_first_partial, is_second_partial, is_trailing_active`
-  - Method: `__init__(self)`
-  - Method: `get_state(self)` -> dict
-  - Method: `load_state(self, state)`
-  - Method: `get_decision(self, pm, current_price, df_1h, df_4h)` -> DecisionDict — V5.3 出場決策：
-
----
-
 ## 📄 File: `trader/strategies/v54_noscale.py`
 **Dependencies:** `pandas, trader.positions.(PositionManager), trader.strategies.base.(Action, TradingStrategy, DecisionDict, _apply_common_pre), trader.strategies.base.(StrategyFactory)`
 ### Class: `V54NoScaleStrategy` (Inherits: TradingStrategy) — V54 純移損策略 — 不加倉不減倉
@@ -343,14 +412,25 @@ trader/                  ← [trader.service]
 
 ---
 
-## 📄 File: `trader/strategies/v6_pyramid.py`
+## 📄 File: `trader/strategies/legacy/v53_sop.py`
+**Dependencies:** `pandas, trader.positions.(PositionManager), trader.strategies.base.(Action, TradingStrategy, DecisionDict, _apply_common_pre), trader.strategies.base.(StrategyFactory)`
+### Class: `V53SopStrategy` (Inherits: TradingStrategy) — V5.3 統一出場 SOP 策略
+    - **Properties:** `is_1r_protected, is_first_partial, is_second_partial, is_trailing_active`
+  - Method: `__init__(self)`
+  - Method: `get_state(self)` -> dict
+  - Method: `load_state(self, state)`
+  - Method: `get_decision(self, pm, current_price, df_1h, df_4h)` -> DecisionDict — V5.3 出場決策：
+
+---
+
+## 📄 File: `trader/strategies/legacy/v6_pyramid.py`
 **Dependencies:** `pandas, trader.positions.(PositionManager), trader.strategies.base.(Action, TradingStrategy, DecisionDict, _apply_common_pre), trader.strategies.base.(StrategyFactory)`
 ### Class: `V6PyramidStrategy` (Inherits: TradingStrategy) — V6.0 三段式金字塔滾倉策略
   - Method: `get_decision(self, pm, current_price, df_1h, df_4h)` -> DecisionDict — V6.0 出場決策：
 
 ---
 
-## 📄 File: `trader/strategies/v7_structure.py`
+## 📄 File: `trader/strategies/legacy/v7_structure.py`
 **Dependencies:** `pandas, trader.positions.(PositionManager), trader.strategies.base.(Action, TradingStrategy, DecisionDict, _apply_common_pre), trader.strategies.base.(StrategyFactory)`
 **Constants:** `MIN_BODY_RATIO`
 ### Class: `V7StructureStrategy` (Inherits: TradingStrategy) — V7 結構驅動三段加倉策略
@@ -473,6 +553,7 @@ trader/                  ← [trader.service]
 
 ## 📄 File: `trader/infrastructure/performance_db.py`
 **Constants:** `CREATE_TABLE_SQL, INSERT_SQL`
+**Notes:** close-path records are fill-aware; DB also stores `signal_type`, `max_r_reached`, `protection_state`, and `protected_exit` for V54/post-trade analysis.
 ### Class: `PerformanceDB`
     - **Properties:** `_init_db, db_path`
   - Method: `__init__(self, db_path)` [Calls: _init_db]
