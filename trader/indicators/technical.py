@@ -225,6 +225,68 @@ class MTFConfirmation:
     """多時間框架確認系統"""
 
     @staticmethod
+    def get_alignment_snapshot(df_mtf: pd.DataFrame, side: str) -> Dict[str, Optional[float]]:
+        """Return structured MTF diagnostics for audit/debug usage."""
+        snapshot: Dict[str, Optional[float]] = {
+            'mtf_status': None,
+            'mtf_close': None,
+            'mtf_ema_fast': None,
+            'mtf_ema_slow': None,
+            'mtf_price_vs_fast_pct': None,
+            'mtf_fast_vs_slow_pct': None,
+        }
+
+        if not Config.ENABLE_MTF_CONFIRMATION:
+            snapshot['mtf_status'] = 'disabled'
+            return snapshot
+
+        if df_mtf.empty:
+            snapshot['mtf_status'] = 'empty'
+            return snapshot
+
+        if len(df_mtf) < Config.MTF_EMA_SLOW:
+            snapshot['mtf_status'] = 'insufficient'
+            return snapshot
+
+        ema_fast = _ema(df_mtf['close'], length=Config.MTF_EMA_FAST)
+        ema_slow = _ema(df_mtf['close'], length=Config.MTF_EMA_SLOW)
+
+        if ema_fast is None or ema_slow is None:
+            snapshot['mtf_status'] = 'indicator_error'
+            return snapshot
+
+        current_fast = ema_fast.iloc[-1]
+        current_slow = ema_slow.iloc[-1]
+        current_price = df_mtf['close'].iloc[-1]
+
+        if pd.isna(current_fast) or pd.isna(current_slow) or pd.isna(current_price):
+            snapshot['mtf_status'] = 'nan'
+            return snapshot
+
+        snapshot['mtf_close'] = round(float(current_price), 8)
+        snapshot['mtf_ema_fast'] = round(float(current_fast), 8)
+        snapshot['mtf_ema_slow'] = round(float(current_slow), 8)
+
+        if current_fast != 0:
+            snapshot['mtf_price_vs_fast_pct'] = round(
+                float((current_price - current_fast) / current_fast * 100.0),
+                6,
+            )
+        if current_slow != 0:
+            snapshot['mtf_fast_vs_slow_pct'] = round(
+                float((current_fast - current_slow) / current_slow * 100.0),
+                6,
+            )
+
+        if side == 'LONG':
+            aligned = current_price > current_fast and current_fast > current_slow
+        else:
+            aligned = current_price < current_fast and current_fast < current_slow
+
+        snapshot['mtf_status'] = 'aligned' if aligned else 'misaligned'
+        return snapshot
+
+    @staticmethod
     def check_mtf_alignment(df_mtf: pd.DataFrame, side: str) -> Tuple[bool, str]:
         """檢查中間時間框架（4H）是否與交易方向一致"""
         if not Config.ENABLE_MTF_CONFIRMATION or df_mtf.empty:

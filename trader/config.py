@@ -211,6 +211,7 @@ class Config:
     V7_STAGE1_MAX_HOURS = 36       # V7 Stage 1 超時（小時）
     V7_STAGE_VOLUME_MULT = 1.0    # 加倉量能門檻（volume / vol_ma）
     V7_MIN_SIGNAL_TIER = 'A'      # 最低可進場 tier（'A'=只做A, 'B'=A+B, 'C'=全做）
+    EMA_PULLBACK_SOFT_MTF_ENABLED = True  # EMA pullback: 4H 結構順勢但 price/EMA20 未對齊時，降級放行而非直接 score=0
 
     # ==================== Grid & Regime System ====================
     # Regime Engine

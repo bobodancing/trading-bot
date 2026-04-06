@@ -1,6 +1,6 @@
 import sys
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pandas as pd
@@ -27,7 +27,52 @@ def _make_btc_df(ema20_above_ema50: bool, rows: int = 60) -> pd.DataFrame:
     }, index=timestamps)
 
 
+def _append_unfinished_candle(df: pd.DataFrame, close: float, *, freq: str) -> pd.DataFrame:
+    next_ts = df.index[-1] + pd.tseries.frequencies.to_offset(freq)
+    extra = pd.DataFrame({
+        'timestamp': [next_ts],
+        'open': [close],
+        'high': [close * 1.01],
+        'low': [close * 0.99],
+        'close': [close],
+        'volume': [1000.0],
+    }, index=[next_ts])
+    return pd.concat([df, extra])
+
+
 class TestBtcTrendRouting:
+    def test_daily_fallback_uses_latest_daily_candle(self, mock_bot):
+        raw_daily = _append_unfinished_candle(
+            _make_btc_df(False),
+            1000.0,
+            freq='1d',
+        )
+
+        with patch.object(mock_bot.data_provider, 'fetch_ohlcv', return_value=raw_daily), \
+             patch.object(Config, 'ENABLE_GRID_TRADING', False):
+            resolved = mock_bot._resolve_btc_trend_context()
+
+        assert resolved['source'] == '1d_fallback'
+        assert pd.Timestamp(resolved['candle_time']) == raw_daily.index[-1]
+
+    def test_regime_update_uses_latest_4h_candle(self, mock_bot):
+        raw_4h = _append_unfinished_candle(
+            _make_btc_df(True, rows=60).rename_axis('timestamp'),
+            70000.0,
+            freq='4h',
+        )
+        mock_bot.regime_engine.update = MagicMock(return_value=mock_bot.regime_engine.current_regime)
+
+        with patch.object(mock_bot.data_provider, 'fetch_ohlcv', return_value=raw_4h):
+            resolved = mock_bot._update_btc_regime_context()
+
+        args, kwargs = mock_bot.regime_engine.update.call_args
+        passed_df = args[0]
+
+        assert passed_df.index[-1] == raw_4h.index[-1]
+        assert kwargs == {}
+        assert pd.Timestamp(resolved['candle_time']) == raw_4h.index[-1]
+
     def test_regime_fetch_empty_falls_back_to_daily(self, mock_bot, caplog):
         with patch.object(mock_bot.data_provider, 'fetch_ohlcv', side_effect=[pd.DataFrame(), _make_btc_df(False)]), \
              patch.object(Config, 'ENABLE_GRID_TRADING', True):

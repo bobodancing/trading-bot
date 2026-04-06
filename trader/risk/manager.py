@@ -403,11 +403,102 @@ class SignalTierSystem:
     """信號分級系統"""
 
     @staticmethod
+    def _ema_soft_mtf_structure_aligned(
+        signal_details: Dict,
+        mtf_snapshot: Optional[Dict]
+    ) -> bool:
+        """Allow EMA pullback to soften MTF gating when 4H structure still matches."""
+        if not getattr(Config, 'EMA_PULLBACK_SOFT_MTF_ENABLED', True):
+            return False
+        if signal_details.get('signal_type') != 'EMA_PULLBACK':
+            return False
+        if not mtf_snapshot:
+            return False
+
+        mtf_fast = mtf_snapshot.get('mtf_ema_fast')
+        mtf_slow = mtf_snapshot.get('mtf_ema_slow')
+        side = signal_details.get('side')
+        if mtf_fast is None or mtf_slow is None or side not in ('LONG', 'SHORT'):
+            return False
+
+        if side == 'LONG':
+            return mtf_fast > mtf_slow
+        return mtf_fast < mtf_slow
+
+    @staticmethod
+    def get_tier_diagnostics(
+        signal_details: Dict,
+        mtf_aligned: bool,
+        market_strong: bool,
+        volume_grade: str,
+        mtf_snapshot: Optional[Dict] = None,
+    ) -> Dict:
+        """Return structured tier diagnostics without changing trade decisions."""
+        candle_confirmed = bool(signal_details.get('candle_confirmed', False))
+        diagnostics = {
+            'tier': 'C',
+            'tier_multiplier': Config.TIER_C_POSITION_MULT,
+            'tier_score': 0,
+            'tier_component_mtf': 0,
+            'tier_component_market': 0,
+            'tier_component_volume': 0,
+            'tier_component_candle': 0,
+            'volume_grade': volume_grade,
+            'candle_confirmed': candle_confirmed,
+            'mtf_gate_mode': 'hard_blocked',
+        }
+
+        if not Config.ENABLE_TIERED_ENTRY:
+            diagnostics.update({
+                'tier': 'B',
+                'tier_multiplier': Config.TIER_B_POSITION_MULT,
+                'tier_score': -1,
+                'mtf_gate_mode': 'tier_disabled',
+            })
+            return diagnostics
+
+        if mtf_aligned:
+            diagnostics['tier_component_mtf'] = 2
+            diagnostics['mtf_gate_mode'] = 'hard_aligned'
+            score = 2
+        elif SignalTierSystem._ema_soft_mtf_structure_aligned(signal_details, mtf_snapshot):
+            diagnostics['mtf_gate_mode'] = 'ema_soft_structure'
+            score = 0
+        else:
+            return diagnostics
+
+        if market_strong:
+            diagnostics['tier_component_market'] = 2
+            score += 2
+
+        if volume_grade in ['explosive', 'strong']:
+            diagnostics['tier_component_volume'] = 2
+            score += 2
+        elif volume_grade == 'moderate':
+            diagnostics['tier_component_volume'] = 1
+            score += 1
+
+        if candle_confirmed:
+            diagnostics['tier_component_candle'] = 1
+            score += 1
+
+        diagnostics['tier_score'] = score
+        if score >= 6:
+            diagnostics['tier'] = 'A'
+            diagnostics['tier_multiplier'] = Config.TIER_A_POSITION_MULT
+        elif score >= 4:
+            diagnostics['tier'] = 'B'
+            diagnostics['tier_multiplier'] = Config.TIER_B_POSITION_MULT
+
+        return diagnostics
+
+    @staticmethod
     def calculate_signal_tier(
         signal_details: Dict,
         mtf_aligned: bool,
         market_strong: bool,
-        volume_grade: str
+        volume_grade: str,
+        mtf_snapshot: Optional[Dict] = None,
     ) -> Tuple[str, float, int]:
         """
         計算信號等級並返回對應的倉位乘數
@@ -416,29 +507,15 @@ class SignalTierSystem:
         C 級：基本條件滿足
         Returns: (tier, multiplier, score)
         """
-        if not Config.ENABLE_TIERED_ENTRY:
-            return 'B', Config.TIER_B_POSITION_MULT, -1  # -1 表示未啟用
-
-        # MTF Gate: 趨勢未確立 → 其他分數歸零 → Tier C
-        if not mtf_aligned:
-            return 'C', Config.TIER_C_POSITION_MULT, 0
-
-        score = 2  # MTF aligned bonus
-
-        if market_strong:
-            score += 2
-
-        if volume_grade in ['explosive', 'strong']:
-            score += 2
-        elif volume_grade == 'moderate':
-            score += 1
-
-        if signal_details.get('candle_confirmed', False):
-            score += 1
-
-        if score >= 6:
-            return 'A', Config.TIER_A_POSITION_MULT, score
-        elif score >= 4:
-            return 'B', Config.TIER_B_POSITION_MULT, score
-        else:
-            return 'C', Config.TIER_C_POSITION_MULT, score
+        diagnostics = SignalTierSystem.get_tier_diagnostics(
+            signal_details,
+            mtf_aligned,
+            market_strong,
+            volume_grade,
+            mtf_snapshot=mtf_snapshot,
+        )
+        return (
+            diagnostics['tier'],
+            diagnostics['tier_multiplier'],
+            diagnostics['tier_score'],
+        )

@@ -40,6 +40,18 @@ class SignalScanner:
         elif action == 'entry':
             collector.record_entry(**kwargs)
 
+    @staticmethod
+    def _last_candle_time(df: pd.DataFrame):
+        if df is None or df.empty:
+            return None
+        if isinstance(df.index, pd.DatetimeIndex) and len(df.index) > 0:
+            return df.index[-1].isoformat()
+        if 'timestamp' in df.columns and len(df) > 0:
+            ts = pd.to_datetime(df['timestamp'].iloc[-1], utc=True, errors='coerce')
+            if not pd.isna(ts):
+                return ts.isoformat()
+        return None
+
     def scan_for_signals(self):
         """Scan all configured symbols for trading signals."""
         bot = self.bot
@@ -135,17 +147,28 @@ class SignalScanner:
                 if not df_mtf.empty:
                     df_mtf = TechnicalAnalysis.calculate_indicators(df_mtf)
 
-                # Drop current unclosed candle (confirmed candle only)
+                # Patch A runtime keeps higher-TF filters on the latest candle.
                 df_signal = drop_unfinished_candle(df_signal)
+
+                audit_diag = {
+                    'signal_candle_time': self._last_candle_time(df_signal),
+                    'trend_candle_time': self._last_candle_time(df_trend),
+                    'mtf_candle_time': self._last_candle_time(df_mtf),
+                }
 
                 # Market filter
                 market_ok, market_reason, is_strong_market = MarketFilter.check_market_condition(df_trend, symbol)
+                audit_diag.update({
+                    'market_reason': market_reason,
+                    'market_strong': is_strong_market,
+                })
                 if not market_ok:
                     logger.info(f"{symbol}: skip (market filter: {market_reason})")
                     self._audit(
                         timestamp=now_ts, symbol=symbol,
                         stage='pre_signal', reject_reason='market_filter',
                         detail=market_reason,
+                        **audit_diag,
                     )
                     continue
 
@@ -191,6 +214,7 @@ class SignalScanner:
                     self._audit(
                         timestamp=now_ts, symbol=symbol,
                         stage='signal_found', reject_reason='no_signal_detected',
+                        **audit_diag,
                     )
                     continue
 
@@ -215,6 +239,7 @@ class SignalScanner:
                         stage='post_filter', reject_reason='direction_filter',
                         signal_type=best_type, signal_side=signal_side,
                         detail=f'want=long got={signal_side}',
+                        **audit_diag,
                     )
                     continue
                 if trading_dir == 'short' and signal_side != 'SHORT':
@@ -224,11 +249,13 @@ class SignalScanner:
                         stage='post_filter', reject_reason='direction_filter',
                         signal_type=best_type, signal_side=signal_side,
                         detail=f'want=short got={signal_side}',
+                        **audit_diag,
                     )
                     continue
 
                 # Trend check
                 trend_ok, trend_desc = TechnicalAnalysis.check_trend(df_trend, signal_side)
+                audit_diag['trend_desc'] = trend_desc
                 if not trend_ok:
                     logger.info(f"{symbol}: skip (trend={trend_desc}, signal={signal_side})")
                     self._audit(
@@ -236,21 +263,43 @@ class SignalScanner:
                         stage='post_filter', reject_reason='trend_filter',
                         signal_type=best_type, signal_side=signal_side,
                         detail=trend_desc,
+                        **audit_diag,
                     )
                     continue
 
                 # MTF confirmation
                 mtf_aligned = True
                 mtf_reason = "MTF disabled"
+                mtf_snapshot = {
+                    'mtf_status': 'disabled',
+                    'mtf_close': None,
+                    'mtf_ema_fast': None,
+                    'mtf_ema_slow': None,
+                    'mtf_price_vs_fast_pct': None,
+                    'mtf_fast_vs_slow_pct': None,
+                }
                 if Config.ENABLE_MTF_CONFIRMATION and not df_mtf.empty:
                     mtf_aligned, mtf_reason = MTFConfirmation.check_mtf_alignment(df_mtf, signal_side)
+                    mtf_snapshot = MTFConfirmation.get_alignment_snapshot(df_mtf, signal_side)
                     logger.info(f"{symbol}: MTF {mtf_reason}")
+                elif Config.ENABLE_MTF_CONFIRMATION:
+                    mtf_snapshot = MTFConfirmation.get_alignment_snapshot(df_mtf, signal_side)
+                audit_diag.update({
+                    'mtf_enabled': Config.ENABLE_MTF_CONFIRMATION,
+                    'mtf_aligned': mtf_aligned,
+                    'mtf_reason': mtf_reason,
+                    **mtf_snapshot,
+                })
 
                 # Signal tier
-                signal_tier, tier_multiplier, tier_score = SignalTierSystem.calculate_signal_tier(
+                tier_diag = SignalTierSystem.get_tier_diagnostics(
                     signal_details, mtf_aligned, is_strong_market,
-                    signal_details.get('signal_strength', 'moderate')
+                    signal_details.get('signal_strength', 'moderate'),
+                    mtf_snapshot=mtf_snapshot,
                 )
+                signal_tier = tier_diag['tier']
+                tier_multiplier = tier_diag['tier_multiplier']
+                tier_score = tier_diag['tier_score']
                 signal_details['signal_tier'] = signal_tier
                 signal_details['market_regime'] = 'STRONG' if is_strong_market else 'TRENDING'
                 signal_details['entry_adx'] = (
@@ -263,6 +312,7 @@ class SignalScanner:
                 signal_details['_mtf_reason'] = mtf_reason
                 signal_details['tier_score'] = tier_score
                 signal_details['mtf_aligned'] = mtf_aligned
+                signal_details['mtf_gate_mode'] = tier_diag['mtf_gate_mode']
                 signal_details['volume_grade'] = signal_details.get('signal_strength', 'moderate')
                 signal_details['trend_adx'] = (
                     round(float(df_trend['adx'].iloc[-1]), 2)
@@ -270,20 +320,45 @@ class SignalScanner:
                     and not pd.isna(df_trend['adx'].iloc[-1])
                     else None
                 )
+                _min_tier = getattr(Config, 'V7_MIN_SIGNAL_TIER', 'C')
+                _effective_min_tier = _min_tier
+                if (
+                    best_type == 'EMA_PULLBACK'
+                    and tier_diag['mtf_gate_mode'] == 'ema_soft_structure'
+                    and _min_tier == 'A'
+                ):
+                    _effective_min_tier = 'B'
+                    logger.info(
+                        f"{symbol}: EMA soft MTF gate active "
+                        f"(structure aligned, effective min tier={_effective_min_tier})"
+                    )
+                audit_diag.update({
+                    'tier_min': _min_tier,
+                    'tier_min_effective': _effective_min_tier,
+                    'tier_score': tier_score,
+                    'tier_multiplier': tier_multiplier,
+                    'volume_grade': tier_diag['volume_grade'],
+                    'candle_confirmed': tier_diag['candle_confirmed'],
+                    'mtf_gate_mode': tier_diag['mtf_gate_mode'],
+                    'tier_component_mtf': tier_diag['tier_component_mtf'],
+                    'tier_component_market': tier_diag['tier_component_market'],
+                    'tier_component_volume': tier_diag['tier_component_volume'],
+                    'tier_component_candle': tier_diag['tier_component_candle'],
+                })
 
                 # Risk Guard: Tier filter
                 _tier_rank = {'A': 3, 'B': 2, 'C': 1}
-                _min_tier = getattr(Config, 'V7_MIN_SIGNAL_TIER', 'C')
-                if _tier_rank.get(signal_tier, 0) < _tier_rank.get(_min_tier, 0):
+                if _tier_rank.get(signal_tier, 0) < _tier_rank.get(_effective_min_tier, 0):
                     logger.info(
-                        f"{symbol}: skip (Tier {signal_tier} < min {_min_tier}, score={tier_score})"
+                        f"{symbol}: skip (Tier {signal_tier} < min {_effective_min_tier}, score={tier_score})"
                     )
                     self._audit(
                         timestamp=now_ts, symbol=symbol,
                         stage='post_filter', reject_reason='tier_filter',
                         signal_type=best_type, signal_side=signal_side,
                         signal_tier=signal_tier,
-                        detail=f'tier={signal_tier} min={_min_tier} score={tier_score}',
+                        detail=f'tier={signal_tier} min={_effective_min_tier} score={tier_score}',
+                        **audit_diag,
                     )
                     continue
 
@@ -307,6 +382,7 @@ class SignalScanner:
                             stage='post_filter', reject_reason='btc_trend_ranging',
                             signal_type=best_type, signal_side=signal_side,
                             signal_tier=signal_tier, btc_trend=ranging_label,
+                            **audit_diag,
                         )
                         continue
 
@@ -321,6 +397,7 @@ class SignalScanner:
                                 stage='post_filter', reject_reason='btc_counter_trend_blocked',
                                 signal_type=best_type, signal_side=signal_side,
                                 signal_tier=signal_tier, btc_trend=btc_trend,
+                                **audit_diag,
                             )
                             continue
                         else:
@@ -346,6 +423,7 @@ class SignalScanner:
                     signal_type=best_type, signal_side=signal_side,
                     signal_tier=signal_tier,
                     regime=regime_label, btc_trend=btc_trend_label,
+                    **audit_diag,
                 )
 
                 bot._execute_trade(symbol, signal_details, best_type, tier_multiplier, df_signal)

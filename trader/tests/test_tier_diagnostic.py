@@ -128,6 +128,64 @@ class TestMTFGate:
         assert score == 2
         assert tier == 'C'
 
+    def test_get_tier_diagnostics_exposes_component_breakdown(self):
+        details = {'candle_confirmed': True}
+        diag = SignalTierSystem.get_tier_diagnostics(
+            details, mtf_aligned=True, market_strong=True, volume_grade='strong'
+        )
+        assert diag['tier'] == 'A'
+        assert diag['tier_score'] == 7
+        assert diag['tier_component_mtf'] == 2
+        assert diag['tier_component_market'] == 2
+        assert diag['tier_component_volume'] == 2
+        assert diag['tier_component_candle'] == 1
+        assert diag['mtf_gate_mode'] == 'hard_aligned'
+
+    def test_ema_pullback_soft_mtf_returns_degraded_score(self):
+        details = {
+            'signal_type': 'EMA_PULLBACK',
+            'side': 'SHORT',
+            'candle_confirmed': True,
+        }
+        diag = SignalTierSystem.get_tier_diagnostics(
+            details,
+            mtf_aligned=False,
+            market_strong=True,
+            volume_grade='moderate',
+            mtf_snapshot={
+                'mtf_status': 'misaligned',
+                'mtf_close': 101.0,
+                'mtf_ema_fast': 100.0,
+                'mtf_ema_slow': 102.0,
+            },
+        )
+        assert diag['tier'] == 'B'
+        assert diag['tier_score'] == 4
+        assert diag['tier_component_mtf'] == 0
+        assert diag['mtf_gate_mode'] == 'ema_soft_structure'
+
+    def test_ema_pullback_soft_mtf_requires_matching_structure(self):
+        details = {
+            'signal_type': 'EMA_PULLBACK',
+            'side': 'LONG',
+            'candle_confirmed': True,
+        }
+        diag = SignalTierSystem.get_tier_diagnostics(
+            details,
+            mtf_aligned=False,
+            market_strong=True,
+            volume_grade='moderate',
+            mtf_snapshot={
+                'mtf_status': 'misaligned',
+                'mtf_close': 101.0,
+                'mtf_ema_fast': 99.0,
+                'mtf_ema_slow': 102.0,
+            },
+        )
+        assert diag['tier'] == 'C'
+        assert diag['tier_score'] == 0
+        assert diag['mtf_gate_mode'] == 'hard_blocked'
+
 
 class TestTierDiagnosticPersistence:
     """Test 4 new fields persist through to_dict/from_dict"""
