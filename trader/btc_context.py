@@ -193,6 +193,19 @@ class BTCContextManager:
                 f"direction={context['direction']} trend={context.get('trend') or 'UNKNOWN'} "
                 f"candle={context['candle_time']} reason={context['reason']}"
             )
+
+        # Audit hook (backtest only)
+        audit = getattr(bot, '_signal_audit', None)
+        if audit is not None:
+            audit.record_btc_trend(
+                timestamp=context.get('candle_time', ''),
+                source=context.get('source', ''),
+                trend=context.get('trend'),
+                regime=context.get('regime'),
+                direction=context.get('direction'),
+                reason=context.get('reason', ''),
+            )
+
         return context
 
 

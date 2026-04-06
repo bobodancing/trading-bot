@@ -24,6 +24,7 @@ class RegimeEngine:
         self._last_candle_time: Optional[pd.Timestamp] = None
         self._trend_direction: Optional[str] = None  # "LONG" / "SHORT"
         self._last_detected_regime: Optional[str] = None
+        self._on_transition = None  # callback(timestamp, old, new, count)
 
     @property
     def trend_direction(self) -> Optional[str]:
@@ -84,11 +85,19 @@ class RegimeEngine:
         threshold = getattr(Config, 'REGIME_CONFIRM_CANDLES', 3)
         if self._confirm_count >= threshold:
             if self.current_regime != self._pending_regime:
+                old = self.current_regime
                 logger.info(
-                    f"Regime switch: {self.current_regime} → {self._pending_regime} "
+                    f"Regime switch: {old} → {self._pending_regime} "
                     f"(confirmed {self._confirm_count} candles)"
                 )
-            self.current_regime = self._pending_regime
+                self.current_regime = self._pending_regime
+                # Audit hook (backtest only, no-op when _on_transition is None)
+                if self._on_transition is not None:
+                    self._on_transition(
+                        latest_time, old, self.current_regime, self._confirm_count,
+                    )
+            else:
+                self.current_regime = self._pending_regime
 
         return self.current_regime
 

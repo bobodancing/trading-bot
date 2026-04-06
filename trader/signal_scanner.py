@@ -29,6 +29,17 @@ class SignalScanner:
     def __init__(self, bot):
         self.bot = bot
 
+    def _audit(self, **kwargs):
+        """Emit signal audit event if collector is injected (backtest only)."""
+        collector = getattr(self.bot, '_signal_audit', None)
+        if collector is None:
+            return
+        action = kwargs.pop('action', 'reject')
+        if action == 'reject':
+            collector.record_reject(**kwargs)
+        elif action == 'entry':
+            collector.record_entry(**kwargs)
+
     def scan_for_signals(self):
         """Scan all configured symbols for trading signals."""
         bot = self.bot
@@ -38,19 +49,36 @@ class SignalScanner:
         bot._btc_regime_context = {}
         bot._btc_trend_context = {}
 
+        now_ts = datetime.now(timezone.utc).isoformat()
+
         # RegimeEngine routing (only when grid trading enabled)
         if Config.ENABLE_GRID_TRADING:
             btc_regime_context = bot._update_btc_regime_context()
             regime = btc_regime_context.get('regime')
             if regime == "RANGING":
+                self._audit(
+                    action='reject', timestamp=now_ts, symbol='*ALL*',
+                    stage='regime_routing', reject_reason='regime_ranging',
+                    regime=regime,
+                )
                 return
             elif regime == "SQUEEZE":
                 if bot.grid_engine.state and not bot.grid_engine.state.converging:
                     bot.grid_engine.converge(market_ts=bot._get_regime_market_ts())
+                self._audit(
+                    action='reject', timestamp=now_ts, symbol='*ALL*',
+                    stage='regime_routing', reject_reason='regime_squeeze',
+                    regime=regime,
+                )
                 return
             elif regime == "TRENDING" and bot.grid_engine.state:
                 if not bot.grid_engine.state.converging:
                     bot.grid_engine.converge(market_ts=bot._get_regime_market_ts())
+                self._audit(
+                    action='reject', timestamp=now_ts, symbol='*ALL*',
+                    stage='regime_routing', reject_reason='regime_trending_grid_active',
+                    regime=regime,
+                )
                 return
 
         if Config.BTC_TREND_FILTER_ENABLED:
@@ -64,12 +92,20 @@ class SignalScanner:
                     continue
 
                 if not self._check_cooldowns(symbol):
+                    self._audit(
+                        timestamp=now_ts, symbol=symbol,
+                        stage='pre_signal', reject_reason='cooldown',
+                    )
                     continue
 
                 # Total risk check
                 active_list = list(bot.active_trades.values())
                 if not bot._check_total_risk(active_list):
                     logger.debug("Total risk limit reached, stop scanning")
+                    self._audit(
+                        timestamp=now_ts, symbol=symbol,
+                        stage='pre_signal', reject_reason='total_risk_limit',
+                    )
                     break
 
                 # Fetch data
@@ -81,9 +117,17 @@ class SignalScanner:
 
                 if df_trend.empty or len(df_trend) < 100:
                     logger.debug(f"{symbol}: skip (trend data insufficient: {len(df_trend) if not df_trend.empty else 0})")
+                    self._audit(
+                        timestamp=now_ts, symbol=symbol,
+                        stage='pre_signal', reject_reason='insufficient_trend_data',
+                    )
                     continue
                 if df_signal.empty or len(df_signal) < 50:
                     logger.debug(f"{symbol}: skip (signal data insufficient: {len(df_signal) if not df_signal.empty else 0})")
+                    self._audit(
+                        timestamp=now_ts, symbol=symbol,
+                        stage='pre_signal', reject_reason='insufficient_signal_data',
+                    )
                     continue
 
                 df_trend = TechnicalAnalysis.calculate_indicators(df_trend)
@@ -98,6 +142,11 @@ class SignalScanner:
                 market_ok, market_reason, is_strong_market = MarketFilter.check_market_condition(df_trend, symbol)
                 if not market_ok:
                     logger.info(f"{symbol}: skip (market filter: {market_reason})")
+                    self._audit(
+                        timestamp=now_ts, symbol=symbol,
+                        stage='pre_signal', reject_reason='market_filter',
+                        detail=market_reason,
+                    )
                     continue
 
                 # Multi-strategy signal scan
@@ -139,6 +188,10 @@ class SignalScanner:
 
                 if not signals_found:
                     logger.debug(f"{symbol}: no signals (market OK: {market_reason})")
+                    self._audit(
+                        timestamp=now_ts, symbol=symbol,
+                        stage='signal_found', reject_reason='no_signal_detected',
+                    )
                     continue
 
                 # Priority: 2B > VOLUME_BREAKOUT > EMA_PULLBACK
@@ -157,15 +210,33 @@ class SignalScanner:
                 trading_dir = Config.TRADING_DIRECTION.lower()
                 if trading_dir == 'long' and signal_side != 'LONG':
                     logger.debug(f"{symbol}: skip ({best_type} {signal_side} vs direction=long)")
+                    self._audit(
+                        timestamp=now_ts, symbol=symbol,
+                        stage='post_filter', reject_reason='direction_filter',
+                        signal_type=best_type, signal_side=signal_side,
+                        detail=f'want=long got={signal_side}',
+                    )
                     continue
                 if trading_dir == 'short' and signal_side != 'SHORT':
                     logger.debug(f"{symbol}: skip ({best_type} {signal_side} vs direction=short)")
+                    self._audit(
+                        timestamp=now_ts, symbol=symbol,
+                        stage='post_filter', reject_reason='direction_filter',
+                        signal_type=best_type, signal_side=signal_side,
+                        detail=f'want=short got={signal_side}',
+                    )
                     continue
 
                 # Trend check
                 trend_ok, trend_desc = TechnicalAnalysis.check_trend(df_trend, signal_side)
                 if not trend_ok:
                     logger.info(f"{symbol}: skip (trend={trend_desc}, signal={signal_side})")
+                    self._audit(
+                        timestamp=now_ts, symbol=symbol,
+                        stage='post_filter', reject_reason='trend_filter',
+                        signal_type=best_type, signal_side=signal_side,
+                        detail=trend_desc,
+                    )
                     continue
 
                 # MTF confirmation
@@ -207,13 +278,22 @@ class SignalScanner:
                     logger.info(
                         f"{symbol}: skip (Tier {signal_tier} < min {_min_tier}, score={tier_score})"
                     )
+                    self._audit(
+                        timestamp=now_ts, symbol=symbol,
+                        stage='post_filter', reject_reason='tier_filter',
+                        signal_type=best_type, signal_side=signal_side,
+                        signal_tier=signal_tier,
+                        detail=f'tier={signal_tier} min={_min_tier} score={tier_score}',
+                    )
                     continue
 
                 # Risk Guard: BTC Trend Filter
+                btc_trend_label = None
                 if Config.BTC_TREND_FILTER_ENABLED and "BTC" not in symbol:
                     btc_context = bot._btc_trend_context or bot._resolve_btc_trend_context()
                     btc_trend = btc_context.get('trend')
-                    signal_details['btc_trend'] = btc_trend or "UNKNOWN"
+                    btc_trend_label = btc_trend or "UNKNOWN"
+                    signal_details['btc_trend'] = btc_trend_label
 
                     if btc_trend in ("RANGING", None):
                         ranging_label = "RANGING" if btc_trend == "RANGING" else "UNKNOWN"
@@ -222,6 +302,12 @@ class SignalScanner:
                             f"trend strategy paused, waiting for grid)"
                         )
                         logger.info(pause_msg)
+                        self._audit(
+                            timestamp=now_ts, symbol=symbol,
+                            stage='post_filter', reject_reason='btc_trend_ranging',
+                            signal_type=best_type, signal_side=signal_side,
+                            signal_tier=signal_tier, btc_trend=ranging_label,
+                        )
                         continue
 
                     elif signal_side != btc_trend:
@@ -229,6 +315,12 @@ class SignalScanner:
                             logger.info(
                                 f"{symbol}: skip (BTC trend={btc_trend}, signal={signal_side} counter, "
                                 f"BTC_COUNTER_TREND_MULT=0)"
+                            )
+                            self._audit(
+                                timestamp=now_ts, symbol=symbol,
+                                stage='post_filter', reject_reason='btc_counter_trend_blocked',
+                                signal_type=best_type, signal_side=signal_side,
+                                signal_tier=signal_tier, btc_trend=btc_trend,
                             )
                             continue
                         else:
@@ -238,10 +330,22 @@ class SignalScanner:
                                 f"size mult x{Config.BTC_COUNTER_TREND_MULT}"
                             )
 
+                # Resolve regime/btc_trend for audit entry record
+                regime_label = (bot._btc_regime_context or {}).get('regime')
+                if btc_trend_label is None:
+                    btc_trend_label = (bot._btc_trend_context or {}).get('trend')
+
                 logger.info(
                     f"Entry ready: {symbol} {best_type} {signal_side} | "
                     f"tier={signal_tier} vol={signal_details.get('vol_ratio', 0):.2f}x | "
                     f"market={market_reason} trend={trend_desc} MTF={'pass' if mtf_aligned else 'fail'}"
+                )
+
+                self._audit(
+                    action='entry', timestamp=now_ts, symbol=symbol,
+                    signal_type=best_type, signal_side=signal_side,
+                    signal_tier=signal_tier,
+                    regime=regime_label, btc_trend=btc_trend_label,
                 )
 
                 bot._execute_trade(symbol, signal_details, best_type, tier_multiplier, df_signal)
