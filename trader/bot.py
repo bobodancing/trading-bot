@@ -331,7 +331,7 @@ class TradingBot:
 
     def _update_hard_stop_loss(self, pm: PositionManager, new_stop: float):
         """更新硬止損單"""
-        self.execution_engine.update_hard_stop_loss(pm, new_stop)
+        return self._refresh_stop_loss(pm, new_stop)
 
     # ==================== 信號掃描 ====================
 
@@ -470,23 +470,52 @@ class TradingBot:
 
     def _refresh_stop_loss(self, pm: PositionManager, new_sl: float):
         """Cancel existing SL order, place new one, update pm.stop_order_id."""
-        self._cancel_stop_loss_order(pm.symbol, pm.stop_order_id)
-        pm.stop_order_id = self._place_hard_stop_loss(
-            pm.symbol, pm.side, pm.total_size, new_sl
-        )
+        if not Config.USE_HARD_STOP_LOSS:
+            return True
+
+        old_order_id = pm.stop_order_id
+        if old_order_id:
+            try:
+                canceled = self._cancel_stop_loss_order(pm.symbol, old_order_id)
+            except Exception as e:
+                logger.warning(f"{pm.symbol} cancel old stop failed before refresh: {e}")
+                return False
+            if not canceled:
+                logger.warning(
+                    f"{pm.symbol} cancel old stop returned false; keep existing stop {old_order_id}"
+                )
+                return False
+            pm.stop_order_id = None
+
+        new_order_id = self._place_hard_stop_loss(pm.symbol, pm.side, pm.total_size, new_sl)
+        if new_order_id is None:
+            logger.warning(
+                f"{pm.symbol} place refreshed stop failed after cancel; position temporarily unprotected"
+            )
+            return False
+
+        pm.stop_order_id = new_order_id
+        return True
+
+    def _calc_total_open_risk_amount(self) -> float:
+        total_risk = 0.0
+        for p in self.active_trades.values():
+            if p.is_closed or getattr(p, 'closed_on_exchange', False):
+                continue
+            if p.side == 'LONG':
+                risk_per_unit = p.avg_entry - p.current_sl
+            else:
+                risk_per_unit = p.current_sl - p.avg_entry
+            if risk_per_unit <= 0:
+                continue
+            total_risk += p.total_size * risk_per_unit
+        return total_risk
 
     def _calc_total_risk_pct(self, balance: float) -> float:
         """計算所有活躍持倉的總風險佔比"""
         if balance <= 0:
             return 0.0
-        total_risk = 0.0
-        for p in self.active_trades.values():
-            if p.is_closed:
-                continue
-            sl_dist_pct = abs(p.avg_entry - p.current_sl) / p.avg_entry if p.avg_entry > 0 else 0
-            position_risk = sl_dist_pct * p.total_size * p.avg_entry
-            total_risk += position_risk
-        return total_risk / balance
+        return self._calc_total_open_risk_amount() / balance
 
     @staticmethod
     def _get_close_side(side: str) -> str:
@@ -605,6 +634,41 @@ class TradingBot:
 
             # actual risk = capped size * SL distance（dry run 用 signal price）
             initial_r = position_size * abs(entry_price - stop_loss)
+
+            total_risk_budget = balance * Config.MAX_TOTAL_RISK
+            current_open_risk = self._calc_total_open_risk_amount()
+            if current_open_risk + initial_r > total_risk_budget:
+                remaining_risk_budget = total_risk_budget - current_open_risk
+                if remaining_risk_budget <= 0:
+                    logger.info(
+                        f"{symbol}: skip entry, total risk budget exhausted "
+                        f"(open=${current_open_risk:.2f} budget=${total_risk_budget:.2f})"
+                    )
+                    return
+
+                sl_distance = abs(entry_price - stop_loss)
+                shrunk_size = self.precision_handler.round_amount(
+                    symbol,
+                    remaining_risk_budget / sl_distance if sl_distance > 0 else 0.0,
+                )
+                if (
+                    shrunk_size <= 0
+                    or not self.precision_handler.check_limits(symbol, shrunk_size, entry_price)
+                ):
+                    logger.info(
+                        f"{symbol}: skip entry, remaining risk budget ${remaining_risk_budget:.2f} "
+                        "cannot support a valid minimum order"
+                    )
+                    return
+
+                logger.info(
+                    f"{symbol}: shrink size for total risk budget "
+                    f"{position_size:.6f} -> {shrunk_size:.6f} "
+                    f"(open=${current_open_risk:.2f} candidate=${initial_r:.2f} "
+                    f"budget=${total_risk_budget:.2f})"
+                )
+                position_size = shrunk_size
+                initial_r = position_size * sl_distance
 
             # === Dry run 模式 ===
             if Config.V6_DRY_RUN:
@@ -806,6 +870,28 @@ class TradingBot:
 
         stop_map = self._fetch_exchange_stop_map()
         adopted = 0
+        symbol_sides: Dict[str, set] = {}
+
+        for pos in exchange_positions:
+            sym_id = pos.get('symbol', '') or pos.get('info', {}).get('symbol', '')
+            if not sym_id:
+                continue
+            ccxt_sym = sym_id[:-4] + '/' + sym_id[-4:] if sym_id.endswith('USDT') else sym_id
+            if ccxt_sym in self.active_trades:
+                continue
+            side = self._normalize_position_side(pos)
+            position_size = self._extract_position_size(pos)
+            if side is None or position_size <= 0:
+                continue
+            symbol_sides.setdefault(ccxt_sym, set()).add(side)
+
+        ambiguous_symbols = {
+            ccxt_sym: sorted(sides)
+            for ccxt_sym, sides in symbol_sides.items()
+            if len(sides) > 1
+        }
+        for ccxt_sym, sides in ambiguous_symbols.items():
+            logger.critical(f"[ADOPT_SKIP_HEDGE_AMBIGUOUS] {ccxt_sym}: sides={','.join(sides)}")
 
         for pos in exchange_positions:
             sym_id = pos.get('symbol', '') or pos.get('info', {}).get('symbol', '')
@@ -820,11 +906,12 @@ class TradingBot:
                 continue
 
             # 解析 side / size / entry
-            raw_amt = float(pos.get('positionAmt', 0))
-            if raw_amt == 0:
+            if ccxt_sym in ambiguous_symbols:
                 continue
-            side = 'LONG' if raw_amt > 0 else 'SHORT'
-            position_size = abs(raw_amt)
+            side = self._normalize_position_side(pos)
+            position_size = self._extract_position_size(pos)
+            if side is None or position_size <= 0:
+                continue
             entry_price = float(
                 pos.get('entryPrice', 0) or pos.get('info', {}).get('entryPrice', 0)
             )
@@ -910,7 +997,10 @@ class TradingBot:
                 if ex_amt <= 0:
                     logger.warning(f"[SYNC] {symbol} {pm.side} missing on exchange -> HARD_STOP_HIT")
                     pm.exit_reason = 'hard_stop_hit'
-                    pm.is_closed = True
+                    pm.closed_on_exchange = True
+                    pm.external_close_reason = 'hard_stop_hit'
+                    pm.external_exit_price = pm.current_sl or pm.initial_sl or pm.avg_entry
+                    pm.external_exit_price_source = 'assumed_sl'
                     hard_stop_detected = True
                     TelegramNotifier.notify_action(
                         symbol,
@@ -919,6 +1009,12 @@ class TradingBot:
                         "Exchange no longer reports this tracked position",
                     )
                     continue
+
+                if getattr(pm, 'closed_on_exchange', False):
+                    pm.closed_on_exchange = False
+                    pm.external_close_reason = None
+                    pm.external_exit_price = None
+                    pm.external_exit_price_source = None
 
                 bot_amt = pm.total_size
                 if bot_amt > 0 and abs(ex_amt - bot_amt) / bot_amt > 0.05:
@@ -941,8 +1037,19 @@ class TradingBot:
         except Exception as e:
             logger.warning(f"[SYNC] 交易所同步異常，跳過: {e}")
 
-    def _handle_close(self, pm: PositionManager, current_price: float = 0.0) -> bool:
-        return self.position_monitor.handle_close(pm, current_price)
+    def _handle_close(
+        self,
+        pm: PositionManager,
+        current_price: float = 0.0,
+        external_close: bool = False,
+        exit_price_source: Optional[str] = None,
+    ) -> bool:
+        return self.position_monitor.handle_close(
+            pm,
+            current_price,
+            external_close=external_close,
+            exit_price_source=exit_price_source,
+        )
 
     def _handle_stage2(self, pm: PositionManager, current_price: float, df_1h, decision: dict = None):
         self.position_monitor.handle_stage2(pm, current_price, df_1h, decision=decision)

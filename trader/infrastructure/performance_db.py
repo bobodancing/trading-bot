@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS trades (
     signal_type      TEXT,
     entry_price      REAL    NOT NULL,
     exit_price       REAL    NOT NULL,
+    exit_price_source TEXT,
     total_size       REAL    NOT NULL,
     initial_r        REAL    NOT NULL,
     entry_time       TEXT    NOT NULL,
@@ -58,7 +59,7 @@ CREATE TABLE IF NOT EXISTS trades (
 INSERT_SQL = """
 INSERT OR IGNORE INTO trades (
     trade_id, symbol, side, is_v6_pyramid, signal_tier, signal_type,
-    entry_price, exit_price, total_size, initial_r,
+    entry_price, exit_price, exit_price_source, total_size, initial_r,
     entry_time, exit_time, holding_hours,
     pnl_usdt, pnl_pct, realized_r,
     mfe_pct, mae_pct, capture_ratio, max_r_reached,
@@ -70,7 +71,7 @@ INSERT OR IGNORE INTO trades (
     strategy_name, grid_level, grid_round
 ) VALUES (
     :trade_id, :symbol, :side, :is_v6_pyramid, :signal_tier, :signal_type,
-    :entry_price, :exit_price, :total_size, :initial_r,
+    :entry_price, :exit_price, :exit_price_source, :total_size, :initial_r,
     :entry_time, :exit_time, :holding_hours,
     :pnl_usdt, :pnl_pct, :realized_r,
     :mfe_pct, :mae_pct, :capture_ratio, :max_r_reached,
@@ -96,6 +97,7 @@ class PerformanceDB:
                 # Migration: 新增 Phase 1 分析欄位（idempotent，欄位已存在會靜默跳過）
                 for col_sql in [
                     "ALTER TABLE trades ADD COLUMN signal_type TEXT",
+                    "ALTER TABLE trades ADD COLUMN exit_price_source TEXT",
                     "ALTER TABLE trades ADD COLUMN entry_adx REAL",
                     "ALTER TABLE trades ADD COLUMN fakeout_depth_atr REAL",
                     "ALTER TABLE trades ADD COLUMN reverse_2b_depth_atr REAL",
@@ -133,6 +135,7 @@ class PerformanceDB:
             data.setdefault('original_size', None)
             data.setdefault('partial_pnl_usdt', None)
             data.setdefault('signal_type', None)
+            data.setdefault('exit_price_source', None)
             data.setdefault('btc_trend_aligned', None)
             data.setdefault('reverse_2b_depth_atr', None)
             data.setdefault('trend_adx', None)

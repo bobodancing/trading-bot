@@ -47,8 +47,12 @@ class TestSyncExchangePositions:
 
         mock_bot._sync_exchange_positions()
 
-        assert pm.is_closed is True
+        assert pm.is_closed is False
+        assert pm.closed_on_exchange is True
         assert pm.exit_reason == 'hard_stop_hit'
+        assert pm.external_close_reason == 'hard_stop_hit'
+        assert pm.external_exit_price == pytest.approx(pm.current_sl)
+        assert pm.external_exit_price_source == 'assumed_sl'
         mock_bot._save_positions.assert_called_once()
 
     def test_exchange_has_position_not_closed(self, mock_bot):
@@ -135,3 +139,23 @@ class TestPendingStopCleanup:
         # 驗證 cancel 被呼叫 2 次
         assert mock_bot.execution_engine.cancel_stop_loss_order.call_count == 2
         assert 'SOL/USDT' not in mock_bot.active_trades
+
+
+class TestGhostAdoption:
+    def test_adopt_ghost_positions_skips_ambiguous_hedge_symbol(self, mock_bot, caplog):
+        import logging
+
+        mock_bot.execution_engine.place_hard_stop_loss = MagicMock()
+        mock_bot.risk_manager.get_positions = MagicMock(return_value=[
+            {'symbol': 'BTCUSDT', 'positionAmt': '0.01', 'positionSide': 'LONG', 'entryPrice': '50000'},
+            {'symbol': 'BTCUSDT', 'positionAmt': '-0.02', 'positionSide': 'SHORT', 'entryPrice': '51000'},
+        ])
+        mock_bot._fetch_exchange_stop_map = MagicMock(return_value={})
+        mock_bot._save_positions = MagicMock()
+
+        with caplog.at_level(logging.CRITICAL):
+            mock_bot._adopt_ghost_positions()
+
+        assert 'BTC/USDT' not in mock_bot.active_trades
+        mock_bot.execution_engine.place_hard_stop_loss.assert_not_called()
+        assert any('ADOPT_SKIP_HEDGE_AMBIGUOUS' in msg and 'BTC/USDT' in msg for msg in caplog.messages)

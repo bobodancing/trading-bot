@@ -152,6 +152,77 @@ class TestFullPathNormal:
         assert pm.total_size == pytest.approx(0.02)
         assert pm.initial_r == pytest.approx(40.0)
 
+    def test_execute_shrinks_size_to_remaining_total_risk_budget(self, integration_bot):
+        """execute 層應依剩餘 risk budget 縮小 size，而不是讓總風險超標。"""
+        bot, engine, fi = integration_bot
+
+        _inject_pm_into_bot(
+            bot,
+            symbol='ETH/USDT',
+            entry_price=50000.0,
+            stop_loss=48000.0,
+            position_size=0.24,
+        )
+        bot.risk_manager.calculate_position_size = MagicMock(return_value=0.03)
+        bot.precision_handler.round_amount = MagicMock(return_value=0.01)
+
+        signal_details = {
+            'side': 'LONG',
+            'entry_price': 50000.0,
+            'stop_loss': 48000.0,
+            'atr': 100.0,
+            'vol_ratio': 2.0,
+            'signal_tier': 'A',
+            'market_regime': 'TRENDING',
+        }
+        df = _make_ohlcv_df(50000.0)
+
+        with patch.object(Config, 'V53_EQUITY_CAP_PERCENT', 1.0):
+            bot._execute_trade('BTC/USDT', signal_details, '2B', 1.0, df)
+
+        pm = bot.active_trades['BTC/USDT']
+        assert pm.total_size == pytest.approx(0.01)
+        assert pm.initial_r == pytest.approx(20.0)
+        bot.precision_handler.round_amount.assert_called_once()
+        create_logs = [
+            l for l in engine.trade_log
+            if l['action'] == 'create_order' and l['symbol'] == 'BTC/USDT'
+        ]
+        assert create_logs[-1]['quantity'] == pytest.approx(0.01)
+
+    def test_execute_rejects_when_total_risk_budget_is_exhausted(self, integration_bot):
+        """沒有剩餘 risk budget 時，execute 層不應再送單。"""
+        bot, engine, fi = integration_bot
+
+        _inject_pm_into_bot(
+            bot,
+            symbol='ETH/USDT',
+            entry_price=50000.0,
+            stop_loss=48000.0,
+            position_size=0.25,
+        )
+        bot.risk_manager.calculate_position_size = MagicMock(return_value=0.03)
+
+        signal_details = {
+            'side': 'LONG',
+            'entry_price': 50000.0,
+            'stop_loss': 48000.0,
+            'atr': 100.0,
+            'vol_ratio': 2.0,
+            'signal_tier': 'A',
+            'market_regime': 'TRENDING',
+        }
+        df = _make_ohlcv_df(50000.0)
+
+        with patch.object(Config, 'V53_EQUITY_CAP_PERCENT', 1.0):
+            bot._execute_trade('BTC/USDT', signal_details, '2B', 1.0, df)
+
+        assert 'BTC/USDT' not in bot.active_trades
+        assert not any(
+            l['action'] == 'create_order' and l['symbol'] == 'BTC/USDT'
+            for l in engine.trade_log
+        )
+
     def test_monitor_updates_sl_on_profit(self, integration_bot):
         """持倉獲利後 monitor → trailing SL 更新 → engine.open_stops 同步"""
         bot, engine, fi = integration_bot
@@ -176,7 +247,8 @@ class TestFullPathNormal:
             'new_sl': 49500.0,  # trailing SL 上移
         })
 
-        bot.monitor_positions()
+        with patch.object(Config, 'USE_HARD_STOP_LOSS', True):
+            bot.monitor_positions()
 
         # 驗證 SL 有被更新
         assert len(engine.open_stops) >= 1
@@ -332,6 +404,8 @@ class TestFaultInjection:
         # 持倉保留（rollback）
         assert 'BTC/USDT' in bot.active_trades
         assert pm.is_closed is False
+        assert pm.stop_order_id is not None
+        assert pm.pending_stop_cancels == []
 
     def test_close_failure_then_retry_succeeds(self, integration_bot):
         """第一次 close 失敗 → 第二次 close 成功 → 持倉清除"""
@@ -356,8 +430,13 @@ class TestFaultInjection:
         })
         pm.exit_reason = 'fast_stop'
 
-        bot.monitor_positions()
+        with patch.object(Config, 'USE_HARD_STOP_LOSS', True):
+            bot.monitor_positions()
         assert 'BTC/USDT' in bot.active_trades  # rollback
+        assert pm.stop_order_id is not None
+        assert pm.pending_stop_cancels == []
+        close_logs = [l for l in engine.trade_log if l['action'] == 'close_position']
+        assert len(close_logs) == 0
 
         # Cycle 2：close 成功（fault 已消耗）
         pm.monitor = MagicMock(return_value={
@@ -367,6 +446,8 @@ class TestFaultInjection:
 
         bot.monitor_positions()
         assert 'BTC/USDT' not in bot.active_trades  # 成功平倉
+        close_logs = [l for l in engine.trade_log if l['action'] == 'close_position']
+        assert len(close_logs) == 1
 
     def test_create_order_failure_no_position_created(self, integration_bot):
         """create_order 丟 Exception → 不建立持倉"""
@@ -467,13 +548,18 @@ class TestExchangeSyncIntegration:
 
         pm = _inject_pm_into_bot(bot)
         bot._save_positions = MagicMock()
+        bot.perf_db.record_trade = MagicMock(return_value=True)
         # exchange 回空 list（正常回應，真的沒倉位）
         bot.risk_manager.get_positions = MagicMock(return_value=[])
 
         bot._sync_exchange_positions()
 
-        assert pm.is_closed is True
+        assert pm.is_closed is False
+        assert pm.closed_on_exchange is True
         assert pm.exit_reason == 'hard_stop_hit'
+        assert pm.external_exit_price == pytest.approx(pm.current_sl)
+        assert pm.external_exit_price_source == 'assumed_sl'
+        bot.perf_db.record_trade.assert_not_called()
 
     def test_sync_ghost_position_logged(self, integration_bot, caplog):
         """exchange 有倉、bot 沒追蹤 → log GHOST_POSITION"""
@@ -542,14 +628,22 @@ class TestExchangeSyncIntegration:
         # Step 2: exchange 端已被硬止損清掉
         bot.risk_manager.get_positions = MagicMock(return_value=[])
         bot._save_positions = MagicMock()
+        bot.perf_db.record_trade = MagicMock(return_value=True)
 
         bot._sync_exchange_positions()
-        assert pm.is_closed is True
+        assert pm.is_closed is False
+        assert pm.closed_on_exchange is True
         assert pm.exit_reason == 'hard_stop_hit'
 
         # Step 3: 下一次 monitor 清理
-        bot.monitor_positions()
+        with patch.object(Config, 'USE_HARD_STOP_LOSS', True):
+            bot.monitor_positions()
+        close_logs = [l for l in engine.trade_log if l['action'] == 'close_position']
+        assert len(close_logs) == 0
         assert 'BTC/USDT' not in bot.active_trades
+        payload = bot.perf_db.record_trade.call_args[0][0]
+        assert payload['exit_price_source'] == 'assumed_sl'
+        assert payload['exit_price'] == pytest.approx(48000.0)
 
 
 # ══════════════════════════════════════════════

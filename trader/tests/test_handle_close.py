@@ -63,7 +63,7 @@ class TestHandleCloseRollback:
 
         assert 'BTC/USDT' in mock_bot.active_trades
 
-    def test_stop_order_moved_to_pending_before_close(self, mock_bot):
+    def test_close_failure_keeps_live_stop_order(self, mock_bot):
         """
         stop_order_id 在 close 下單前就移入 pending_stop_cancels（平倉優先）。
         即使 close 失敗，stop 已在 pending list、stop_order_id 已清空。
@@ -79,8 +79,8 @@ class TestHandleCloseRollback:
 
         mock_bot._handle_close(pm, current_price=50000.0)
 
-        assert 'stop_order_123' in pm.pending_stop_cancels
-        assert pm.stop_order_id is None
+        assert pm.pending_stop_cancels == []
+        assert pm.stop_order_id == 'stop_order_123'
 
     # ──────────────────────────────────────────────
     # 正常路徑（Sanity Check）
@@ -117,8 +117,35 @@ class TestHandleCloseRollback:
         assert result is True
         payload = mock_bot.perf_db.record_trade.call_args[0][0]
         assert payload['exit_price'] == pytest.approx(50500.0)
+        assert payload['exit_price_source'] == 'exchange_fill'
         assert payload['pnl_usdt'] == pytest.approx(5.0)
         assert payload['realized_r'] == pytest.approx(0.25)
+
+    def test_external_close_uses_assumed_sl_exit_price_source(self, mock_bot):
+        """exchange 已平倉時，收尾要用 assumed SL 價格且不可再送 close order。"""
+        pm = make_pm(
+            entry_price=50000.0,
+            stop_loss=49000.0,
+            position_size=0.01,
+        )
+        pm.current_sl = 49250.0
+        pm.original_size = pm.total_size
+        pm.realized_partial_pnl = 0.0
+        pm.exit_reason = 'hard_stop_hit'
+        mock_bot.execution_engine.close_position = MagicMock()
+
+        result = mock_bot._handle_close(
+            pm,
+            current_price=pm.current_sl,
+            external_close=True,
+            exit_price_source='assumed_sl',
+        )
+
+        assert result is True
+        mock_bot.execution_engine.close_position.assert_not_called()
+        payload = mock_bot.perf_db.record_trade.call_args[0][0]
+        assert payload['exit_price'] == pytest.approx(49250.0)
+        assert payload['exit_price_source'] == 'assumed_sl'
 
     def test_success_records_v54_protection_telemetry(self, mock_bot):
         """V54 鎖利保護後被打掉時，資料庫要保留 milestone 與 signal_type。"""
@@ -145,6 +172,7 @@ class TestHandleCloseRollback:
         assert result is True
         payload = mock_bot.perf_db.record_trade.call_args[0][0]
         assert payload['signal_type'] == '2B'
+        assert payload['exit_price_source'] == 'exchange_fill'
         assert payload['protection_state'] == 'V54_LOCK_15R'
         assert payload['protected_exit'] == 1
         assert payload['max_r_reached'] == pytest.approx(2.0)

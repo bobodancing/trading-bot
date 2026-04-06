@@ -43,3 +43,20 @@ vpn_watchdog.py
 # Git worktrees
 .worktrees/
 v8log/
+
+# Test / build artifacts
+.tmp-pytest/
+.test-pylibs/
+.pybin/
+.wheelhouse-test/
+.tools/
+.coverage
+htmlcov/
+.pytest_cache/
+
+# SQLite WAL (runtime temp)
+performance.db-shm
+performance.db-wal
+
+# Grid runtime
+grid_positions.json

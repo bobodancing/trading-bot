@@ -42,6 +42,22 @@ class PositionMonitor:
                     closed_symbols.append(symbol)
                     continue
 
+                if getattr(pm, 'closed_on_exchange', False):
+                    assumed_exit_price = (
+                        getattr(pm, 'external_exit_price', None)
+                        or pm.current_sl
+                        or pm.avg_entry
+                    )
+                    if self.handle_close(
+                        pm,
+                        assumed_exit_price,
+                        external_close=True,
+                        exit_price_source=getattr(pm, 'external_exit_price_source', None) or 'assumed_sl',
+                    ):
+                        closed_symbols.append(symbol)
+                        state_changed = True
+                    continue
+
                 ticker = bot.fetch_ticker(symbol)
                 current_price = ticker['last']
 
@@ -64,9 +80,11 @@ class PositionMonitor:
 
                 if new_sl is not None:
                     old_sl = pm.current_sl
-                    bot._update_hard_stop_loss(pm, new_sl)
-                    state_changed = True
-                    if old_sl > 0 and abs(new_sl - old_sl) / old_sl > 0.01:
+                    if bot._update_hard_stop_loss(pm, new_sl):
+                        state_changed = True
+                    else:
+                        pm.current_sl = old_sl
+                    if old_sl > 0 and abs(new_sl - old_sl) / old_sl > 0.01 and pm.current_sl == new_sl:
                         TelegramNotifier.notify_action(
                             symbol, '1.5R移損',
                             current_price,
@@ -140,8 +158,11 @@ class PositionMonitor:
             if pm:
                 for order_id in pm.pending_stop_cancels:
                     try:
-                        bot.execution_engine.cancel_stop_loss_order(pm.symbol, order_id)
-                        logger.info(f"[{pm.symbol}] cleanup residual stop: {order_id}")
+                        success = bot.execution_engine.cancel_stop_loss_order(pm.symbol, order_id)
+                        if success:
+                            logger.info(f"[{pm.symbol}] cleanup residual stop: {order_id}")
+                        else:
+                            logger.warning(f"[{pm.symbol}] cleanup residual stop returned false: {order_id}")
                     except Exception as e:
                         logger.warning(f"[{pm.symbol}] cleanup residual stop failed: {order_id} -- {e}")
 
@@ -230,7 +251,25 @@ class PositionMonitor:
             return 'V54_TRAILING'
         return None
 
-    def handle_close(self, pm: PositionManager, current_price: float = 0.0) -> bool:
+    @staticmethod
+    def _resolve_exit_price(order_result: dict, fallback_price: float) -> tuple[float, str]:
+        try:
+            avg = order_result.get('avgPrice') or order_result.get('average')
+            if avg:
+                price = float(avg)
+                if price > 0:
+                    return price, 'exchange_fill'
+        except Exception:
+            pass
+        return fallback_price, 'observed_price'
+
+    def handle_close(
+        self,
+        pm: PositionManager,
+        current_price: float = 0.0,
+        external_close: bool = False,
+        exit_price_source: Optional[str] = None,
+    ) -> bool:
         """
         Handle position close.
 
@@ -241,40 +280,57 @@ class PositionMonitor:
         bot = self.bot
         try:
             if current_price <= 0:
-                try:
-                    ticker = bot.fetch_ticker(pm.symbol)
-                    current_price = ticker['last']
-                except Exception:
-                    current_price = pm.avg_entry
+                if external_close:
+                    current_price = (
+                        getattr(pm, 'external_exit_price', None)
+                        or pm.current_sl
+                        or pm.avg_entry
+                    )
+                else:
+                    try:
+                        ticker = bot.fetch_ticker(pm.symbol)
+                        current_price = ticker['last']
+                    except Exception:
+                        current_price = pm.avg_entry
             observed_price = current_price
             exit_price = observed_price
+            exit_price_source = exit_price_source or ('assumed_sl' if external_close else 'observed_price')
             duration_h = (datetime.now(timezone.utc) - pm.entry_time).total_seconds() / 3600
-            exit_reason = getattr(pm, 'exit_reason', None) or 'unknown'
+            exit_reason = (
+                getattr(pm, 'external_close_reason', None)
+                if external_close else getattr(pm, 'exit_reason', None)
+            ) or getattr(pm, 'exit_reason', None) or 'unknown'
 
             if Config.V6_DRY_RUN:
                 logger.info(f"[DRY_RUN] Close {pm.symbol} {pm.side} size={pm.total_size:.6f}")
             else:
-                # Move stop order to pending cancels (non-blocking), close first
-                if pm.stop_order_id:
-                    pm.pending_stop_cancels.append(pm.stop_order_id)
-                    pm.stop_order_id = None
-
-                # Close order (rollback on failure: keep position, save to positions.json)
-                try:
-                    close_result = bot._futures_close_position(pm.symbol, pm.side, pm.total_size)
-                    exit_price = bot._extract_fill_price(close_result, observed_price)
-                except Exception as close_err:
-                    logger.error(
-                        f"{pm.symbol} close order failed (position preserved, retry next cycle): {close_err}"
-                    )
-                    bot._save_positions()
-                    return False
-
-                if abs(exit_price - observed_price) > 1e-9:
+                if external_close:
+                    exit_price = observed_price
+                    exit_price_source = exit_price_source or 'assumed_sl'
                     logger.info(
-                        f"{pm.symbol} exit fill adjusted: observed=${observed_price:.4f} -> fill=${exit_price:.4f}"
+                        f"{pm.symbol} finalized from exchange close: "
+                        f"{pm.side} size={pm.total_size:.6f} price=${exit_price:.4f}"
                     )
-                logger.info(f"{pm.symbol} closed: {pm.side} size={pm.total_size:.6f}")
+                else:
+                    try:
+                        close_result = bot._futures_close_position(pm.symbol, pm.side, pm.total_size)
+                        exit_price, exit_price_source = self._resolve_exit_price(close_result, observed_price)
+                    except Exception as close_err:
+                        logger.error(
+                            f"{pm.symbol} close order failed (position preserved, retry next cycle): {close_err}"
+                        )
+                        bot._save_positions()
+                        return False
+
+                    if pm.stop_order_id:
+                        pm.pending_stop_cancels.append(pm.stop_order_id)
+                        pm.stop_order_id = None
+
+                    if abs(exit_price - observed_price) > 1e-9:
+                        logger.info(
+                            f"{pm.symbol} exit fill adjusted: observed=${observed_price:.4f} -> fill=${exit_price:.4f}"
+                        )
+                    logger.info(f"{pm.symbol} closed: {pm.side} size={pm.total_size:.6f}")
 
             pm.highest_price = max(pm.highest_price, observed_price, exit_price)
             pm.lowest_price = min(pm.lowest_price, observed_price, exit_price)
@@ -309,6 +365,7 @@ class PositionMonitor:
             _trade_log({
                 **build_log_base('TRADE_CLOSE', pm.trade_id, pm.symbol, pm.side),
                 'exit_price': f'{exit_price:.2f}',
+                'exit_price_source': exit_price_source,
                 'entry': f'{pm.avg_entry:.2f}',
                 'size': f'{pm.total_size:.6f}',
                 'pnl_pct': f'{pnl_pct:+.2f}',
@@ -337,6 +394,7 @@ class PositionMonitor:
                     "signal_type":   getattr(pm, 'signal_type', None),
                     "entry_price":   pm.avg_entry,
                     "exit_price":    exit_price,
+                    "exit_price_source": exit_price_source,
                     "total_size":    pm.total_size,
                     "initial_r":     pm.initial_r,
                     "entry_time":    pm.entry_time.isoformat() if hasattr(pm.entry_time, 'isoformat') else str(pm.entry_time),
@@ -375,6 +433,14 @@ class PositionMonitor:
                     'pnl_pct': pnl_pct,
                 })
 
+            if external_close and pm.stop_order_id:
+                pm.pending_stop_cancels.append(pm.stop_order_id)
+                pm.stop_order_id = None
+            pm.closed_on_exchange = False
+            pm.external_close_reason = None
+            pm.external_exit_price = None
+            pm.external_exit_price_source = None
+            pm.is_closed = True
             return True
 
         except Exception as e:

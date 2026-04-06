@@ -91,6 +91,10 @@ class PositionManager:
         # === 交易所狀態 ===
         self.stop_order_id: Optional[str] = None
         self.is_closed = False
+        self.closed_on_exchange = False
+        self.external_close_reason: Optional[str] = None
+        self.external_exit_price: Optional[float] = None
+        self.external_exit_price_source: Optional[str] = None
 
         # === 時間追蹤 ===
         self.entry_time = datetime.now(timezone.utc)

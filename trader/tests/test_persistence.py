@@ -505,7 +505,7 @@ class TestPerformanceDB:
         data = {
             "trade_id": "test-telemetry-001", "symbol": "BTCUSDT", "side": "LONG",
             "is_v6_pyramid": 0, "signal_tier": "A", "signal_type": "2B",
-            "entry_price": 90000.0, "exit_price": 90500.0, "total_size": 0.01,
+            "entry_price": 90000.0, "exit_price": 90500.0, "exit_price_source": "assumed_sl", "total_size": 0.01,
             "initial_r": 10.0, "entry_time": "2026-01-01T00:00:00",
             "exit_time": "2026-01-01T06:00:00", "holding_hours": 6.0,
             "pnl_usdt": 5.0, "pnl_pct": 0.56, "realized_r": 0.5,
@@ -522,11 +522,11 @@ class TestPerformanceDB:
         import sqlite3
         with sqlite3.connect(db.db_path) as conn:
             row = conn.execute(
-                "SELECT signal_type, max_r_reached, protection_state, protected_exit "
+                "SELECT signal_type, max_r_reached, protection_state, protected_exit, exit_price_source "
                 "FROM trades WHERE trade_id=?",
                 ("test-telemetry-001",)
             ).fetchone()
-        assert row == ("2B", 2.0, "V54_LOCK_15R", 1)
+        assert row == ("2B", 2.0, "V54_LOCK_15R", 1, "assumed_sl")
 
     def test_duplicate_trade_id_ignored(self, tmp_path):
         """同一 trade_id 重複寫入應被忽略（crash 重啟安全）。"""
