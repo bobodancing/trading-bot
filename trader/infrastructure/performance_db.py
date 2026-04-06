@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS trades (
     side             TEXT    NOT NULL,
     is_v6_pyramid    INTEGER NOT NULL,
     signal_tier      TEXT,
+    signal_type      TEXT,
     entry_price      REAL    NOT NULL,
     exit_price       REAL    NOT NULL,
     total_size       REAL    NOT NULL,
@@ -31,8 +32,11 @@ CREATE TABLE IF NOT EXISTS trades (
     mfe_pct          REAL    NOT NULL,
     mae_pct          REAL    NOT NULL,
     capture_ratio    REAL,
+    max_r_reached    REAL,
     stage_reached    INTEGER NOT NULL,
     exit_reason      TEXT    NOT NULL,
+    protection_state TEXT,
+    protected_exit   INTEGER,
     market_regime    TEXT,
     entry_adx        REAL,
     fakeout_depth_atr REAL,
@@ -53,24 +57,24 @@ CREATE TABLE IF NOT EXISTS trades (
 
 INSERT_SQL = """
 INSERT OR IGNORE INTO trades (
-    trade_id, symbol, side, is_v6_pyramid, signal_tier,
+    trade_id, symbol, side, is_v6_pyramid, signal_tier, signal_type,
     entry_price, exit_price, total_size, initial_r,
     entry_time, exit_time, holding_hours,
     pnl_usdt, pnl_pct, realized_r,
-    mfe_pct, mae_pct, capture_ratio,
-    stage_reached, exit_reason, market_regime,
+    mfe_pct, mae_pct, capture_ratio, max_r_reached,
+    stage_reached, exit_reason, protection_state, protected_exit, market_regime,
     entry_adx, fakeout_depth_atr, reverse_2b_depth_atr,
     original_size, partial_pnl_usdt,
     btc_trend_aligned,
     trend_adx, mtf_aligned, volume_grade, tier_score,
     strategy_name, grid_level, grid_round
 ) VALUES (
-    :trade_id, :symbol, :side, :is_v6_pyramid, :signal_tier,
+    :trade_id, :symbol, :side, :is_v6_pyramid, :signal_tier, :signal_type,
     :entry_price, :exit_price, :total_size, :initial_r,
     :entry_time, :exit_time, :holding_hours,
     :pnl_usdt, :pnl_pct, :realized_r,
-    :mfe_pct, :mae_pct, :capture_ratio,
-    :stage_reached, :exit_reason, :market_regime,
+    :mfe_pct, :mae_pct, :capture_ratio, :max_r_reached,
+    :stage_reached, :exit_reason, :protection_state, :protected_exit, :market_regime,
     :entry_adx, :fakeout_depth_atr, :reverse_2b_depth_atr,
     :original_size, :partial_pnl_usdt,
     :btc_trend_aligned,
@@ -91,6 +95,7 @@ class PerformanceDB:
                 conn.execute(CREATE_TABLE_SQL)
                 # Migration: 新增 Phase 1 分析欄位（idempotent，欄位已存在會靜默跳過）
                 for col_sql in [
+                    "ALTER TABLE trades ADD COLUMN signal_type TEXT",
                     "ALTER TABLE trades ADD COLUMN entry_adx REAL",
                     "ALTER TABLE trades ADD COLUMN fakeout_depth_atr REAL",
                     "ALTER TABLE trades ADD COLUMN reverse_2b_depth_atr REAL",
@@ -104,6 +109,9 @@ class PerformanceDB:
                     "ALTER TABLE trades ADD COLUMN strategy_name TEXT",
                     "ALTER TABLE trades ADD COLUMN grid_level INTEGER",
                     "ALTER TABLE trades ADD COLUMN grid_round INTEGER",
+                    "ALTER TABLE trades ADD COLUMN max_r_reached REAL",
+                    "ALTER TABLE trades ADD COLUMN protection_state TEXT",
+                    "ALTER TABLE trades ADD COLUMN protected_exit INTEGER",
                 ]:
                     try:
                         conn.execute(col_sql)
@@ -124,6 +132,7 @@ class PerformanceDB:
             data = dict(data)  # 不改動呼叫方的 dict
             data.setdefault('original_size', None)
             data.setdefault('partial_pnl_usdt', None)
+            data.setdefault('signal_type', None)
             data.setdefault('btc_trend_aligned', None)
             data.setdefault('reverse_2b_depth_atr', None)
             data.setdefault('trend_adx', None)
@@ -133,6 +142,9 @@ class PerformanceDB:
             data.setdefault('strategy_name', None)
             data.setdefault('grid_level', None)
             data.setdefault('grid_round', None)
+            data.setdefault('max_r_reached', None)
+            data.setdefault('protection_state', None)
+            data.setdefault('protected_exit', None)
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute(INSERT_SQL, data)
                 conn.commit()

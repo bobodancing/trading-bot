@@ -28,6 +28,17 @@ def get_close_side(side: str) -> str:
     return 'BUY' if side == 'LONG' else 'SELL'
 
 
+def drop_unfinished_candle(df):
+    """Drop the last (current/unfinished) candle from OHLCV DataFrame.
+
+    Both entry (signal_scanner) and exit (position_monitor) must use
+    confirmed candles only; using live candle data causes alpha leak.
+    """
+    if df is not None and not df.empty and len(df) > 1:
+        return df.iloc[:-1]
+    return df
+
+
 def build_log_base(event: str, trade_id: str, symbol: str, side: str) -> dict:
     """Build common fields for trade_log calls."""
     return {

@@ -97,3 +97,54 @@ class TestHandleCloseRollback:
         result = mock_bot._handle_close(pm, current_price=51000.0)
 
         assert result is True
+
+    def test_success_records_actual_fill_price(self, mock_bot):
+        """full close 應以實際 fill price 落 DB。"""
+        pm = make_pm(
+            entry_price=50000.0,
+            stop_loss=49000.0,
+            position_size=0.01,
+        )
+        pm.original_size = pm.total_size
+        pm.realized_partial_pnl = 0.0
+
+        mock_bot.execution_engine.close_position = MagicMock(
+            return_value={'orderId': 'order_789', 'avgPrice': '50500.0', 'status': 'FILLED'}
+        )
+
+        result = mock_bot._handle_close(pm, current_price=50400.0)
+
+        assert result is True
+        payload = mock_bot.perf_db.record_trade.call_args[0][0]
+        assert payload['exit_price'] == pytest.approx(50500.0)
+        assert payload['pnl_usdt'] == pytest.approx(5.0)
+        assert payload['realized_r'] == pytest.approx(0.25)
+
+    def test_success_records_v54_protection_telemetry(self, mock_bot):
+        """V54 鎖利保護後被打掉時，資料庫要保留 milestone 與 signal_type。"""
+        pm = make_pm(
+            entry_price=50000.0,
+            stop_loss=49000.0,
+            position_size=0.01,
+            strategy_name='v54_noscale',
+            signal_type='2B',
+        )
+        pm.exit_reason = 'sl_hit'
+        pm.highest_price = 52000.0
+        pm.lowest_price = 49950.0
+        pm.strategy.is_breakeven_protected = True
+        pm.strategy.is_15r_locked = True
+        pm.strategy.is_trailing_active = True
+
+        mock_bot.execution_engine.close_position = MagicMock(
+            return_value={'orderId': 'order_999', 'avgPrice': '50050.0', 'status': 'FILLED'}
+        )
+
+        result = mock_bot._handle_close(pm, current_price=49990.0)
+
+        assert result is True
+        payload = mock_bot.perf_db.record_trade.call_args[0][0]
+        assert payload['signal_type'] == '2B'
+        assert payload['protection_state'] == 'V54_LOCK_15R'
+        assert payload['protected_exit'] == 1
+        assert payload['max_r_reached'] == pytest.approx(2.0)

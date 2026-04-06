@@ -13,7 +13,7 @@ from trader.indicators.technical import TechnicalAnalysis
 from trader.infrastructure.notifier import TelegramNotifier
 from trader.positions import PositionManager
 from trader.strategies.base import Action
-from trader.utils import trade_log as _trade_log, calculate_pnl, get_close_side, build_log_base
+from trader.utils import trade_log as _trade_log, calculate_pnl, get_close_side, build_log_base, drop_unfinished_candle
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,10 @@ class PositionMonitor:
 
                 df_1h = bot.fetch_ohlcv(symbol, Config.TIMEFRAME_SIGNAL, limit=50)
                 if not df_1h.empty:
+                    # Calculate on the full fetch window, then drop the live candle.
+                    # Dropping first would shrink 50 -> 49 rows and skip indicator refresh.
                     df_1h = TechnicalAnalysis.calculate_indicators(df_1h)
+                    df_1h = drop_unfinished_candle(df_1h)
 
                 df_4h = None
                 if pm.strategy_name in ("v6_pyramid", "v7_structure"):
@@ -194,6 +197,39 @@ class PositionMonitor:
             'net_pnl_pct': f'{net_pnl_pct:+.2f}',
         })
 
+    @staticmethod
+    def _calc_max_r_reached(pm: PositionManager) -> Optional[float]:
+        """Best favorable excursion expressed in R, using tracked extremes."""
+        if pm.risk_dist <= 0:
+            return None
+
+        if pm.side == 'LONG':
+            max_r = (pm.highest_price - pm.avg_entry) / pm.risk_dist
+        else:
+            max_r = (pm.avg_entry - pm.lowest_price) / pm.risk_dist
+
+        return round(max(max_r, 0.0), 4)
+
+    @staticmethod
+    def _get_v54_protection_state(pm: PositionManager) -> Optional[str]:
+        """Return the strongest V54 protection milestone active at exit."""
+        if pm.strategy_name != 'v54_noscale':
+            return None
+
+        strategy = getattr(pm, 'strategy', None)
+        if strategy is None:
+            return None
+
+        if getattr(strategy, 'is_25r_locked', False):
+            return 'V54_LOCK_20R'
+        if getattr(strategy, 'is_15r_locked', False):
+            return 'V54_LOCK_15R'
+        if getattr(strategy, 'is_breakeven_protected', False):
+            return 'V54_BREAKEVEN'
+        if getattr(strategy, 'is_trailing_active', False):
+            return 'V54_TRAILING'
+        return None
+
     def handle_close(self, pm: PositionManager, current_price: float = 0.0) -> bool:
         """
         Handle position close.
@@ -210,18 +246,43 @@ class PositionMonitor:
                     current_price = ticker['last']
                 except Exception:
                     current_price = pm.avg_entry
-
-            final_pnl = calculate_pnl(pm.side, pm.total_size, current_price, pm.avg_entry)
-
-            pnl_usdt = final_pnl + pm.realized_partial_pnl
-            original_notional = pm.original_size * pm.avg_entry
-            pnl_pct = (pnl_usdt / original_notional * 100) if original_notional > 0 else 0
-
+            observed_price = current_price
+            exit_price = observed_price
             duration_h = (datetime.now(timezone.utc) - pm.entry_time).total_seconds() / 3600
             exit_reason = getattr(pm, 'exit_reason', None) or 'unknown'
 
-            pm.highest_price = max(pm.highest_price, current_price)
-            pm.lowest_price = min(pm.lowest_price, current_price)
+            if Config.V6_DRY_RUN:
+                logger.info(f"[DRY_RUN] Close {pm.symbol} {pm.side} size={pm.total_size:.6f}")
+            else:
+                # Move stop order to pending cancels (non-blocking), close first
+                if pm.stop_order_id:
+                    pm.pending_stop_cancels.append(pm.stop_order_id)
+                    pm.stop_order_id = None
+
+                # Close order (rollback on failure: keep position, save to positions.json)
+                try:
+                    close_result = bot._futures_close_position(pm.symbol, pm.side, pm.total_size)
+                    exit_price = bot._extract_fill_price(close_result, observed_price)
+                except Exception as close_err:
+                    logger.error(
+                        f"{pm.symbol} close order failed (position preserved, retry next cycle): {close_err}"
+                    )
+                    bot._save_positions()
+                    return False
+
+                if abs(exit_price - observed_price) > 1e-9:
+                    logger.info(
+                        f"{pm.symbol} exit fill adjusted: observed=${observed_price:.4f} -> fill=${exit_price:.4f}"
+                    )
+                logger.info(f"{pm.symbol} closed: {pm.side} size={pm.total_size:.6f}")
+
+            pm.highest_price = max(pm.highest_price, observed_price, exit_price)
+            pm.lowest_price = min(pm.lowest_price, observed_price, exit_price)
+
+            final_pnl = calculate_pnl(pm.side, pm.total_size, exit_price, pm.avg_entry)
+            pnl_usdt = final_pnl + pm.realized_partial_pnl
+            original_notional = pm.original_size * pm.avg_entry
+            pnl_pct = (pnl_usdt / original_notional * 100) if original_notional > 0 else 0
 
             avg_entry = pm.avg_entry
             if avg_entry and avg_entry > 0:
@@ -234,50 +295,20 @@ class PositionMonitor:
             else:
                 mfe_pct = 0.0
                 mae_pct = 0.0
+
             realized_r = round(pnl_usdt / pm.initial_r, 2) if pm.initial_r else 0.0
             capture_ratio = round(pnl_pct / mfe_pct, 2) if mfe_pct > 0.0001 else None
+            safe_capture = round(pnl_pct / mfe_pct, 4) if mfe_pct > 0.0001 else None
             holding_time_min = round(duration_h * 60, 1)
-
-            if Config.V6_DRY_RUN:
-                logger.info(f"[DRY_RUN] Close {pm.symbol} {pm.side} size={pm.total_size:.6f}")
-                _trade_log({
-                    **build_log_base('TRADE_CLOSE', pm.trade_id, pm.symbol, pm.side),
-                    'exit_price': f'{current_price:.2f}',
-                    'entry': f'{pm.avg_entry:.2f}',
-                    'size': f'{pm.total_size:.6f}',
-                    'pnl_pct': f'{pnl_pct:+.2f}',
-                    'pnl_usdt': f'{pnl_usdt:+.2f}',
-                    'exit_reason': exit_reason,
-                    'duration_h': f'{duration_h:.1f}',
-                    'holding_time_min': f'{holding_time_min}',
-                    'stage': pm.stage,
-                    'realized_r': f'{realized_r:.2f}',
-                    'mfe_pct': f'{mfe_pct:.4f}',
-                    'mae_pct': f'{mae_pct:.4f}',
-                    'capture_ratio': f'{capture_ratio or 0:.2f}',
-                })
-                return True
-
-            # Move stop order to pending cancels (non-blocking), close first
-            if pm.stop_order_id:
-                pm.pending_stop_cancels.append(pm.stop_order_id)
-                pm.stop_order_id = None
-
-            # Close order (rollback on failure: keep position, save to positions.json)
-            try:
-                bot._futures_close_position(pm.symbol, pm.side, pm.total_size)
-            except Exception as close_err:
-                logger.error(
-                    f"{pm.symbol} close order failed (position preserved, retry next cycle): {close_err}"
-                )
-                bot._save_positions()
-                return False
-
-            logger.info(f"{pm.symbol} closed: {pm.side} size={pm.total_size:.6f}")
+            max_r_reached = self._calc_max_r_reached(pm)
+            protection_state = self._get_v54_protection_state(pm)
+            protected_exit = None
+            if pm.strategy_name == 'v54_noscale':
+                protected_exit = int(exit_reason == 'sl_hit' and protection_state is not None)
 
             _trade_log({
                 **build_log_base('TRADE_CLOSE', pm.trade_id, pm.symbol, pm.side),
-                'exit_price': f'{current_price:.2f}',
+                'exit_price': f'{exit_price:.2f}',
                 'entry': f'{pm.avg_entry:.2f}',
                 'size': f'{pm.total_size:.6f}',
                 'pnl_pct': f'{pnl_pct:+.2f}',
@@ -290,52 +321,59 @@ class PositionMonitor:
                 'mfe_pct': f'{mfe_pct:.4f}',
                 'mae_pct': f'{mae_pct:.4f}',
                 'capture_ratio': f'{capture_ratio or 0:.2f}',
+                'signal_type': getattr(pm, 'signal_type', None),
+                'max_r_reached': f'{max_r_reached:.4f}' if max_r_reached is not None else None,
+                'protection_state': protection_state,
+                'protected_exit': protected_exit,
             })
 
-            safe_capture = round(pnl_pct / mfe_pct, 4) if mfe_pct > 0.0001 else None
+            if not Config.V6_DRY_RUN:
+                bot.perf_db.record_trade({
+                    "trade_id":      pm.trade_id,
+                    "symbol":        pm.symbol,
+                    "side":          pm.side,
+                    "is_v6_pyramid": int(pm.is_v6_pyramid),
+                    "signal_tier":   pm.signal_tier,
+                    "signal_type":   getattr(pm, 'signal_type', None),
+                    "entry_price":   pm.avg_entry,
+                    "exit_price":    exit_price,
+                    "total_size":    pm.total_size,
+                    "initial_r":     pm.initial_r,
+                    "entry_time":    pm.entry_time.isoformat() if hasattr(pm.entry_time, 'isoformat') else str(pm.entry_time),
+                    "exit_time":     datetime.now(timezone.utc).isoformat(),
+                    "holding_hours": duration_h,
+                    "pnl_usdt":      pnl_usdt,
+                    "pnl_pct":       pnl_pct,
+                    "realized_r":    realized_r,
+                    "mfe_pct":       mfe_pct,
+                    "mae_pct":       mae_pct,
+                    "capture_ratio": safe_capture,
+                    "max_r_reached": max_r_reached,
+                    "stage_reached":   pm.stage,
+                    "exit_reason":     exit_reason,
+                    "protection_state": protection_state,
+                    "protected_exit": protected_exit,
+                    "market_regime":   pm.market_regime,
+                    "entry_adx":          getattr(pm, 'entry_adx', None),
+                    "fakeout_depth_atr":  getattr(pm, 'fakeout_depth_atr', None),
+                    "reverse_2b_depth_atr": getattr(pm, 'reverse_2b_depth_atr', None),
+                    "original_size":       pm.original_size,
+                    "partial_pnl_usdt":    pm.realized_partial_pnl,
+                    "btc_trend_aligned":   getattr(pm, 'btc_trend_aligned', None),
+                    "trend_adx":       getattr(pm, 'trend_adx', None),
+                    "mtf_aligned":     int(pm.mtf_aligned) if getattr(pm, 'mtf_aligned', None) is not None else None,
+                    "volume_grade":    getattr(pm, 'volume_grade', None),
+                    "tier_score":      getattr(pm, 'tier_score', None),
+                    "strategy_name":   pm.strategy_name,
+                })
 
-            bot.perf_db.record_trade({
-                "trade_id":      pm.trade_id,
-                "symbol":        pm.symbol,
-                "side":          pm.side,
-                "is_v6_pyramid": int(pm.is_v6_pyramid),
-                "signal_tier":   pm.signal_tier,
-                "entry_price":   pm.avg_entry,
-                "exit_price":    current_price,
-                "total_size":    pm.total_size,
-                "initial_r":     pm.initial_r,
-                "entry_time":    pm.entry_time.isoformat() if hasattr(pm.entry_time, 'isoformat') else str(pm.entry_time),
-                "exit_time":     datetime.now(timezone.utc).isoformat(),
-                "holding_hours": duration_h,
-                "pnl_usdt":      pnl_usdt,
-                "pnl_pct":       pnl_pct,
-                "realized_r":    realized_r,
-                "mfe_pct":       mfe_pct,
-                "mae_pct":       mae_pct,
-                "capture_ratio": safe_capture,
-                "stage_reached":   pm.stage,
-                "exit_reason":     exit_reason,
-                "market_regime":   pm.market_regime,
-                "entry_adx":          getattr(pm, 'entry_adx', None),
-                "fakeout_depth_atr":  getattr(pm, 'fakeout_depth_atr', None),
-                "reverse_2b_depth_atr": getattr(pm, 'reverse_2b_depth_atr', None),
-                "original_size":       pm.original_size,
-                "partial_pnl_usdt":    pm.realized_partial_pnl,
-                "btc_trend_aligned":   getattr(pm, 'btc_trend_aligned', None),
-                "trend_adx":       getattr(pm, 'trend_adx', None),
-                "mtf_aligned":     int(pm.mtf_aligned) if getattr(pm, 'mtf_aligned', None) is not None else None,
-                "volume_grade":    getattr(pm, 'volume_grade', None),
-                "tier_score":      getattr(pm, 'tier_score', None),
-                "strategy_name":   pm.strategy_name,
-            })
-
-            TelegramNotifier.notify_exit(pm.symbol, {
-                'side': pm.side,
-                'entry_price': pm.avg_entry,
-                'exit_reason': exit_reason,
-                'position_size': pm.total_size,
-                'pnl_pct': pnl_pct,
-            })
+                TelegramNotifier.notify_exit(pm.symbol, {
+                    'side': pm.side,
+                    'entry_price': pm.avg_entry,
+                    'exit_reason': exit_reason,
+                    'position_size': pm.total_size,
+                    'pnl_pct': pnl_pct,
+                })
 
             return True
 

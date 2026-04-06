@@ -48,6 +48,7 @@ class PositionManager:
         equity_base: float = 0.0,
         initial_r: float = 0.0,
         signal_tier: str = 'B',
+        signal_type: Optional[str] = None,
         trade_id: Optional[str] = None,
         market_regime: str = 'UNKNOWN',
         strategy: Optional['TradingStrategy'] = None,
@@ -81,7 +82,7 @@ class PositionManager:
         self.avg_entry = entry_price
         self.current_sl = stop_loss
         self.initial_sl = stop_loss
-        self.initial_r = initial_r  # 金額：balance * risk_per_trade
+        self.initial_r = initial_r
 
         # === V6.0 滾倉數據 ===
         self.neckline = neckline
@@ -101,6 +102,7 @@ class PositionManager:
         self.atr: Optional[float] = None
 
         self.signal_tier = signal_tier
+        self.signal_type = signal_type
         self.market_regime = market_regime
 
         # === Phase 1 分析欄位（需持久化）===
@@ -582,6 +584,7 @@ class PositionManager:
             'strategy_type': 'v6' if self.is_v6_pyramid else 'v53',  # backward compat
             'strategy_state': self.strategy.get_state(),
             'signal_tier': self.signal_tier,
+            'signal_type': self.signal_type,
             'trade_id': self.trade_id,
             'market_regime': self.market_regime,
             'entry_adx':           getattr(self, 'entry_adx', None),
@@ -618,6 +621,7 @@ class PositionManager:
             equity_base=data.get('equity_base', 0),
             initial_r=data.get('initial_r', 0),
             signal_tier=data.get('signal_tier', 'B'),
+            signal_type=data.get('signal_type'),
             market_regime=data.get('market_regime', 'UNKNOWN'),
         )
 

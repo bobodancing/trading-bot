@@ -117,6 +117,21 @@ class TestPositionManagerSerialization:
         assert pm2.is_first_partial == True
         assert pm2.signal_tier == 'A'
 
+    def test_signal_type_roundtrip(self):
+        """signal_type survives PM serialization for future entry attribution."""
+        pm = PositionManager(
+            symbol='BTC/USDT', side='LONG',
+            entry_price=95000.0, stop_loss=94000.0,
+            position_size=0.02, strategy_name='v54_noscale',
+            signal_tier='A', signal_type='2B',
+        )
+
+        data = pm.to_dict()
+        assert data['signal_type'] == '2B'
+
+        pm2 = PositionManager.from_dict(data)
+        assert pm2.signal_type == '2B'
+
     def test_full_pipeline(self):
         """PM -> dict -> save -> load -> from_dict"""
         pm = PositionManager(
@@ -483,6 +498,35 @@ class TestPerformanceDB:
         with sqlite3.connect(db.db_path) as conn:
             count = conn.execute("SELECT COUNT(*) FROM trades").fetchone()[0]
         assert count == 1
+
+    def test_record_trade_signal_type_and_v54_telemetry(self, tmp_path):
+        """signal_type 與 V54 保護 telemetry 應成功進 DB。"""
+        db = PerformanceDB(db_path=str(tmp_path / "test.db"))
+        data = {
+            "trade_id": "test-telemetry-001", "symbol": "BTCUSDT", "side": "LONG",
+            "is_v6_pyramid": 0, "signal_tier": "A", "signal_type": "2B",
+            "entry_price": 90000.0, "exit_price": 90500.0, "total_size": 0.01,
+            "initial_r": 10.0, "entry_time": "2026-01-01T00:00:00",
+            "exit_time": "2026-01-01T06:00:00", "holding_hours": 6.0,
+            "pnl_usdt": 5.0, "pnl_pct": 0.56, "realized_r": 0.5,
+            "mfe_pct": 2.5, "mae_pct": -0.4, "capture_ratio": 0.224,
+            "max_r_reached": 2.0,
+            "stage_reached": 1, "exit_reason": "sl_hit",
+            "protection_state": "V54_LOCK_15R", "protected_exit": 1,
+            "market_regime": "TRENDING",
+            "entry_adx": 25.0, "fakeout_depth_atr": 0.4,
+        }
+        result = db.record_trade(data)
+        assert result is True
+
+        import sqlite3
+        with sqlite3.connect(db.db_path) as conn:
+            row = conn.execute(
+                "SELECT signal_type, max_r_reached, protection_state, protected_exit "
+                "FROM trades WHERE trade_id=?",
+                ("test-telemetry-001",)
+            ).fetchone()
+        assert row == ("2B", 2.0, "V54_LOCK_15R", 1)
 
     def test_duplicate_trade_id_ignored(self, tmp_path):
         """同一 trade_id 重複寫入應被忽略（crash 重啟安全）。"""

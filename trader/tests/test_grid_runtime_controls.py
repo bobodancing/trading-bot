@@ -124,6 +124,48 @@ class TestGridRuntimeControls:
         assert mock_bot.grid_engine.state is None
         assert mock_bot.pool_manager.is_active is False
 
+    def test_scan_grid_signals_passes_raw_1h_df_and_single_closed_timestamp(self, mock_bot):
+        mock_bot.grid_engine.state = GridState(
+            center=87000,
+            upper=88000,
+            lower=86000,
+            grid_levels=5,
+            grid_spacing=200,
+            grid_balance=3000,
+            active_positions=[],
+            level_weights={1: 0.5},
+        )
+        df_4h = pd.DataFrame(
+            {
+                'open': [87000] * 60,
+                'high': [87100] * 60,
+                'low': [86900] * 60,
+                'close': [87000] * 60,
+                'volume': [1000] * 60,
+            },
+            index=pd.date_range('2026-04-01', periods=60, freq='4h'),
+        )
+        df_1h = pd.DataFrame(
+            {
+                'open': [87000, 87010, 87020, 87030],
+                'high': [87100, 87110, 87120, 87130],
+                'low': [86900, 86910, 86920, 86930],
+                'close': [87000, 87010, 87020, 87030],
+                'volume': [1000, 1000, 1000, 1000],
+            },
+            index=pd.date_range('2026-04-04', periods=4, freq='1h'),
+        )
+        mock_bot.fetch_ticker = MagicMock(return_value={'last': 87050.0})
+        mock_bot.data_provider.fetch_ohlcv = MagicMock(side_effect=[df_4h, df_1h])
+        mock_bot.grid_engine.tick = MagicMock(return_value=[])
+
+        with patch.object(Config, 'ENABLE_GRID_TRADING', True):
+            mock_bot._scan_grid_signals()
+
+        tick_args, tick_kwargs = mock_bot.grid_engine.tick.call_args
+        assert tick_args[1].equals(df_1h)
+        assert tick_kwargs['market_ts'] == df_1h.index[-2]
+
 
 class TestHedgeAwareSync:
     def test_sync_exchange_positions_keeps_long_when_short_leg_also_exists(self, mock_bot, caplog):

@@ -543,6 +543,15 @@ class TradingBot:
             if symbol in self.active_trades:
                 return
 
+            # Hard guard: 未映射的 signal_type 不准進場，不 fallback
+            strategy_name = Config.SIGNAL_STRATEGY_MAP.get(signal_type)
+            if strategy_name is None:
+                logger.warning(
+                    f"{symbol}: 拒絕進場 — signal_type={signal_type} "
+                    f"未在 SIGNAL_STRATEGY_MAP 中映射"
+                )
+                return
+
             if Config.V6_DRY_RUN:
                 balance = 10000.0  # Dry run: mock balance
             else:
@@ -585,8 +594,6 @@ class TradingBot:
                 )
                 position_size = capped_size
 
-            initial_r = balance * Config.RISK_PER_TRADE
-
             # === Risk Guard: SL Distance Cap ===
             sl_distance_pct = abs(entry_price - stop_loss) / entry_price
             if sl_distance_pct > Config.MAX_SL_DISTANCE_PCT:
@@ -595,6 +602,9 @@ class TradingBot:
                     f"{Config.MAX_SL_DISTANCE_PCT:.0%}，entry={entry_price} sl={stop_loss}）"
                 )
                 return
+
+            # actual risk = capped size * SL distance（dry run 用 signal price）
+            initial_r = position_size * abs(entry_price - stop_loss)
 
             # === Dry run 模式 ===
             if Config.V6_DRY_RUN:
@@ -639,6 +649,8 @@ class TradingBot:
                     f"{symbol} 成交均價修正: 信號${entry_price:.4f} → 實際${fill_price:.4f}"
                 )
             entry_price = fill_price
+            # 用實際成交價重算 actual risk
+            initial_r = position_size * abs(entry_price - stop_loss)
 
             logger.info(
                 f"{symbol} {side} 開倉成功: {position_size:.6f} @ ${entry_price:.2f} | "
@@ -648,8 +660,7 @@ class TradingBot:
                 f"MTF={signal_details.get('_mtf_reason','')}"
             )
 
-            # 建立 PositionManager（strategy_name 由 SIGNAL_STRATEGY_MAP 決定）
-            strategy_name = Config.SIGNAL_STRATEGY_MAP.get(signal_type, "v54_noscale")
+            # 建立 PositionManager（strategy_name 已在入口 hard guard 確認）
             pm = PositionManager(
                 symbol=symbol,
                 side=side,
@@ -661,6 +672,7 @@ class TradingBot:
                 equity_base=balance,
                 initial_r=initial_r,
                 signal_tier=signal_details.get('signal_tier', 'B'),
+                signal_type=signal_type,
                 market_regime=signal_details.get('market_regime', 'UNKNOWN'),
             )
             pm.atr = atr

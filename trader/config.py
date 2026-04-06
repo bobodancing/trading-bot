@@ -79,13 +79,13 @@ class Config:
     TIER_C_POSITION_MULT = 0.5
 
     # EMA 回撤進場信號
-    ENABLE_EMA_PULLBACK = True
+    ENABLE_EMA_PULLBACK = False
     EMA_PULLBACK_FAST = 10
     EMA_PULLBACK_SLOW = 20
     EMA_PULLBACK_THRESHOLD = 0.02  # 回撤觸及 EMA 的容差（佔 EMA 價格比例）
 
     # 量能突破進場信號
-    ENABLE_VOLUME_BREAKOUT = True
+    ENABLE_VOLUME_BREAKOUT = False
     VOLUME_BREAKOUT_MULT = 2.0  # 量比門檻（量 ÷ 均量 >= 此值才觸發）
 
     # 市場過濾器
@@ -210,11 +210,11 @@ class Config:
     # ==================== V7 結構加倉系統 ====================
     V7_STAGE1_MAX_HOURS = 36       # V7 Stage 1 超時（小時）
     V7_STAGE_VOLUME_MULT = 1.0    # 加倉量能門檻（volume / vol_ma）
-    V7_MIN_SIGNAL_TIER = 'B'      # 最低可進場 tier（'A'=只做A, 'B'=A+B, 'C'=全做）
+    V7_MIN_SIGNAL_TIER = 'A'      # 最低可進場 tier（'A'=只做A, 'B'=A+B, 'C'=全做）
 
     # ==================== Grid & Regime System ====================
     # Regime Engine
-    ENABLE_GRID_TRADING = True         # 主開關（預設關閉，testnet 驗證後開啟）
+    ENABLE_GRID_TRADING = False        # 關閉：先收斂 v54，Grid 降為 research
     REGIME_TIMEFRAME = '4h'             # Regime 偵測用的 K 線週期
     REGIME_ADX_TRENDING = 25            # ADX >= 此值 → TRENDING
     REGIME_ADX_RANGING = 20             # ADX < 此值 → RANGING candidate
@@ -272,8 +272,7 @@ class Config:
     # V6/V7 pyramiding deprecated — 所有新進場走 V54 純移損
     SIGNAL_STRATEGY_MAP: dict = {
         "2B": "v54_noscale",
-        "EMA_PULLBACK": "v54_noscale",
-        "VOLUME_BREAKOUT": "v54_noscale",
+        # EMA_PULLBACK / VOLUME_BREAKOUT disabled — 收斂至 2B only
     }
 
     # Debug & 日誌

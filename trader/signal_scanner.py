@@ -18,6 +18,7 @@ from trader.indicators.technical import (
 )
 from trader.risk.manager import SignalTierSystem
 from trader.signals import detect_2b_with_pivots, detect_ema_pullback, detect_volume_breakout
+from trader.utils import drop_unfinished_candle
 
 logger = logging.getLogger(__name__)
 
@@ -90,8 +91,8 @@ class SignalScanner:
                 if not df_mtf.empty:
                     df_mtf = TechnicalAnalysis.calculate_indicators(df_mtf)
 
-                # Drop current unclosed candle
-                df_signal = df_signal.iloc[:-1]
+                # Drop current unclosed candle (confirmed candle only)
+                df_signal = drop_unfinished_candle(df_signal)
 
                 # Market filter
                 market_ok, market_reason, is_strong_market = MarketFilter.check_market_condition(df_trend, symbol)

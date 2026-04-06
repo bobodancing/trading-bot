@@ -111,6 +111,7 @@ class TestStage1FillPriceIntegration:
 
         assert 'BTC/USDT' in mock_bot.active_trades
         pm = mock_bot.active_trades['BTC/USDT']
+        assert pm.signal_type == '2B'
         assert abs(pm.avg_entry - fill_price) < 0.01, \
             f"avg_entry 應為 fill price {fill_price}，得到 {pm.avg_entry}"
 

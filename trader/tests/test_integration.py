@@ -49,6 +49,20 @@ def _make_ohlcv_df(close_price: float, n: int = 50, atr: float = 100.0) -> pd.Da
     return df
 
 
+def _make_raw_ohlcv_df(close_price: float, n: int = 50) -> pd.DataFrame:
+    """Bare OHLCV input used to verify indicator calculation order."""
+    dates = pd.date_range(end=datetime.now(), periods=n, freq='1h')
+    close = np.full(n, close_price)
+    return pd.DataFrame({
+        'timestamp': dates,
+        'open': close * 0.999,
+        'high': close * 1.005,
+        'low': close * 0.995,
+        'close': close,
+        'volume': np.full(n, 1000.0),
+    })
+
+
 def _inject_pm_into_bot(bot, symbol='BTC/USDT', side='LONG',
                          entry_price=50000.0, stop_loss=48000.0,
                          position_size=0.01, **kwargs):
@@ -93,6 +107,50 @@ class TestFullPathNormal:
         assert pm.stop_order_id is not None
         # StatefulMockEngine 應有 stop order 記錄
         assert len(engine.open_stops) == 1
+
+    def test_execute_rejects_unmapped_signal_before_order(self, integration_bot):
+        """Hard guard should reject unmapped signals before any exchange side effect."""
+        bot, engine, fi = integration_bot
+
+        signal_details = {
+            'side': 'LONG',
+            'entry_price': 50000.0,
+            'stop_loss': 48000.0,
+            'atr': 100.0,
+            'vol_ratio': 2.0,
+            'signal_tier': 'A',
+            'market_regime': 'TRENDING',
+        }
+        df = _make_ohlcv_df(50000.0)
+
+        bot._execute_trade('BTC/USDT', signal_details, 'EMA_PULLBACK', 1.0, df)
+
+        assert 'BTC/USDT' not in bot.active_trades
+        assert engine.trade_log == []
+
+    def test_execute_records_actual_initial_r_after_cap(self, integration_bot):
+        """initial_r should reflect capped size times actual SL distance."""
+        bot, engine, fi = integration_bot
+
+        bot.risk_manager.calculate_position_size = MagicMock(return_value=3.0)
+        bot.precision_handler.round_amount = MagicMock(side_effect=lambda sym, amt: amt)
+
+        signal_details = {
+            'side': 'LONG',
+            'entry_price': 50000.0,
+            'stop_loss': 48000.0,
+            'atr': 100.0,
+            'vol_ratio': 2.0,
+            'signal_tier': 'A',
+            'market_regime': 'TRENDING',
+        }
+        df = _make_ohlcv_df(50000.0)
+
+        bot._execute_trade('BTC/USDT', signal_details, '2B', 1.0, df)
+
+        pm = bot.active_trades['BTC/USDT']
+        assert pm.total_size == pytest.approx(0.02)
+        assert pm.initial_r == pytest.approx(40.0)
 
     def test_monitor_updates_sl_on_profit(self, integration_bot):
         """持倉獲利後 monitor → trailing SL 更新 → engine.open_stops 同步"""
@@ -213,6 +271,35 @@ class TestFullPathNormal:
 # ══════════════════════════════════════════════
 # 場景 B：故障注入
 # ══════════════════════════════════════════════
+
+class TestConfirmedCandleHygiene:
+    def test_monitor_calculates_indicators_before_dropping_live_candle(self, mock_bot):
+        pm = _inject_pm_into_bot(
+            mock_bot,
+            entry_price=50000.0,
+            stop_loss=48000.0,
+            strategy_name='v54_noscale',
+        )
+        mock_bot.fetch_ticker = MagicMock(return_value={
+            'last': 50500.0, 'bid': 50499.0, 'ask': 50501.0,
+        })
+        mock_bot.fetch_ohlcv = MagicMock(return_value=_make_raw_ohlcv_df(50500.0, n=50))
+
+        seen = {}
+
+        def _capture_monitor(current_price, df_1h, df_4h=None):
+            seen['df_1h'] = df_1h.copy()
+            return {'action': 'HOLD', 'reason': 'HOLD', 'new_sl': None}
+
+        pm.monitor = MagicMock(side_effect=_capture_monitor)
+
+        mock_bot.monitor_positions()
+
+        assert 'df_1h' in seen
+        assert len(seen['df_1h']) == 49
+        assert 'atr' in seen['df_1h'].columns
+        assert seen['df_1h']['atr'].notna().any()
+
 
 class TestFaultInjection:
     """close_position 失敗 → rollback → retry → 成功"""
