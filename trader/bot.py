@@ -1043,12 +1043,14 @@ class TradingBot:
         current_price: float = 0.0,
         external_close: bool = False,
         exit_price_source: Optional[str] = None,
+        decision_reason: Optional[str] = None,
     ) -> bool:
         return self.position_monitor.handle_close(
             pm,
             current_price,
             external_close=external_close,
             exit_price_source=exit_price_source,
+            decision_reason=decision_reason,
         )
 
     def _handle_stage2(self, pm: PositionManager, current_price: float, df_1h, decision: dict = None):

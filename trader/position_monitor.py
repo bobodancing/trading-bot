@@ -77,6 +77,7 @@ class PositionMonitor:
                 decision = pm.monitor(current_price, df_1h, df_4h)
                 action = decision.get('action', Action.HOLD)
                 new_sl = decision.get('new_sl')
+                decision_reason = decision.get('reason')
 
                 if new_sl is not None:
                     old_sl = pm.current_sl
@@ -92,7 +93,7 @@ class PositionMonitor:
                         )
 
                 if action == Action.CLOSE:
-                    if self.handle_close(pm, current_price):
+                    if self.handle_close(pm, current_price, decision_reason=decision_reason):
                         closed_symbols.append(symbol)
                         state_changed = True
 
@@ -263,12 +264,78 @@ class PositionMonitor:
             pass
         return fallback_price, 'observed_price'
 
+    @staticmethod
+    def _map_decision_reason(decision_reason: Optional[str]) -> Optional[str]:
+        """Normalize strategy decision reasons into persisted exit reason codes."""
+        if not decision_reason or decision_reason == 'NONE':
+            return None
+
+        decision_map = {
+            'TIME_EXIT': 'stage1_timeout',
+            'FAST_STOP_067R': 'early_stop_r',
+            'BACKTEST_STOP_TRIGGER': 'sl_hit',
+            'BACKTEST_END': 'backtest_end',
+        }
+        return decision_map.get(decision_reason)
+
+    @staticmethod
+    def _infer_stop_hit_reason(pm: PositionManager, observed_price: float) -> Optional[str]:
+        """Recover SL exits conservatively when the explicit reason was not preserved."""
+        if pm.current_sl is None:
+            return None
+
+        if pm.side == 'LONG' and observed_price <= pm.current_sl:
+            return 'sl_hit'
+        if pm.side == 'SHORT' and observed_price >= pm.current_sl:
+            return 'sl_hit'
+        return None
+
+    @classmethod
+    def _resolve_close_reason(
+        cls,
+        pm: PositionManager,
+        observed_price: float,
+        *,
+        external_close: bool,
+        decision_reason: Optional[str] = None,
+    ) -> str:
+        """Resolve a persisted close reason without altering trade decisions."""
+        if external_close and getattr(pm, 'external_close_reason', None):
+            return pm.external_close_reason
+
+        if getattr(pm, 'exit_reason', None):
+            return pm.exit_reason
+
+        mapped_reason = cls._map_decision_reason(decision_reason)
+        if mapped_reason:
+            logger.warning(
+                f"{pm.symbol} close missing pm.exit_reason, "
+                f"using decision reason fallback: {decision_reason} -> {mapped_reason}"
+            )
+            return mapped_reason
+
+        inferred_reason = cls._infer_stop_hit_reason(pm, observed_price)
+        if inferred_reason:
+            logger.warning(
+                f"{pm.symbol} close missing explicit reason, "
+                f"inferred {inferred_reason} from price={observed_price:.4f} vs SL={pm.current_sl:.4f}"
+            )
+            return inferred_reason
+
+        if decision_reason and decision_reason != 'NONE':
+            logger.warning(
+                f"{pm.symbol} close reason unresolved; "
+                f"decision_reason={decision_reason} current_price={observed_price:.4f}"
+            )
+        return 'unknown'
+
     def handle_close(
         self,
         pm: PositionManager,
         current_price: float = 0.0,
         external_close: bool = False,
         exit_price_source: Optional[str] = None,
+        decision_reason: Optional[str] = None,
     ) -> bool:
         """
         Handle position close.
@@ -296,10 +363,12 @@ class PositionMonitor:
             exit_price = observed_price
             exit_price_source = exit_price_source or ('assumed_sl' if external_close else 'observed_price')
             duration_h = (datetime.now(timezone.utc) - pm.entry_time).total_seconds() / 3600
-            exit_reason = (
-                getattr(pm, 'external_close_reason', None)
-                if external_close else getattr(pm, 'exit_reason', None)
-            ) or getattr(pm, 'exit_reason', None) or 'unknown'
+            exit_reason = self._resolve_close_reason(
+                pm,
+                observed_price,
+                external_close=external_close,
+                decision_reason=decision_reason,
+            )
 
             if Config.V6_DRY_RUN:
                 logger.info(f"[DRY_RUN] Close {pm.symbol} {pm.side} size={pm.total_size:.6f}")
@@ -379,6 +448,7 @@ class PositionMonitor:
                 'mae_pct': f'{mae_pct:.4f}',
                 'capture_ratio': f'{capture_ratio or 0:.2f}',
                 'signal_type': getattr(pm, 'signal_type', None),
+                'decision_reason': decision_reason,
                 'max_r_reached': f'{max_r_reached:.4f}' if max_r_reached is not None else None,
                 'protection_state': protection_state,
                 'protected_exit': protected_exit,

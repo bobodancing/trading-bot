@@ -176,3 +176,90 @@ class TestHandleCloseRollback:
         assert payload['protection_state'] == 'V54_LOCK_15R'
         assert payload['protected_exit'] == 1
         assert payload['max_r_reached'] == pytest.approx(2.0)
+
+    def test_missing_exit_reason_infers_sl_hit_from_price(self, mock_bot):
+        """Telemetry fallback: missing pm.exit_reason but price has crossed SL -> sl_hit."""
+        pm = make_pm(
+            entry_price=50000.0,
+            stop_loss=49000.0,
+            position_size=0.01,
+        )
+        pm.exit_reason = None
+        pm.current_sl = 49000.0
+
+        mock_bot.execution_engine.close_position = MagicMock(
+            return_value={'orderId': 'order_sl_fallback', 'avgPrice': '48950.0', 'status': 'FILLED'}
+        )
+
+        result = mock_bot._handle_close(pm, current_price=48980.0)
+
+        assert result is True
+        payload = mock_bot.perf_db.record_trade.call_args[0][0]
+        assert payload['exit_reason'] == 'sl_hit'
+
+    def test_missing_exit_reason_maps_time_exit_decision_reason(self, mock_bot):
+        """Telemetry fallback: strategy decision reason should survive into persisted exit reason."""
+        pm = make_pm(
+            entry_price=50000.0,
+            stop_loss=49000.0,
+            position_size=0.01,
+        )
+        pm.exit_reason = None
+
+        mock_bot.execution_engine.close_position = MagicMock(
+            return_value={'orderId': 'order_time_exit', 'avgPrice': '50100.0', 'status': 'FILLED'}
+        )
+
+        result = mock_bot._handle_close(pm, current_price=50120.0, decision_reason='TIME_EXIT')
+
+        assert result is True
+        payload = mock_bot.perf_db.record_trade.call_args[0][0]
+        assert payload['exit_reason'] == 'stage1_timeout'
+
+    def test_missing_exit_reason_maps_backtest_stop_trigger(self, mock_bot):
+        """Backtest intrabar stop triggers should persist as sl_hit even if close price reverts."""
+        pm = make_pm(
+            side='SHORT',
+            entry_price=50000.0,
+            stop_loss=51000.0,
+            position_size=0.01,
+        )
+        pm.exit_reason = None
+        pm.current_sl = 51000.0
+
+        mock_bot.execution_engine.close_position = MagicMock(
+            return_value={'orderId': 'order_backtest_stop', 'avgPrice': '50950.0', 'status': 'FILLED'}
+        )
+
+        result = mock_bot._handle_close(
+            pm,
+            current_price=50900.0,
+            decision_reason='BACKTEST_STOP_TRIGGER',
+        )
+
+        assert result is True
+        payload = mock_bot.perf_db.record_trade.call_args[0][0]
+        assert payload['exit_reason'] == 'sl_hit'
+
+    def test_missing_exit_reason_maps_backtest_end(self, mock_bot):
+        """Backtest end-of-sample force closes should keep an explicit telemetry label."""
+        pm = make_pm(
+            entry_price=50000.0,
+            stop_loss=49000.0,
+            position_size=0.01,
+        )
+        pm.exit_reason = None
+
+        mock_bot.execution_engine.close_position = MagicMock(
+            return_value={'orderId': 'order_backtest_end', 'avgPrice': '50100.0', 'status': 'FILLED'}
+        )
+
+        result = mock_bot._handle_close(
+            pm,
+            current_price=50120.0,
+            decision_reason='BACKTEST_END',
+        )
+
+        assert result is True
+        payload = mock_bot.perf_db.record_trade.call_args[0][0]
+        assert payload['exit_reason'] == 'backtest_end'
