@@ -15,7 +15,7 @@ trader/                     ← [trader.service]
 ├── grid_manager.py         ← GridManager（V8 Grid lifecycle，scan/monitor/execute/record）
 ├── btc_context.py          ← BTCContextManager（BTC trend/regime context，4H regime + 1D EMA fallback）
 ├── position_monitor.py     ← PositionMonitor（monitor_positions/close/stage2/stage3/v53_reduce）
-├── signal_scanner.py       ← SignalScanner（scan_for_signals + cooldowns + filters + regime routing + confirmed-candle hygiene）
+├── signal_scanner.py       ← SignalScanner（scan_for_signals + cooldowns + filters + regime routing；runtime 僅 drop signal TF 未收 K，higher-TF confirmed-candle 研究結論見 `codeReview.md`）
 ├── utils.py                ← 共用工具（trade_log/calculate_pnl/get_close_side/build_log_base/drop_unfinished_candle）
 ├── positions.py            ← PositionManager（strategy_name 插件 + Stage 管理 + 出場委派 + signal_type persistence）
 ├── signals.py              ← detect_2b_with_pivots / ema_pullback / volume_breakout（入場信號）
@@ -55,6 +55,7 @@ trader/                     ← [trader.service]
 - `ENABLE_VOLUME_BREAKOUT=False`
 - `ENABLE_GRID_TRADING=False`
 - `performance.db` is the canonical research source for alpha review
+- Runtime note: `Patch B` 的 higher-TF confirmed-candle 實驗已撤回，live/runtime 回到 `Patch A` 語義；保留的是 backtest instrumentation 與研究結論，不是 routing 行為。
 
 ---
 ## 📄 File: `map_generator_v3.py`

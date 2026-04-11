@@ -253,3 +253,31 @@ Bot runtime 之外的近期同步工作：
 6. `trader/btc_context.py`
 7. `trader/strategies/base.py`
 8. `trader/strategies/v54_noscale.py`
+
+---
+
+## Patch B Research Note (2026-04-06)
+
+- `Patch B` 的主題是把 higher-TF filter / BTC context / regime 改成 confirmed-candle only。
+- 這包已完成 backtest 與 attribution 驗證，但 **不保留在 runtime**；目前 runtime 已回到 `Patch A` 語義。
+- 保留的內容是研究結論與 instrumentation，不是交易路由本身。
+
+### Why revert runtime
+
+- `Patch B` 讓績效從 `Patch A` 的 `9.07% / PF 2.45 / Sharpe 2.58` 下到約 `5.67% / PF 1.75 / Sharpe 1.61`。
+- attribution 顯示主因不是 regime，而是 `tier / MTF` timing 改變。
+- `tier_filter` 裡約 `85%` 是 `mtf_status=misaligned`，而且大多數是 `tier_score=0` 的 hard gate。
+
+### Key finding
+
+- 最明顯受傷的是 `SHORT EMA_PULLBACK`。
+- 已識別出 `9` 筆典型案例：原時間點是 `MTF misaligned`，只差 `1` 根 `4H` closed candle 就變成 `aligned`。
+- 這 `9` 筆合計 PnL 從 `+15.022 USDT` 變成 `-27.664 USDT`，差額 `-42.686 USDT`。
+- 也就是說，confirmed-candle 修正本身更乾淨，但對目前這套 alpha 來說，代價是 entry 晚一拍。
+
+### Current decision
+
+- runtime 維持 `Patch A` 語義：
+  - `signal_scanner` 只 drop signal timeframe 未收 K
+  - higher-TF trend / MTF / BTC daily / regime 仍使用最新 candle
+- 下一步研究方向不是重新上 `Patch B`，而是探索更靈敏的 `EMA_PULLBACK / MTF` gate 設計。
