@@ -34,8 +34,8 @@
     "enable_mtf_confirmation": true,
     "enable_dynamic_thresholds": true,
     "enable_tiered_entry": true,
-    "enable_ema_pullback": true,
-    "enable_volume_breakout": true,
+    "enable_ema_pullback": false,
+    "enable_volume_breakout": false,
     "enable_structure_break_exit": true,
     "tier_a_position_mult": 0.7,
     "tier_b_position_mult": 0.7,
@@ -68,10 +68,10 @@
     "v7_stage_volume_mult": 1.0,
     "early_stop_r_threshold": 0.75,
     "early_exit_cooldown_hours": 10,
+    "enable_grid_trading": false,
+    "v7_min_signal_tier": "A",
     "signal_strategy_map": {
-        "2B": "v54_noscale",
-        "EMA_PULLBACK": "v54_noscale",
-        "VOLUME_BREAKOUT": "v54_noscale"
+        "2B": "v54_noscale"
     },
     "v6_dry_run": false,
     "positions_json_path": "positions.json",

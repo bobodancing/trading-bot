@@ -355,14 +355,18 @@ class Config:
 
             loaded_count = 0
             unknown_keys = []
+            replace_dict_keys = {"SIGNAL_STRATEGY_MAP"}
             for json_key, value in config_data.items():
                 attr_name = json_key.upper()
                 if hasattr(cls, attr_name):
                     current = getattr(cls, attr_name)
-                    # dict 類型用 merge（保留未覆寫的 key）
+                    # Most dicts merge for backward compatibility; routing maps replace to avoid stale signals.
                     if isinstance(current, dict) and isinstance(value, dict):
-                        current.update(value)
-                        value = current
+                        if attr_name in replace_dict_keys:
+                            value = dict(value)
+                        else:
+                            current.update(value)
+                            value = current
                     setattr(cls, attr_name, value)
                     loaded_count += 1
                 else:
