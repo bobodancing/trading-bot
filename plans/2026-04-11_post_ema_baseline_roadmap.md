@@ -106,16 +106,18 @@
 - **Who**: Codex 跑 backtest + 收資料，Ruei 定 window 日期 + 讀結論
 - **Goal**: 在跑 6×6 full matrix 前，先知道 V54 NoScale 長什麼樣。沒有 shape knowledge，matrix 結果也讀不出所以然
 
-#### Blocker
+#### Window Selection (resolved 2026-04-11)
 
-**必須等 Ruei 定義下列 window 日期才能動工**。Codex 絕對不要自己決定日期。
+Ruei 已回填 4 個 window (來自 BTC 4H RegimeEngine 回放)。P0.5 必須跑 **全部 4 個**。
 
-| Label | Date Range | Expected Regime |
+| Label | Date Range | BTC replay observation |
 |---|---|---|
-| TRENDING_UP | `<TBD by Ruei>` | TRENDING dominant, BTC uptrend |
-| TRENDING_DOWN | `<TBD by Ruei>` | TRENDING dominant, BTC downtrend |
-| RANGING | `<TBD by Ruei>` | RANGING >= 50% |
-| SQUEEZE_OR_MIXED | `<TBD by Ruei>` (optional) | SQUEEZE 或 regime transition |
+| `TRENDING_UP` | `2023-10-01 -> 2024-03-31` | BTC +158.5%; TRENDING 80.5% / RANGING 19.5%; trend dir LONG 65.7% |
+| `TRENDING_DOWN` | `2025-10-07 -> 2026-04-06` | BTC -44.4%; TRENDING 67.4% / RANGING 32.6%; trend dir SHORT 73.0% (recent bear, 不是純 trend) |
+| `RANGING` | `2024-12-31 -> 2025-03-31` | BTC -11.9%; RANGING 51.8% / TRENDING 48.2% |
+| `MIXED` | `2025-02-01 -> 2025-08-31` | BTC +6.8%; TRENDING 59.3% / RANGING 40.7%; mixed / transition |
+
+**重要**: 第 4 個 window label 是 `MIXED`，**不要** 寫成 `SQUEEZE`。理由：RegimeEngine 回放 BTC 4H 幾乎抓不到真 SQUEEZE (大部分 period 接近 0%)，label 成 SQUEEZE 會誤導讀者。
 
 #### Run Config (所有 window 共用)
 
@@ -128,7 +130,12 @@
   - `V7_MIN_SIGNAL_TIER=A`
 - Initial balance: `10000`
 - CLI: 用 `resolve_backtest_window` 的 explicit `--start/--end` 模式 (不要用 latest-cache default)
-- Cache: 先確認每個 symbol+1h cache 都覆蓋 window 範圍，缺就補
+- Cache prerequisite:
+  - 目前 `tools/Backtesting/cache/` **缺 `BNBUSDT` 和 `XRPUSDT`** 的 parquet cache，執行 P0.5 前必須先補
+  - 每個 symbol 需要 `1h` + `4h` + `1d` + `funding` 四種 timeframe 覆蓋 4 個 window 的日期範圍 (最早 `2023-10-01`，最晚 `2026-04-06`)
+  - 使用現有 `BacktestDataLoader` 機制補 cache，不要新寫下載邏輯
+  - 若 cache 下載 API 受 rate limit，可分 symbol 串行跑並回報進度
+  - Cache 補完後以 `python scripts/clean_cache_fragments.py` dry-run 確認沒產生新碎片
 
 #### Per-Window Collection
 
@@ -159,7 +166,7 @@ tools/Backtesting/results/baseline_shape_v54_20260411/
 │   └── signal_audit.json
 ├── TRENDING_DOWN/...
 ├── RANGING/...
-├── SQUEEZE_OR_MIXED/... (optional, 只有 Ruei 給第 4 個 window 才建)
+├── MIXED/...
 └── SHAPE_SUMMARY.md
 ```
 
@@ -187,7 +194,7 @@ tools/Backtesting/results/baseline_shape_v54_20260411/
 #### Acceptance
 
 - [ ] 所有指定 window 成功跑完 (0 exception)
-- [ ] 每個 window 的實際 regime composition 與 label 預期一致 (例：TRENDING_UP window 的 RANGING % <= 30%；若超過，Codex 必須 flag，不要隱瞞)
+- [ ] 每個 window 的實際 regime composition 與 roadmap Window Selection 表格填寫的 BTC replay observation 在 ±5% 以內 (例：TRENDING_UP 實跑 RANGING 應落在 14.5% ~ 24.5%，roadmap 寫 19.5%)。超出 ±5% 必須在 `SHAPE_SUMMARY.md` 明確 flag，不要隱瞞。`TRENDING_DOWN` 本來就有 RANGING 32.6% (非純 trend)，這是 Ruei 已接受的特徵，不視為 flag 條件
 - [ ] 沒有 entry density anomaly (或有的話在報表明確 flag)
 - [ ] SHAPE_SUMMARY.md 有上述所有 section 且數字自洽
 - [ ] `trades_per_week` metric 非 0 非爆量 (每週 `[0.5, 20]` 是 sanity 區間)
@@ -340,15 +347,29 @@ tools/Backtesting/results/baseline_shape_v54_20260411/
 - `projects/remoteMonitoring/` Phase 1/2/3
 - `map_generator_v3.py` / `project_structure_map_v3.md` 更新 (除非 P1 需要)
 
-## Open Questions (待 Ruei 決定，填完才能開 P0)
+## Resolved Decisions (2026-04-11)
 
-- [ ] **Q1**: `CRITICAL_KEYS` 要不要擴充？目前列 5 個 (ENABLE_EMA_PULLBACK, ENABLE_VOLUME_BREAKOUT, ENABLE_GRID_TRADING, V7_MIN_SIGNAL_TIER, SIGNAL_STRATEGY_MAP)
-- [ ] **Q2**: P0.5 的 4 個 window 具體日期 (TRENDING_UP / TRENDING_DOWN / RANGING / 可選第 4 個)
-- [ ] **Q3**: P0.5 是否要跑第 4 個 window (SQUEEZE_OR_MIXED)，還是 3 個就夠
-- [ ] **Q4**: P2 README multi-window 的 6 個 period 日期 (填回 `README.md` 的 `<TBD by Ruei>`)
-- [ ] **Q5**: P3 divergence acceptable threshold 數字 (例：PF 差異 < 15%, trade count 差異 < 20%)
-- [ ] **Q6**: Codex commit 要不要加 `Co-Authored-By: Claude` tag 統一 pipeline 慣例
+- [x] **Q1** — `CRITICAL_KEYS` 不擴充，維持 5 個 (`ENABLE_EMA_PULLBACK`, `ENABLE_VOLUME_BREAKOUT`, `ENABLE_GRID_TRADING`, `V7_MIN_SIGNAL_TIER`, `SIGNAL_STRATEGY_MAP`)。其他 risk / config mismatch 進 report + warning，**不 abort**
+- [x] **Q2** — P0.5 window 已填在 P0.5 `Window Selection` 表格，4 個 window 全跑
+- [x] **Q3** — 跑第 4 個 window，label = `MIXED`，**不要** 寫成 `SQUEEZE`。理由: RegimeEngine 回放 BTC 4H 幾乎抓不到真 SQUEEZE (大部分 period 接近 0%)，label 成 SQUEEZE 會誤導讀者
+- [x] **Q4** — P2 README 6 periods 已填在 `tools/Backtesting/README.md` 的 `Multi-Window Backtest Standard` section。其中 `SQUEEZE` 標為 **low-vol proxy**，不是真正 RegimeEngine SQUEEZE
+- [x] **Q5** — P3 divergence threshold (第一階段小樣本):
+  - PF diff `<= 25%`
+  - trade count / trades_per_week diff `<= 30%`
+  - Unmatched entries `<= 20%`
+  - Median realized R diff `<= 0.25R`
+  - Unknown / unsafe exit `<= 5%`
+  - Position sync / order safety error `== 0` (不能有任何)
+  - 累積樣本 **> 100 筆** 後收緊到 PF `<= 15%`、trade count `<= 20%`
+- [x] **Q6** — Codex commit 加 footer `Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>`，沿用小波 pipeline 慣例。若要精準標 Codex 自己可再加第二行 `Co-Authored-By: Codex <noreply@openai.com>`，但不是強制
 
 ---
 
-*填完 Open Questions 後，Codex 才從 P0 開始。每個 P 完成停一次，小波複查完才進下一個。*
+## Known Constraints (2026-04-11)
+
+- **Cache 缺 BNBUSDT / XRPUSDT**: `tools/Backtesting/cache/` 目前沒有這兩個 symbol 的 parquet。P0.5 / P2 跑 6 symbols 前必須先補 (見 P0.5 `Run Config` 的 `Cache prerequisite`)。這不影響 P0 開工，但會延長 P0.5 / P2 的 wall-clock 時間
+- **SQUEEZE proxy 不是真 SQUEEZE**: 見 Q3 / Q4。所有報表裡看到 `SQUEEZE` 欄位時都要記得是 low-vol proxy，不是 RegimeEngine 判定的 SQUEEZE regime
+
+---
+
+*所有 Open Questions 已 resolved。Codex 可從 P0 開始動工。每個 P 完成停一次，小波複查完才進下一個。*
