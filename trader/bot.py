@@ -82,6 +82,7 @@ class TradingBot:
 
         # V6.0: PositionManager 取代 TradeManager
         self.active_trades: Dict[str, PositionManager] = {}
+        self._scanner_symbol_meta: Dict[str, Dict[str, object]] = {}
 
         # 冷卻和黑名單
         self.recently_exited: Dict[str, datetime] = {}
@@ -278,8 +279,73 @@ class TradingBot:
                     return {'symbol': symbol, 'last': price, 'bid': price, 'ask': price}
             raise
 
+    @staticmethod
+    def _normalize_scanner_symbol(symbol: str) -> str:
+        """Normalize futures symbols such as BTC/USDT:USDT to BTC/USDT."""
+        return symbol.split(':')[0] if ':' in symbol else symbol
+
+    def _supported_scanner_symbols(self) -> Optional[set]:
+        markets = getattr(self.exchange, 'markets', None)
+        if not markets:
+            return None
+
+        supported = set()
+        if isinstance(markets, dict):
+            market_iter = markets.items()
+        else:
+            market_iter = []
+
+        for key, market in market_iter:
+            if isinstance(key, str):
+                supported.add(self._normalize_scanner_symbol(key))
+            if isinstance(market, dict):
+                market_symbol = market.get('symbol')
+                if isinstance(market_symbol, str):
+                    supported.add(self._normalize_scanner_symbol(market_symbol))
+
+        return supported or None
+
+    def _scanner_items_to_symbols(
+        self,
+        items: List,
+        default_source: str,
+        supported_symbols: Optional[set],
+    ) -> Tuple[List[str], Dict[str, Dict[str, object]], int]:
+        symbols: List[str] = []
+        metadata: Dict[str, Dict[str, object]] = {}
+        unsupported_count = 0
+
+        for raw_item in items or []:
+            if isinstance(raw_item, str):
+                item = {'symbol': raw_item}
+            elif isinstance(raw_item, dict):
+                item = raw_item
+            else:
+                continue
+
+            raw_symbol = item.get('symbol')
+            if not raw_symbol:
+                continue
+
+            symbol = self._normalize_scanner_symbol(str(raw_symbol))
+            if supported_symbols is not None and symbol not in supported_symbols:
+                unsupported_count += 1
+                continue
+            if symbol in metadata:
+                continue
+
+            symbols.append(symbol)
+            metadata[symbol] = {
+                'scanner_source': item.get('source', default_source),
+                'scanner_rank': item.get('rank'),
+                'scanner_volume_24h': item.get('volume_24h'),
+            }
+
+        return symbols, metadata, unsupported_count
+
     def load_scanner_results(self) -> List[str]:
         """從 Scanner 載入動態標的（沿用 V5.3）"""
+        self._scanner_symbol_meta = {}
         try:
             scanner_path = os.path.expanduser(Config.SCANNER_JSON_PATH)
             # 相對路徑 → 基於專案根目錄
@@ -303,19 +369,43 @@ class TradingBot:
                 except Exception:
                     pass
 
-            hot_symbols = data.get('hot_symbols', [])
-            if not hot_symbols:
-                logger.warning("Scanner JSON 中 hot_symbols 為空，使用預設 symbols")
-                return Config.SYMBOLS
+            supported_symbols = self._supported_scanner_symbols()
+            sources = (
+                ('bot_symbols', 'l1_history'),
+                ('hot_symbols', 'hot_2b'),
+            )
+            for field_name, default_source in sources:
+                raw_items = data.get(field_name, [])
+                if not raw_items:
+                    continue
 
-            scanner_symbols = [item['symbol'] for item in hot_symbols if item.get('symbol')]
-            if scanner_symbols:
-                logger.debug(f"Scanner 載入 {len(scanner_symbols)} 個標的: {', '.join(scanner_symbols)}")  # 降噪
-                return scanner_symbols
-            else:
-                logger.warning("Scanner JSON 解析後無有效 symbol，使用預設 symbols")
-                return Config.SYMBOLS
+                scanner_symbols, metadata, unsupported_count = self._scanner_items_to_symbols(
+                    raw_items,
+                    default_source,
+                    supported_symbols,
+                )
+                if scanner_symbols:
+                    self._scanner_symbol_meta = metadata
+                    logger.info(
+                        "Scanner loaded %s symbol(s) from %s "
+                        "(unsupported_filtered=%s): %s",
+                        len(scanner_symbols),
+                        field_name,
+                        unsupported_count,
+                        ', '.join(scanner_symbols),
+                    )
+                    return scanner_symbols
 
+                if unsupported_count:
+                    logger.warning(
+                        "Scanner %s had %s symbol(s), all unsupported by exchange markets",
+                        field_name,
+                        len(raw_items),
+                    )
+
+            self._scanner_symbol_meta = {}
+            logger.warning("Scanner JSON had no usable bot_symbols/hot_symbols, using default symbols")
+            return Config.SYMBOLS
         except Exception as e:
             logger.warning(f"Scanner JSON 載入失敗: {e}，使用預設 symbols")
             return Config.SYMBOLS
@@ -1260,6 +1350,7 @@ if __name__ == "__main__":
     class _TelegramLogHandler(logging.Handler):
         # 不轉發到 Telegram 的訊息（含以下字串即略過）
         _IGNORE_PATTERNS = [
+            "Scanner JSON had no usable bot_symbols/hot_symbols",
             "Scanner JSON 中 hot_symbols 為空",
         ]
 

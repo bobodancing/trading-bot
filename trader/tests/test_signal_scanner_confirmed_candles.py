@@ -94,6 +94,13 @@ def test_scanner_audits_structured_tier_mtf_reject_fields(mock_bot):
     collector = _Collector()
 
     mock_bot._signal_audit = collector
+    mock_bot._scanner_symbol_meta = {
+        'ETH/USDT': {
+            'scanner_source': 'l1_history',
+            'scanner_rank': 2,
+            'scanner_volume_24h': 200_000_000.0,
+        }
+    }
     mock_bot.fetch_ohlcv = MagicMock(side_effect=[trend_df, signal_df, mtf_df])
     mock_bot._check_total_risk = MagicMock(return_value=True)
 
@@ -151,6 +158,13 @@ def test_scanner_audits_structured_tier_mtf_entry_fields(mock_bot):
     collector = _Collector()
 
     mock_bot._signal_audit = collector
+    mock_bot._scanner_symbol_meta = {
+        'ETH/USDT': {
+            'scanner_source': 'l1_history',
+            'scanner_rank': 2,
+            'scanner_volume_24h': 200_000_000.0,
+        }
+    }
     mock_bot.fetch_ohlcv = MagicMock(side_effect=[trend_df, signal_df, mtf_df])
     mock_bot._check_total_risk = MagicMock(return_value=True)
     mock_bot._execute_trade = MagicMock()
@@ -207,6 +221,9 @@ def test_scanner_audits_structured_tier_mtf_entry_fields(mock_bot):
     assert entry['mtf_candle_time'] == mtf_df.index[-1].isoformat()
     assert entry['mtf_gate_mode'] == 'hard_aligned'
     assert entry['tier_min_effective'] == 'C'
+    assert entry['scanner_source'] == 'l1_history'
+    assert entry['scanner_rank'] == 2
+    assert entry['scanner_volume_24h'] == 200_000_000.0
 
 
 def test_scanner_ema_soft_mtf_gate_relaxes_floor_by_one_tier(mock_bot):

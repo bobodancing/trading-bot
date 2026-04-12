@@ -1,6 +1,7 @@
 """Scanner 測試"""
 
 import sys
+import json
 import pytest
 import pandas as pd
 import numpy as np
@@ -338,6 +339,34 @@ class TestLayer4:
         assert len(filtered) <= ScannerConfig.OUTPUT_TOP_N
 
 
+class TestBotUniverse:
+    """Bot-only broad universe output."""
+
+    def test_build_bot_symbols_hot_first_dedupes_and_caps(self, mock_scanner):
+        mock_scanner._l1_volume_map = {
+            'BTC/USDT': 500_000_000.0,
+            'ETH/USDT': 300_000_000.0,
+            'SOL/USDT': 200_000_000.0,
+            'DOGE/USDT': 100_000_000.0,
+        }
+        hot_results = [
+            ScanResult(symbol='ETH/USDT', rank=1, score=90.0),
+        ]
+
+        with patch.object(ScannerConfig, 'BOT_UNIVERSE_MODE', 'l1_history'), \
+             patch.object(ScannerConfig, 'BOT_UNIVERSE_TOP_N', 3):
+            result = mock_scanner._build_bot_symbols(
+                hot_results,
+                ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'DOGE/USDT'],
+            )
+
+        assert [item['symbol'] for item in result] == ['ETH/USDT', 'BTC/USDT', 'SOL/USDT']
+        assert [item['rank'] for item in result] == [1, 2, 3]
+        assert result[0]['source'] == 'hot_2b'
+        assert result[1]['source'] == 'l1_history'
+        assert result[1]['volume_24h'] == 500_000_000.0
+
+
 class TestGetSector:
     """get_sector 幣種分類"""
 
@@ -373,6 +402,11 @@ class TestScanIntegration:
 
         assert isinstance(results, list)
         assert isinstance(summary, MarketSummary)
+        payload = json.loads((tmp_path / 'hot_symbols.json').read_text(encoding='utf-8'))
+        assert payload['hot_symbols'] == []
+        assert [item['symbol'] for item in payload['bot_symbols']] == ['BTC/USDT', 'ETH/USDT']
+        assert payload['bot_symbols'][0]['source'] == 'l1_history'
+        assert payload['bot_symbols'][0]['volume_24h'] == 500_000_000.0
 
     def test_scan_empty_market(self, mock_scanner, tmp_path):
         """空市場 → 空結果，不 crash"""

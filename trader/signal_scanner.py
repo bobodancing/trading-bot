@@ -53,9 +53,20 @@ class SignalScanner:
                 return ts.isoformat()
         return None
 
+    @staticmethod
+    def _scanner_audit_fields(bot, symbol: str) -> dict:
+        meta = getattr(bot, '_scanner_symbol_meta', {}) or {}
+        symbol_meta = meta.get(symbol, {}) or {}
+        return {
+            'scanner_source': symbol_meta.get('scanner_source'),
+            'scanner_rank': symbol_meta.get('scanner_rank'),
+            'scanner_volume_24h': symbol_meta.get('scanner_volume_24h'),
+        }
+
     def scan_for_signals(self):
         """Scan all configured symbols for trading signals."""
         bot = self.bot
+        scan_started = datetime.now(timezone.utc)
         symbols = bot.load_scanner_results() if Config.USE_SCANNER_SYMBOLS else Config.SYMBOLS
         logger.debug(f"Scanning {len(symbols)} symbols...")
 
@@ -63,7 +74,7 @@ class SignalScanner:
         bot._btc_trend_context = {}
         bot._regime_arbiter_snapshot = None
 
-        now_ts = datetime.now(timezone.utc).isoformat()
+        now_ts = scan_started.isoformat()
 
         uses_regime_runtime = (
             Config.ENABLE_GRID_TRADING
@@ -107,6 +118,7 @@ class SignalScanner:
 
         for symbol in symbols:
             try:
+                scanner_audit = self._scanner_audit_fields(bot, symbol)
                 if symbol in bot.active_trades:
                     t = bot.active_trades[symbol]
                     logger.debug(f"{symbol}: skip (active {t.side}/stage{t.stage})")
@@ -116,6 +128,7 @@ class SignalScanner:
                     self._audit(
                         timestamp=now_ts, symbol=symbol,
                         stage='pre_signal', reject_reason='cooldown',
+                        **scanner_audit,
                     )
                     continue
 
@@ -126,6 +139,7 @@ class SignalScanner:
                     self._audit(
                         timestamp=now_ts, symbol=symbol,
                         stage='pre_signal', reject_reason='total_risk_limit',
+                        **scanner_audit,
                     )
                     break
 
@@ -141,6 +155,7 @@ class SignalScanner:
                     self._audit(
                         timestamp=now_ts, symbol=symbol,
                         stage='pre_signal', reject_reason='insufficient_trend_data',
+                        **scanner_audit,
                     )
                     continue
                 if df_signal.empty or len(df_signal) < 50:
@@ -148,6 +163,7 @@ class SignalScanner:
                     self._audit(
                         timestamp=now_ts, symbol=symbol,
                         stage='pre_signal', reject_reason='insufficient_signal_data',
+                        **scanner_audit,
                     )
                     continue
 
@@ -163,6 +179,7 @@ class SignalScanner:
                     'signal_candle_time': self._last_candle_time(df_signal),
                     'trend_candle_time': self._last_candle_time(df_trend),
                     'mtf_candle_time': self._last_candle_time(df_mtf),
+                    **scanner_audit,
                 }
 
                 # Market filter
@@ -492,7 +509,8 @@ class SignalScanner:
             f'{s}({t.side}/S{t.stage}/${t.total_size * t.avg_entry:.0f})'
             for s, t in bot.active_trades.items()
         ) or "none"
-        logger.debug(f"Scan done | active: {active_str}")
+        duration = (datetime.now(timezone.utc) - scan_started).total_seconds()
+        logger.debug(f"Scan done in {duration:.1f}s for {len(symbols)} symbols | active: {active_str}")
 
     def _check_cooldowns(self, symbol: str) -> bool:
         """Check all cooldown conditions for a symbol. Returns True if clear."""

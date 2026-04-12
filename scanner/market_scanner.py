@@ -83,6 +83,8 @@ class ScannerConfig:
     # 輸出設置（專案根目錄）
     _PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
     OUTPUT_TOP_N = 10
+    BOT_UNIVERSE_MODE = "l1_history"
+    BOT_UNIVERSE_TOP_N = 20
     OUTPUT_JSON_PATH = str(Path(__file__).resolve().parent.parent / 'hot_symbols.json')
     OUTPUT_DB_PATH = str(Path(__file__).resolve().parent.parent / 'scanner_results.db')
     
@@ -302,6 +304,8 @@ class MarketScanner:
         )
         self.results: List[ScanResult] = []
         self.excluded: List[Dict] = []
+        self.bot_symbols: List[Dict] = []
+        self._l1_volume_map: Dict[str, float] = {}
         self.btc_data: pd.DataFrame = None # type: ignore
         self.market_summary: MarketSummary = None # type: ignore
 
@@ -423,6 +427,7 @@ class MarketScanner:
         logger.info("="*60)
         
         try:
+            self._l1_volume_map = {}
             tickers = self.exchange.fetch_tickers()
 
             # Debug: 打印 BTC/USDT ticker 結構，確認欄位名稱
@@ -463,6 +468,8 @@ class MarketScanner:
                 if quote_volume < ScannerConfig.L1_MIN_VOLUME_USD:
                     continue
 
+                current_volume = self._l1_volume_map.get(base_symbol, 0.0)
+                self._l1_volume_map[base_symbol] = max(current_volume, float(quote_volume))
                 passed.append(base_symbol)
 
             logger.info(f"📊 Layer 1 流動性通過: {len(passed)} / {usdt_count} 個 USDT 標的")
@@ -490,6 +497,12 @@ class MarketScanner:
                 if removed > 0:
                     logger.debug(f"   排除 {removed} 個日K不足的新幣")
                 passed = history_passed
+                passed_set = set(passed)
+                self._l1_volume_map = {
+                    symbol: volume
+                    for symbol, volume in self._l1_volume_map.items()
+                    if symbol in passed_set
+                }
 
             logger.info(f"✅ Layer 1 最終通過: {len(passed)} 個標的")
             if passed:
@@ -498,6 +511,7 @@ class MarketScanner:
             
         except Exception as e:
             logger.error(f"❌ Layer 1 失敗: {e}")
+            self._l1_volume_map = {}
             return []
     
     # ==================== Layer 2: 動能篩選 ====================
@@ -940,6 +954,52 @@ class MarketScanner:
     def layer4_correlation_filter(self, results: List[ScanResult]) -> List[ScanResult]:
         """Backward-compatible alias for the old Layer 4 name."""
         return self.layer4_sector_concentration_filter(results)
+
+    def _build_bot_symbols(
+        self,
+        hot_results: List[ScanResult],
+        l1_symbols: List[str],
+    ) -> List[Dict]:
+        """Build the broader bot universe while leaving strict hot_symbols intact."""
+        mode = str(getattr(ScannerConfig, 'BOT_UNIVERSE_MODE', 'l1_history')).lower()
+        if mode != 'l1_history':
+            return []
+
+        try:
+            top_n = int(getattr(ScannerConfig, 'BOT_UNIVERSE_TOP_N', 20))
+        except (TypeError, ValueError):
+            top_n = 20
+        top_n = max(0, top_n)
+        if top_n == 0:
+            return []
+
+        bot_symbols: List[Dict] = []
+        seen = set()
+
+        def add_symbol(symbol: str, source: str):
+            if not symbol or symbol in seen or len(bot_symbols) >= top_n:
+                return
+            seen.add(symbol)
+            bot_symbols.append({
+                'symbol': symbol,
+                'source': source,
+                'rank': len(bot_symbols) + 1,
+                'volume_24h': float(self._l1_volume_map.get(symbol, 0.0)),
+            })
+
+        for result in hot_results:
+            add_symbol(result.symbol, 'hot_2b')
+
+        l1_unique = list(dict.fromkeys(l1_symbols or []))
+        l1_sorted = sorted(
+            l1_unique,
+            key=lambda symbol: self._l1_volume_map.get(symbol, 0.0),
+            reverse=True,
+        )
+        for symbol in l1_sorted:
+            add_symbol(symbol, 'l1_history')
+
+        return bot_symbols
     
     # ==================== 主掃描流程 ====================
     def scan(self) -> Tuple[List[ScanResult], MarketSummary]:
@@ -952,6 +1012,7 @@ class MarketScanner:
         
         self.results = []
         self.excluded = []
+        self.bot_symbols = []
         
         l1_symbols = self.layer1_liquidity_filter()
         l2_candidates = self.layer2_momentum_filter(l1_symbols)
@@ -959,6 +1020,7 @@ class MarketScanner:
         final_results = self.layer4_sector_concentration_filter(l3_results)
         
         self.results = final_results
+        self.bot_symbols = self._build_bot_symbols(final_results, l1_symbols)
         
         self.market_summary = self._generate_market_summary(
             scan_time=scan_start,
@@ -973,6 +1035,7 @@ class MarketScanner:
         self._output_results()
         
         scan_duration = (datetime.now(timezone.utc) - scan_start).total_seconds()
+        logger.info(f"Bot universe: {len(self.bot_symbols)} symbols (cap={ScannerConfig.BOT_UNIVERSE_TOP_N})")
         logger.info(f"\n✅ 掃描完成，耗時 {scan_duration:.1f} 秒")
         
         return self.results, self.market_summary
@@ -1045,6 +1108,7 @@ class MarketScanner:
             'passed_layer3': self.market_summary.passed_layer3,
             'final_count': self.market_summary.final_count,
             'hot_symbols': [asdict(r) for r in self.results],
+            'bot_symbols': self.bot_symbols,
             'excluded': self.excluded,
             'market_summary': asdict(self.market_summary)
         }

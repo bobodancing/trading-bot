@@ -24,6 +24,8 @@
     "L4_MAX_PER_SECTOR": 2,
 
     "OUTPUT_TOP_N": 10,
+    "BOT_UNIVERSE_MODE": "l1_history",
+    "BOT_UNIVERSE_TOP_N": 20,
     "OUTPUT_JSON_PATH": "hot_symbols.json",
     "OUTPUT_DB_PATH": "scanner_results.db",
 
