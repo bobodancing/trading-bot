@@ -35,6 +35,7 @@ from trader.infrastructure.performance_db import PerformanceDB
 from trader.indicators.technical import TechnicalAnalysis
 # 風險管理層
 from trader.risk.manager import PrecisionHandler, RiskManager
+from trader.arbiter import RegimeArbiter
 from trader.regime import RegimeEngine
 from trader.strategies.v8_grid import V8AtrGrid, PoolManager
 # 訂單執行層
@@ -111,6 +112,7 @@ class TradingBot:
 
         # Grid / Regime system
         self.regime_engine = RegimeEngine()
+        self.regime_arbiter = RegimeArbiter()
         self.pool_manager = PoolManager()
         self.grid_engine = V8AtrGrid(
             api_client=self.futures_client,
@@ -120,6 +122,7 @@ class TradingBot:
         self._start_time = datetime.now(timezone.utc)
         self._btc_regime_context: Dict[str, object] = {}
         self._btc_trend_context: Dict[str, object] = {}
+        self._regime_arbiter_snapshot = None
         self.grid_manager = GridManager(self)
         self.btc_context_manager = BTCContextManager(self)
         self.position_monitor = PositionMonitor(self)

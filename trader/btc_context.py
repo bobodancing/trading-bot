@@ -23,6 +23,32 @@ class BTCContextManager:
     def __init__(self, bot):
         self.bot = bot
 
+    def _update_arbiter_snapshot(
+        self,
+        *,
+        context: Dict[str, object],
+        btc_df_4h: Optional[pd.DataFrame] = None,
+    ):
+        bot = self.bot
+        if not getattr(Config, 'REGIME_ARBITER_ENABLED', False):
+            bot._regime_arbiter_snapshot = None
+            return None
+
+        daily_df = None
+        if getattr(Config, 'MACRO_OVERLAY_ENABLED', False):
+            try:
+                daily_df = bot.data_provider.fetch_ohlcv("BTC/USDT", "1d", limit=420)
+            except Exception as e:
+                logger.warning(f"BTC macro context unavailable: {e}")
+
+        snapshot = bot.regime_arbiter.evaluate(
+            context=context,
+            df_4h=btc_df_4h,
+            daily_df=daily_df,
+        )
+        bot._regime_arbiter_snapshot = snapshot
+        return snapshot
+
     def check_btc_trend(self) -> Optional[str]:
         """Fetch BTC 1D EMA20/50 trend. Returns 'LONG', 'SHORT', 'RANGING', or None."""
         return self.get_daily_btc_trend_context().get('trend')
@@ -56,6 +82,7 @@ class BTCContextManager:
         except Exception as e:
             context = self.make_btc_context(source="none", reason=f"regime_fetch_failed:{e}")
             bot._btc_regime_context = context
+            self._update_arbiter_snapshot(context=context)
             logger.warning(
                 "BTC regime context unavailable: "
                 f"source={context['source']} regime={context['regime']} detected={context['detected']} "
@@ -71,6 +98,7 @@ class BTCContextManager:
                 reason="regime_fetch_empty",
             )
             bot._btc_regime_context = context
+            self._update_arbiter_snapshot(context=context)
             logger.warning(
                 "BTC regime context unavailable: "
                 f"source={context['source']} regime={context['regime']} detected={context['detected']} "
@@ -100,6 +128,7 @@ class BTCContextManager:
             reason="regime_updated",
         )
         bot._btc_regime_context = context
+        self._update_arbiter_snapshot(context=context, btc_df_4h=btc_df_4h)
         return context
 
     def get_daily_btc_trend_context(self) -> Dict[str, object]:

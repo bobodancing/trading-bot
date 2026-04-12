@@ -69,6 +69,13 @@
     "early_stop_r_threshold": 0.75,
     "early_exit_cooldown_hours": 10,
     "enable_grid_trading": false,
+    "regime_arbiter_enabled": false,
+    "arbiter_neutral_threshold": 0.5,
+    "arbiter_neutral_exit_threshold": 0.6,
+    "arbiter_neutral_min_bars": 1,
+    "macro_overlay_enabled": false,
+    "macro_stalled_size_mult": 0.0,
+    "macro_weekly_ema_spread_threshold": 0.015,
     "v7_min_signal_tier": "A",
     "signal_strategy_map": {
         "2B": "v54_noscale"

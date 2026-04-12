@@ -60,13 +60,21 @@ class SignalScanner:
 
         bot._btc_regime_context = {}
         bot._btc_trend_context = {}
+        bot._regime_arbiter_snapshot = None
 
         now_ts = datetime.now(timezone.utc).isoformat()
 
-        # RegimeEngine routing (only when grid trading enabled)
-        if Config.ENABLE_GRID_TRADING:
+        uses_regime_runtime = (
+            Config.ENABLE_GRID_TRADING
+            or getattr(Config, 'REGIME_ARBITER_ENABLED', False)
+        )
+        if uses_regime_runtime:
             btc_regime_context = bot._update_btc_regime_context()
             regime = btc_regime_context.get('regime')
+
+        # RegimeEngine grid routing remains grid-only. Arbiter routing is below,
+        # after a concrete signal/tier exists for audit and strategy context.
+        if Config.ENABLE_GRID_TRADING:
             if regime == "RANGING":
                 self._audit(
                     action='reject', timestamp=now_ts, symbol='*ALL*',
@@ -406,6 +414,45 @@ class SignalScanner:
                                 f"{symbol}: BTC counter (BTC={btc_trend}, signal={signal_side}), "
                                 f"size mult x{Config.BTC_COUNTER_TREND_MULT}"
                             )
+
+                arbiter_snapshot = getattr(bot, '_regime_arbiter_snapshot', None)
+                if getattr(Config, 'REGIME_ARBITER_ENABLED', False):
+                    if arbiter_snapshot is None:
+                        self._audit(
+                            timestamp=now_ts, symbol=symbol,
+                            stage='post_filter', reject_reason='regime_arbiter_blocked',
+                            signal_type=best_type, signal_side=signal_side,
+                            signal_tier=signal_tier,
+                            detail='arbiter_snapshot_missing',
+                            **audit_diag,
+                        )
+                        continue
+
+                    audit_diag.update(arbiter_snapshot.audit_fields())
+                    allowed, arbiter_reason = bot.regime_arbiter.can_enter(
+                        arbiter_snapshot,
+                        signal_side,
+                    )
+                    if not allowed:
+                        logger.info(
+                            f"{symbol}: skip (arbiter {arbiter_snapshot.label} "
+                            f"conf={arbiter_snapshot.confidence:.2f} reason={arbiter_reason})"
+                        )
+                        reject_diag = dict(audit_diag)
+                        reject_diag['arbiter_reason'] = arbiter_reason
+                        self._audit(
+                            timestamp=now_ts, symbol=symbol,
+                            stage='post_filter', reject_reason='regime_arbiter_blocked',
+                            signal_type=best_type, signal_side=signal_side,
+                            signal_tier=signal_tier,
+                            regime=arbiter_snapshot.label,
+                            detail=arbiter_reason,
+                            **reject_diag,
+                        )
+                        continue
+                    signal_details['arbiter_label'] = arbiter_snapshot.label
+                    signal_details['arbiter_confidence'] = arbiter_snapshot.confidence
+                    signal_details['arbiter_reason'] = arbiter_reason
 
                 # Resolve regime/btc_trend for audit entry record
                 regime_label = (bot._btc_regime_context or {}).get('regime')

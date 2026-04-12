@@ -28,16 +28,30 @@ def test_parity_passes_when_aligned(tmp_path):
     json_path = tmp_path / "bot_config.json"
     config_path = tmp_path / "config.py"
     json_path.write_text(json.dumps({
+        "arbiter_neutral_exit_threshold": 0.6,
+        "arbiter_neutral_min_bars": 1,
+        "arbiter_neutral_threshold": 0.5,
         "enable_ema_pullback": False,
         "enable_volume_breakout": False,
         "enable_grid_trading": False,
+        "macro_overlay_enabled": False,
+        "macro_stalled_size_mult": 0.0,
+        "macro_weekly_ema_spread_threshold": 0.015,
+        "regime_arbiter_enabled": False,
         "v7_min_signal_tier": "A",
         "signal_strategy_map": {"2B": "v54_noscale"},
     }), encoding="utf-8")
     _write_config(config_path, {
+        "ARBITER_NEUTRAL_EXIT_THRESHOLD": 0.6,
+        "ARBITER_NEUTRAL_MIN_BARS": 1,
+        "ARBITER_NEUTRAL_THRESHOLD": 0.5,
         "ENABLE_EMA_PULLBACK": False,
         "ENABLE_VOLUME_BREAKOUT": False,
         "ENABLE_GRID_TRADING": False,
+        "MACRO_OVERLAY_ENABLED": False,
+        "MACRO_STALLED_SIZE_MULT": 0.0,
+        "MACRO_WEEKLY_EMA_SPREAD_THRESHOLD": 0.015,
+        "REGIME_ARBITER_ENABLED": False,
         "V7_MIN_SIGNAL_TIER": "A",
         "SIGNAL_STRATEGY_MAP": {"2B": "v54_noscale"},
     })
