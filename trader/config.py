@@ -230,10 +230,10 @@ class Config:
     REGIME_CONFIRM_CANDLES = 3          # 切換需連續 N 根 K 線確認
     REGIME_BBW_HISTORY = 50             # BBW 歷史窗口（根數）
 
-    # Regime Arbiter (disabled by default; R4/R5 uses explicit overrides)
-    REGIME_ARBITER_ENABLED = False
+    # Regime Arbiter (R5 candidate: Neutral Arbiter only, Macro disabled)
+    REGIME_ARBITER_ENABLED = True
     ARBITER_NEUTRAL_THRESHOLD = 0.50
-    ARBITER_NEUTRAL_EXIT_THRESHOLD = 0.60
+    ARBITER_NEUTRAL_EXIT_THRESHOLD = 0.50
     ARBITER_NEUTRAL_MIN_BARS = 1
     MACRO_OVERLAY_ENABLED = False
     MACRO_STALLED_SIZE_MULT = 0.0

@@ -51,6 +51,7 @@ def test_scanner_drops_only_signal_candle_in_patch_a_runtime(mock_bot):
     with patch.object(Config, 'USE_SCANNER_SYMBOLS', False), \
          patch.object(Config, 'SYMBOLS', ['ETH/USDT']), \
          patch.object(Config, 'BTC_TREND_FILTER_ENABLED', False), \
+         patch.object(Config, 'REGIME_ARBITER_ENABLED', False), \
          patch.object(Config, 'ENABLE_MTF_CONFIRMATION', True), \
          patch.object(Config, 'ENABLE_EMA_PULLBACK', True), \
          patch.object(Config, 'ENABLE_VOLUME_BREAKOUT', False), \
@@ -99,6 +100,7 @@ def test_scanner_audits_structured_tier_mtf_reject_fields(mock_bot):
     with patch.object(Config, 'USE_SCANNER_SYMBOLS', False), \
          patch.object(Config, 'SYMBOLS', ['ETH/USDT']), \
          patch.object(Config, 'BTC_TREND_FILTER_ENABLED', False), \
+         patch.object(Config, 'REGIME_ARBITER_ENABLED', False), \
          patch.object(Config, 'ENABLE_MTF_CONFIRMATION', True), \
          patch.object(Config, 'ENABLE_EMA_PULLBACK', True), \
          patch.object(Config, 'ENABLE_VOLUME_BREAKOUT', False), \
@@ -156,6 +158,7 @@ def test_scanner_audits_structured_tier_mtf_entry_fields(mock_bot):
     with patch.object(Config, 'USE_SCANNER_SYMBOLS', False), \
          patch.object(Config, 'SYMBOLS', ['ETH/USDT']), \
          patch.object(Config, 'BTC_TREND_FILTER_ENABLED', False), \
+         patch.object(Config, 'REGIME_ARBITER_ENABLED', False), \
          patch.object(Config, 'ENABLE_MTF_CONFIRMATION', True), \
          patch.object(Config, 'ENABLE_EMA_PULLBACK', True), \
          patch.object(Config, 'ENABLE_VOLUME_BREAKOUT', False), \
@@ -220,6 +223,7 @@ def test_scanner_ema_soft_mtf_gate_relaxes_floor_by_one_tier(mock_bot):
     with patch.object(Config, 'USE_SCANNER_SYMBOLS', False), \
          patch.object(Config, 'SYMBOLS', ['ETH/USDT']), \
          patch.object(Config, 'BTC_TREND_FILTER_ENABLED', False), \
+         patch.object(Config, 'REGIME_ARBITER_ENABLED', False), \
          patch.object(Config, 'ENABLE_MTF_CONFIRMATION', True), \
          patch.object(Config, 'ENABLE_EMA_PULLBACK', True), \
          patch.object(Config, 'ENABLE_VOLUME_BREAKOUT', False), \
