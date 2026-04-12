@@ -326,10 +326,10 @@ P0.5 + P0.6（2026-04-11 ~ 04-12）給出三個關鍵 finding：
 - [x] **R3 = SKIP.** 三條 GO 門檻全 FAIL：capture gap 16.7%（< 30%）、missed A-tier ceiling 5（< 20）、max adverse 1.21R（< 2R）。V54-in-RANGING baseline PF 2.17 / WR 54.5% / worst -1.21R，沒有足夠 gap 寫新策略。V54 繼續當 RANGING fallback executor。見 `reports/v54_in_ranging_22trades.md`
 - [x] R3 = SKIP，不適用
 
-**R4 完成後填**
+**R4 完成後填（2026-04-12 已填）**
 
-- [ ] 4 個 transition window 的具體日期（Ruei 提供或同意候選）
-- [ ] Acceptance 的 50% 改善門檻是否合理
+- [x] **4 個 transition window 日期確認**：bear→bull V-rev `2023-10-01~2023-11-30` / bull→bear V-rev `2024-03-10~2024-05-30` / trend→range fade `2025-04-01~2025-06-15` / range→trend breakout `2024-09-01~2024-11-15`
+- [x] **改善門檻**：fade window 的 P0.6 MIXED entry-time TRENDING loss cluster 6 筆中 5 筆被 Neutral Zone 擋住（83%），超過 50% 門檻。但 R4 B/C 是 post-trade overlay 非 runtime backtest，需要實作後重跑驗證。Macro Overlay 在 4 個 window 都沒提供 additive value over Neutral Zone alone，建議先放 experimental flag
 
 ---
 
@@ -366,6 +366,8 @@ P0.5 + P0.6（2026-04-11 ~ 04-12）給出三個關鍵 finding：
 - `2026-04-12`: spec v3 patch by 小波：D1 OQ 填入 + Decision Log 更新
 - `2026-04-12`: R2 complete（`reports/v54_in_ranging_22trades.md`）。R3 = **SKIP**：三條 GO 門檻全 FAIL（capture 16.7% / missed 5 / adverse 1.21R）。V54 keeps RANGING fallback。R3 章節作廢，直接 R4
 - `2026-04-12`: spec v4 patch by 小波：R2 OQ 填入 R3 = SKIP
+- `2026-04-12`: R4 complete（diagnostic level）。4 windows × 3 scenarios pass。Neutral Zone 在 fade window 翻正（A -9.25 → B +21.93 USDT），83% cluster avoidance。Macro Overlay 無 additive value，建議 experimental flag。B/C 是 post-trade overlay 非 runtime backtest，需實作後重跑。見 `reports/transition_stress_test.md`
+- `2026-04-12`: spec v5 patch by 小波：R4 OQ 填入 + Decision Log 更新
 
 ---
 
