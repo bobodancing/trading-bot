@@ -321,10 +321,10 @@ P0.5 + P0.6（2026-04-11 ~ 04-12）給出三個關鍵 finding：
 - [ ] Macro overlay 用 1W EMA alignment 還是 1W ADX
 - [ ] V54 的 `min_confidence_to_enter`
 
-**R2 完成後填**
+**R2 完成後填（2026-04-12 已填）**
 
-- [ ] R3 = GO 或 SKIP
-- [ ] 如果 GO，新策略的 type 與 thesis 一句話
+- [x] **R3 = SKIP.** 三條 GO 門檻全 FAIL：capture gap 16.7%（< 30%）、missed A-tier ceiling 5（< 20）、max adverse 1.21R（< 2R）。V54-in-RANGING baseline PF 2.17 / WR 54.5% / worst -1.21R，沒有足夠 gap 寫新策略。V54 繼續當 RANGING fallback executor。見 `reports/v54_in_ranging_22trades.md`
+- [x] R3 = SKIP，不適用
 
 **R4 完成後填**
 
@@ -364,6 +364,8 @@ P0.5 + P0.6（2026-04-11 ~ 04-12）給出三個關鍵 finding：
 - `2026-04-12`: D1 resolved = **D1-A**（Arbiter 自己偵測 SQUEEZE，不靠 RegimeEngine）。Chart review 2/3 真 squeeze。SQUEEZE first-class + freeze entries + arbiter-level detection via BBW pctile + ADX + ATR ratio
 - `2026-04-12`: R1 contract spec by codex（`plans/2026-04-12_r1_regime_arbiter_contract_spec.md`），小波 review pass
 - `2026-04-12`: spec v3 patch by 小波：D1 OQ 填入 + Decision Log 更新
+- `2026-04-12`: R2 complete（`reports/v54_in_ranging_22trades.md`）。R3 = **SKIP**：三條 GO 門檻全 FAIL（capture 16.7% / missed 5 / adverse 1.21R）。V54 keeps RANGING fallback。R3 章節作廢，直接 R4
+- `2026-04-12`: spec v4 patch by 小波：R2 OQ 填入 R3 = SKIP
 
 ---
 
