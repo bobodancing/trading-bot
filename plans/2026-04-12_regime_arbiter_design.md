@@ -312,7 +312,7 @@ P0.5 + P0.6（2026-04-11 ~ 04-12）給出三個關鍵 finding：
 
 - [x] **D2: Confidence score = Scalar。** 一個 `confidence ∈ [0,1]` 代表當前 regime label 可信度。理由：V54 是目前唯一策略，scalar 夠用；複雜度殺項目；scalar 可日後升級 vector，反過來不行
 - [x] **D3: Hysteresis stuck 修正方向 = C（Confidence gate，不改 RegimeEngine）。** 不動 `trader/regime.py`，由 arbiter 層看 ADX slope + persistence → confidence < threshold → NEUTRAL → freeze entries。理由：符合 Hard Guardrail #3（先診斷後修）+ V54 frozen 精神；A（None 不重置 counter）有 regression 風險；B（ADX slope guard）加新參數需 tuning
-- [ ] **D1: SQUEEZE chart review = pending。** Ruei 正在看 top 3 候選段（`2023-10-14~15` / `2025-06-28~29` / `2025-02-16~17`），結果回填後決定 R1 SQUEEZE state 是 active 還是 placeholder
+- [x] **D1: SQUEEZE = D1-A（Arbiter 自己偵測，不靠 RegimeEngine）。** Chart review 2/3 真 squeeze（`2023-10-14~15` breakout-prep + `2025-06-28~29` 0.46% compression），1/3 普通 range（`2025-02-16~17`）。SQUEEZE 是 first-class arbiter state，freeze new entries，no strategy assigned。Arbiter 用自身 confidence inputs（BBW percentile + ADX + ATR ratio）偵測 SQUEEZE，不依賴 RegimeEngine 的 `bbw_ratio < 0.15` guard，不改 `trader/regime.py`。見 `reports/squeeze_chart_review_top3.md`
 
 **R1 完成後填**
 
@@ -361,6 +361,9 @@ P0.5 + P0.6（2026-04-11 ~ 04-12）給出三個關鍵 finding：
   - D3 Hysteresis fix = **C（Confidence gate in arbiter layer, do not modify RegimeEngine）**
   - D1 SQUEEZE chart review = **pending**（Ruei 正看 top 3 候選段）
 - `2026-04-12`: spec v2 patch by 小波：R0 Open Questions 填入 findings + D2/D3 決策
+- `2026-04-12`: D1 resolved = **D1-A**（Arbiter 自己偵測 SQUEEZE，不靠 RegimeEngine）。Chart review 2/3 真 squeeze。SQUEEZE first-class + freeze entries + arbiter-level detection via BBW pctile + ADX + ATR ratio
+- `2026-04-12`: R1 contract spec by codex（`plans/2026-04-12_r1_regime_arbiter_contract_spec.md`），小波 review pass
+- `2026-04-12`: spec v3 patch by 小波：D1 OQ 填入 + Decision Log 更新
 
 ---
 
