@@ -477,6 +477,19 @@ class TestPerformanceDB:
             tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")]
         assert "trades" in tables
 
+    def test_last_loss_query_self_heals_empty_db(self, tmp_path):
+        """Cooldown lookup should not warn-loop when the DB exists without schema."""
+        import sqlite3
+        path = tmp_path / "empty.db"
+        sqlite3.connect(path).close()
+        db = PerformanceDB.__new__(PerformanceDB)
+        db.db_path = str(path)
+
+        assert db.get_last_loss_exit_time("BTCUSDT") is None
+        with sqlite3.connect(path) as conn:
+            tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")]
+        assert "trades" in tables
+
     def test_record_trade_success(self, tmp_path):
         """正常寫入一筆記錄。"""
         db = PerformanceDB(db_path=str(tmp_path / "test.db"))

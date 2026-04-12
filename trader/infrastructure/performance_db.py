@@ -149,6 +149,7 @@ class PerformanceDB:
             data.setdefault('protection_state', None)
             data.setdefault('protected_exit', None)
             with sqlite3.connect(self.db_path) as conn:
+                conn.execute(CREATE_TABLE_SQL)
                 conn.execute(INSERT_SQL, data)
                 conn.commit()
             logger.info(f"PerformanceDB recorded: {data.get('trade_id')} {data.get('symbol')} R={data.get('realized_r', 0):.2f}")
@@ -165,6 +166,8 @@ class PerformanceDB:
         """
         try:
             with sqlite3.connect(self.db_path) as conn:
+                conn.execute(CREATE_TABLE_SQL)
+                conn.commit()
                 row = conn.execute(
                     "SELECT exit_time FROM trades "
                     "WHERE symbol = ? AND pnl_usdt < 0 "

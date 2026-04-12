@@ -180,6 +180,21 @@ class TelegramCommandHandler:
         extra_labels = sorted(label for label in counts.keys() if label not in label_order)
         parts.extend(f"{label}: {counts[label]}" for label in extra_labels)
         distribution = " | ".join(parts) if parts else "None"
+        arbiter_enabled = getattr(Config, 'REGIME_ARBITER_ENABLED', False) is True
+        macro_enabled = getattr(Config, 'MACRO_OVERLAY_ENABLED', False) is True
+        threshold = getattr(Config, 'ARBITER_NEUTRAL_THRESHOLD', None)
+        try:
+            threshold_text = f"{float(threshold):.2f}"
+        except (TypeError, ValueError):
+            threshold_text = "N/A"
+
+        snapshot = getattr(self.bot, '_regime_arbiter_snapshot', None)
+        snap_label = getattr(snapshot, 'label', None)
+        snap_conf = getattr(snapshot, 'confidence', None)
+        if isinstance(snap_label, str) and isinstance(snap_conf, (int, float)):
+            snapshot_text = f"{snap_label} conf={snap_conf:.2f}"
+        else:
+            snapshot_text = "N/A"
 
         lines = [
             "<b>Bot Status</b>",
@@ -187,6 +202,8 @@ class TelegramCommandHandler:
             f"運行時間: {uptime_str}",
             f"活躍倉位: {active_count}",
             f"策略分佈: {distribution}",
+            f"Arbiter: {'ON' if arbiter_enabled else 'OFF'} | Neutral<{threshold_text} | snapshot={snapshot_text}",
+            f"Macro Overlay: {'ON' if macro_enabled else 'OFF'}",
             f"監控幣種: {len(Config.SYMBOLS)}",
             f"DRY RUN: {'Yes' if Config.V6_DRY_RUN else 'No'}",
         ]

@@ -16,6 +16,7 @@ from trader.indicators.technical import (
     MTFConfirmation,
     MarketFilter,
 )
+from trader.infrastructure.notifier import TelegramNotifier
 from trader.risk.manager import SignalTierSystem
 from trader.signals import detect_2b_with_pivots, detect_ema_pullback, detect_volume_breakout
 from trader.utils import drop_unfinished_candle
@@ -440,6 +441,15 @@ class SignalScanner:
                         )
                         reject_diag = dict(audit_diag)
                         reject_diag['arbiter_reason'] = arbiter_reason
+                        TelegramNotifier.notify_arbiter_block(symbol, {
+                            'signal_type': best_type,
+                            'side': signal_side,
+                            'signal_tier': signal_tier,
+                            'arbiter_label': arbiter_snapshot.label,
+                            'arbiter_confidence': arbiter_snapshot.confidence,
+                            'arbiter_reason': arbiter_reason,
+                            'market_regime': arbiter_snapshot.label,
+                        })
                         self._audit(
                             timestamp=now_ts, symbol=symbol,
                             stage='post_filter', reject_reason='regime_arbiter_blocked',

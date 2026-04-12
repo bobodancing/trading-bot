@@ -77,6 +77,19 @@ class TelegramNotifier:
         esc = html.escape
         market = esc(str(details.get('market_regime', 'N/A')))
         target = esc(str(details.get('target_ref', 'N/A')))
+        arbiter_line = ""
+        if details.get('arbiter_label') is not None:
+            conf = details.get('arbiter_confidence')
+            try:
+                conf_text = f"{float(conf):.2f}"
+            except (TypeError, ValueError):
+                conf_text = "N/A"
+            arbiter_line = (
+                "Arbiter: "
+                f"{esc(str(details.get('arbiter_label', 'N/A')))} "
+                f"conf={conf_text} "
+                f"reason={esc(str(details.get('arbiter_reason', 'N/A')))}"
+            )
 
         entry = details.get('entry_price', 0)
         stop = details.get('stop_loss', 0)
@@ -108,6 +121,29 @@ class TelegramNotifier:
 倉位: {details.get('position_size', 0):.6f}
 1.5R: {r15}
 ──────────────────
+        """
+        if arbiter_line:
+            msg += f"\n{arbiter_line}"
+        TelegramNotifier.send_message(msg.strip())
+
+    @staticmethod
+    def notify_arbiter_block(symbol: str, details: Dict):
+        """Notify when R5 arbiter blocks an otherwise eligible entry."""
+        esc = html.escape
+        conf = details.get('arbiter_confidence')
+        try:
+            conf_text = f"{float(conf):.2f}"
+        except (TypeError, ValueError):
+            conf_text = "N/A"
+
+        msg = f"""
+<b>Arbiter Block</b>
+Symbol: {esc(str(symbol))}
+Signal: {esc(str(details.get('signal_type', 'N/A')))} {esc(str(details.get('side', 'N/A')))}
+Tier: {esc(str(details.get('signal_tier', 'N/A')))}
+Arbiter: {esc(str(details.get('arbiter_label', 'N/A')))} conf={conf_text}
+Reason: {esc(str(details.get('arbiter_reason', 'N/A')))}
+Regime: {esc(str(details.get('market_regime', 'N/A')))}
         """
         TelegramNotifier.send_message(msg.strip())
 

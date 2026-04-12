@@ -85,6 +85,49 @@ class TestNotifierEscape:
         assert 'V53 SOP' not in text
 
     @patch('trader.infrastructure.notifier.requests.post')
+    def test_notify_signal_includes_arbiter_fields(self, mock_post):
+        mock_post.return_value = MagicMock(ok=True)
+        details = {
+            'signal_strength': 'strong',
+            'signal_tier': 'A',
+            'side': 'LONG',
+            'market_regime': 'TRENDING',
+            'vol_ratio': 1.1,
+            'entry_price': 100.0,
+            'stop_loss': 95.0,
+            'target_ref': 'neckline',
+            'position_size': 0.01,
+            'strategy_name': 'v54_noscale',
+            'arbiter_label': 'TRENDING_UP',
+            'arbiter_confidence': 0.73,
+            'arbiter_reason': 'clean<trend>',
+        }
+        TelegramNotifier.notify_signal('BTCUSDT', details)
+        payload = mock_post.call_args.kwargs.get('data', {})
+        text = payload.get('text', '')
+        assert 'Arbiter: TRENDING_UP conf=0.73' in text
+        assert 'clean&lt;trend&gt;' in text
+
+    @patch('trader.infrastructure.notifier.requests.post')
+    def test_notify_arbiter_block_escapes_fields(self, mock_post):
+        mock_post.return_value = MagicMock(ok=True)
+        TelegramNotifier.notify_arbiter_block('<BTC>', {
+            'signal_type': '2B',
+            'side': 'LONG',
+            'signal_tier': 'A',
+            'arbiter_label': 'NEUTRAL',
+            'arbiter_confidence': 0.42,
+            'arbiter_reason': 'low<confidence>',
+            'market_regime': 'RANGING&CHOP',
+        })
+        payload = mock_post.call_args.kwargs.get('data', {})
+        text = payload.get('text', '')
+        assert 'Arbiter Block' in text
+        assert '&lt;BTC&gt;' in text
+        assert 'low&lt;confidence&gt;' in text
+        assert 'RANGING&amp;CHOP' in text
+
+    @patch('trader.infrastructure.notifier.requests.post')
     def test_notify_exit_escapes_reason(self, mock_post):
         mock_post.return_value = MagicMock(ok=True)
         details = {
