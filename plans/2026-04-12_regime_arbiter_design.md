@@ -302,11 +302,17 @@ P0.5 + P0.6（2026-04-11 ~ 04-12）給出三個關鍵 finding：
 
 ## Open Questions
 
-**R0 完成後填**
+**R0 完成後填（2026-04-12 已填）**
 
-- [ ] Apr-May 2025 hysteresis 卡住的具體兇手指標是什麼？（BBW? confirm_count? ADX threshold?）
-- [ ] SQUEEZE 0 coverage 是 engine bug 還是 window 沒覆蓋？
-- [ ] Confidence score 的 input 列表敲定
+- [x] **Hysteresis 兇手 = ADX ≥ 25 在 chop 期仍成立。** `adx_trending` 占 Apr-May 361 bars 中的 215 bars（59.6%）。次要因素：`_detect_regime` 回 None 保留前狀態（81 bars = 22.4%）。ATR expansion 不是兇手（4 bars = 1.1%）。RANGING confirm 被 None 中斷累不到 3（5 個 stuck case，max_confirm ≤ 2）。見 `reports/regime_diagnostic_apr_may_2025.md`
+- [x] **SQUEEZE 0 coverage = engine guard (`bbw_ratio < 0.15`) 太嚴。** 784 個低 BBW 候選裡 72.1% 被 bbw_ratio 擋，27.9% 被 ADX 提升為 TRENDING。Report answer = **yes**（likely real squeeze candidates missed）。Chart Review Queue 10 個 timestamp range，**Ruei 正在肉眼確認 top 3**。見 `reports/squeeze_coverage_audit.md`
+- [x] **Confidence score input 列表：** 5 個候選（ADX absolute / ADX slope / BBW percentile / ATR% / regime persistence），4 個 combination strategy（weighted sum / min gate / vote / hybrid），6 個 R1 open questions。見 `reports/confidence_score_poc.md`
+
+**R0 後決策（2026-04-12 Ruei 決定）**
+
+- [x] **D2: Confidence score = Scalar。** 一個 `confidence ∈ [0,1]` 代表當前 regime label 可信度。理由：V54 是目前唯一策略，scalar 夠用；複雜度殺項目；scalar 可日後升級 vector，反過來不行
+- [x] **D3: Hysteresis stuck 修正方向 = C（Confidence gate，不改 RegimeEngine）。** 不動 `trader/regime.py`，由 arbiter 層看 ADX slope + persistence → confidence < threshold → NEUTRAL → freeze entries。理由：符合 Hard Guardrail #3（先診斷後修）+ V54 frozen 精神；A（None 不重置 counter）有 regression 風險；B（ADX slope guard）加新參數需 tuning
+- [ ] **D1: SQUEEZE chart review = pending。** Ruei 正在看 top 3 候選段（`2023-10-14~15` / `2025-06-28~29` / `2025-02-16~17`），結果回填後決定 R1 SQUEEZE state 是 active 還是 placeholder
 
 **R1 完成後填**
 
@@ -349,6 +355,12 @@ P0.5 + P0.6（2026-04-11 ~ 04-12）給出三個關鍵 finding：
   - R3 acceptance 補小樣本 caveat 三條（forward sample / MaxDD / R 分布）
   - R4 「P0.6 8 連敗」改寫成「P0.6 MIXED entry-time TRENDING loss cluster」精確定義；連敗筆數延後到 R0 重對齊後再 hardcode
   - R1 task 6 wording 釐清：spec 階段不動 P0 config parity，CRITICAL_KEYS 擴充延到 R1 implementation commit
+- `2026-04-12`: R0 complete（codex 產出 3 reports + 2 CSV artifacts + 1 diagnostic helper，小波 review pass）
+- `2026-04-12`: Ruei 決策三項：
+  - D2 Confidence score = **Scalar**（`confidence ∈ [0,1]` for current regime label）
+  - D3 Hysteresis fix = **C（Confidence gate in arbiter layer, do not modify RegimeEngine）**
+  - D1 SQUEEZE chart review = **pending**（Ruei 正看 top 3 候選段）
+- `2026-04-12`: spec v2 patch by 小波：R0 Open Questions 填入 findings + D2/D3 決策
 
 ---
 
