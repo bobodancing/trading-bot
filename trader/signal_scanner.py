@@ -40,6 +40,8 @@ class SignalScanner:
             collector.record_reject(**kwargs)
         elif action == 'entry':
             collector.record_entry(**kwargs)
+        elif action == 'lane_race' and hasattr(collector, 'record_lane_race'):
+            collector.record_lane_race(**kwargs)
 
     @staticmethod
     def _last_candle_time(df: pd.DataFrame):
@@ -235,6 +237,32 @@ class SignalScanner:
                         details_bo['signal_type'] = 'VOLUME_BREAKOUT'
                         signals_found.append(('VOLUME_BREAKOUT', details_bo))
 
+                raw_signals_found = list(signals_found)
+                allowed_signal_types = getattr(Config, 'BACKTEST_ALLOWED_SIGNAL_TYPES', None)
+                if allowed_signal_types is not None:
+                    allowed_set = set(allowed_signal_types)
+                    signals_found = [
+                        (sig_type, details)
+                        for sig_type, details in signals_found
+                        if sig_type in allowed_set
+                    ]
+                    for sig_type, details in raw_signals_found:
+                        if sig_type not in allowed_set:
+                            self._audit(
+                                action='lane_race',
+                                timestamp=now_ts,
+                                symbol=symbol,
+                                candidate_signal_type=sig_type,
+                                selected_signal_type=None,
+                                suppressed_by='allowed_signal_types',
+                                block_reason=(
+                                    f"{sig_type} not in "
+                                    f"{','.join(sorted(allowed_set))}"
+                                ),
+                                baseline_match_key=f"{symbol}|{audit_diag.get('signal_candle_time')}",
+                                candidate_signal_side=details.get('side'),
+                            )
+
                 if not signals_found:
                     logger.debug(f"{symbol}: no signals (market OK: {market_reason})")
                     self._audit(
@@ -255,6 +283,24 @@ class SignalScanner:
                 best_type, signal_details = signals_found[0]
                 logger.info(f"{symbol}: signals detected [{all_sigs}]")
                 signal_side = signal_details['side']
+                selected_race_vs = ','.join(
+                    sig_type for sig_type, _ in signals_found if sig_type != best_type
+                )
+                for sig_type, details in signals_found:
+                    self._audit(
+                        action='lane_race',
+                        timestamp=now_ts,
+                        symbol=symbol,
+                        candidate_signal_type=sig_type,
+                        selected_signal_type=best_type,
+                        suppressed_by='priority' if sig_type != best_type else None,
+                        won_race_vs=selected_race_vs if sig_type == best_type else None,
+                        same_symbol_cooldown_block=False,
+                        position_slot_block=False,
+                        block_reason=None if sig_type == best_type else f"priority:{best_type}",
+                        baseline_match_key=f"{symbol}|{audit_diag.get('signal_candle_time')}",
+                        candidate_signal_side=details.get('side'),
+                    )
 
                 # Direction filter
                 trading_dir = Config.TRADING_DIRECTION.lower()
@@ -447,36 +493,88 @@ class SignalScanner:
                         continue
 
                     audit_diag.update(arbiter_snapshot.audit_fields())
-                    allowed, arbiter_reason = bot.regime_arbiter.can_enter(
-                        arbiter_snapshot,
-                        signal_side,
-                    )
-                    if not allowed:
-                        logger.info(
-                            f"{symbol}: skip (arbiter {arbiter_snapshot.label} "
-                            f"conf={arbiter_snapshot.confidence:.2f} reason={arbiter_reason})"
+                    router_enabled = getattr(Config, 'REGIME_ROUTER_ENABLED', False)
+                    if (
+                        not router_enabled
+                        and getattr(Config, 'REGIME_ROUTER_TRACE_ENABLED', False)
+                    ):
+                        router_trace = bot.regime_router.route(
+                            arbiter_snapshot,
+                            signal_type=best_type,
+                            signal_side=signal_side,
                         )
-                        reject_diag = dict(audit_diag)
-                        reject_diag['arbiter_reason'] = arbiter_reason
-                        TelegramNotifier.notify_arbiter_block(symbol, {
-                            'signal_type': best_type,
-                            'side': signal_side,
-                            'signal_tier': signal_tier,
-                            'arbiter_label': arbiter_snapshot.label,
-                            'arbiter_confidence': arbiter_snapshot.confidence,
-                            'arbiter_reason': arbiter_reason,
-                            'market_regime': arbiter_snapshot.label,
-                        })
-                        self._audit(
-                            timestamp=now_ts, symbol=symbol,
-                            stage='post_filter', reject_reason='regime_arbiter_blocked',
-                            signal_type=best_type, signal_side=signal_side,
-                            signal_tier=signal_tier,
-                            regime=arbiter_snapshot.label,
-                            detail=arbiter_reason,
-                            **reject_diag,
+                        audit_diag.update(router_trace.audit_fields())
+
+                    if router_enabled:
+                        router_decision = bot.regime_router.route(
+                            arbiter_snapshot,
+                            signal_type=best_type,
+                            signal_side=signal_side,
                         )
-                        continue
+                        audit_diag.update(router_decision.audit_fields())
+                        if not router_decision.allowed:
+                            logger.info(
+                                f"{symbol}: skip (router {arbiter_snapshot.label} "
+                                f"conf={arbiter_snapshot.confidence:.2f} "
+                                f"reason={router_decision.reason})"
+                            )
+                            reject_diag = dict(audit_diag)
+                            TelegramNotifier.notify_arbiter_block(symbol, {
+                                'signal_type': best_type,
+                                'side': signal_side,
+                                'signal_tier': signal_tier,
+                                'arbiter_label': arbiter_snapshot.label,
+                                'arbiter_confidence': arbiter_snapshot.confidence,
+                                'arbiter_reason': router_decision.reason,
+                                'market_regime': arbiter_snapshot.label,
+                            })
+                            self._audit(
+                                timestamp=now_ts, symbol=symbol,
+                                stage='post_filter', reject_reason='regime_router_blocked',
+                                signal_type=best_type, signal_side=signal_side,
+                                signal_tier=signal_tier,
+                                regime=arbiter_snapshot.label,
+                                detail=router_decision.reason,
+                                **reject_diag,
+                            )
+                            continue
+                        signal_details['_router_strategy_name'] = router_decision.selected_strategy
+                        signal_details['router_selected_strategy'] = router_decision.selected_strategy
+                        signal_details['router_reason'] = router_decision.reason
+                        signal_details['router_policy'] = router_decision.policy
+                        arbiter_reason = router_decision.reason
+                    else:
+                        allowed, arbiter_reason = bot.regime_arbiter.can_enter(
+                            arbiter_snapshot,
+                            signal_side,
+                        )
+                        if not allowed:
+                            logger.info(
+                                f"{symbol}: skip (arbiter {arbiter_snapshot.label} "
+                                f"conf={arbiter_snapshot.confidence:.2f} reason={arbiter_reason})"
+                            )
+                            reject_diag = dict(audit_diag)
+                            reject_diag['arbiter_reason'] = arbiter_reason
+                            TelegramNotifier.notify_arbiter_block(symbol, {
+                                'signal_type': best_type,
+                                'side': signal_side,
+                                'signal_tier': signal_tier,
+                                'arbiter_label': arbiter_snapshot.label,
+                                'arbiter_confidence': arbiter_snapshot.confidence,
+                                'arbiter_reason': arbiter_reason,
+                                'market_regime': arbiter_snapshot.label,
+                            })
+                            self._audit(
+                                timestamp=now_ts, symbol=symbol,
+                                stage='post_filter', reject_reason='regime_arbiter_blocked',
+                                signal_type=best_type, signal_side=signal_side,
+                                signal_tier=signal_tier,
+                                regime=arbiter_snapshot.label,
+                                detail=arbiter_reason,
+                                **reject_diag,
+                            )
+                            continue
+
                     signal_details['arbiter_label'] = arbiter_snapshot.label
                     signal_details['arbiter_confidence'] = arbiter_snapshot.confidence
                     signal_details['arbiter_reason'] = arbiter_reason
@@ -499,6 +597,9 @@ class SignalScanner:
                     regime=regime_label, btc_trend=btc_trend_label,
                     **audit_diag,
                 )
+
+                if getattr(Config, 'BACKTEST_DRY_COUNT_ONLY', False):
+                    continue
 
                 bot._execute_trade(symbol, signal_details, best_type, tier_multiplier, df_signal)
 

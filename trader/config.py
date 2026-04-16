@@ -238,6 +238,9 @@ class Config:
     MACRO_OVERLAY_ENABLED = False
     MACRO_STALLED_SIZE_MULT = 0.0
     MACRO_WEEKLY_EMA_SPREAD_THRESHOLD = 0.015
+    REGIME_ROUTER_ENABLED = False
+    REGIME_ROUTER_POLICY = "v54_fallback_current"
+    REGIME_ROUTER_TRACE_ENABLED = True
 
     # Capital Pool
     GRID_CAPITAL_RATIO = 0.30           # 網格池佔總資金比例

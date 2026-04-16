@@ -76,6 +76,9 @@
     "macro_overlay_enabled": false,
     "macro_stalled_size_mult": 0.0,
     "macro_weekly_ema_spread_threshold": 0.015,
+    "regime_router_enabled": false,
+    "regime_router_policy": "v54_fallback_current",
+    "regime_router_trace_enabled": true,
     "v7_min_signal_tier": "A",
     "signal_strategy_map": {
         "2B": "v54_noscale"

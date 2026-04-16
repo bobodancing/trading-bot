@@ -36,6 +36,7 @@ from trader.indicators.technical import TechnicalAnalysis
 # 風險管理層
 from trader.risk.manager import PrecisionHandler, RiskManager
 from trader.arbiter import RegimeArbiter
+from trader.routing import RegimeRouter
 from trader.regime import RegimeEngine
 from trader.strategies.v8_grid import V8AtrGrid, PoolManager
 # 訂單執行層
@@ -114,6 +115,7 @@ class TradingBot:
         # Grid / Regime system
         self.regime_engine = RegimeEngine()
         self.regime_arbiter = RegimeArbiter()
+        self.regime_router = RegimeRouter()
         self.pool_manager = PoolManager()
         self.grid_engine = V8AtrGrid(
             api_client=self.futures_client,
@@ -694,14 +696,23 @@ class TradingBot:
             if symbol in self.active_trades:
                 return
 
-            # Hard guard: 未映射的 signal_type 不准進場，不 fallback
-            strategy_name = Config.SIGNAL_STRATEGY_MAP.get(signal_type)
-            if strategy_name is None:
-                logger.warning(
-                    f"{symbol}: 拒絕進場 — signal_type={signal_type} "
-                    f"未在 SIGNAL_STRATEGY_MAP 中映射"
-                )
-                return
+            if getattr(Config, 'REGIME_ROUTER_ENABLED', False):
+                strategy_name = signal_details.get('_router_strategy_name')
+                if strategy_name is None:
+                    logger.warning(
+                        f"{symbol}: reject entry - router enabled but no selected strategy "
+                        f"for signal_type={signal_type}"
+                    )
+                    return
+            else:
+                # Hard guard: unmapped signal types are not allowed to fall back.
+                strategy_name = Config.SIGNAL_STRATEGY_MAP.get(signal_type)
+                if strategy_name is None:
+                    logger.warning(
+                        f"{symbol}: reject entry - signal_type={signal_type} "
+                        "is not mapped in SIGNAL_STRATEGY_MAP"
+                    )
+                    return
 
             if Config.V6_DRY_RUN:
                 balance = 10000.0  # Dry run: mock balance
