@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Local runtime state
+performance.db
+*.db-journal
+
+# Market data cache (parquet, large)
+cache/
+
+# Raw backtest output — individual runs, not research artifacts.
+# Whitelist formal research packages (ema_weekend_review_*, etc) below.
+results/*
+!results/ema_weekend_review_*/
+
+# Temp / debug
+.tmp/
+*.log

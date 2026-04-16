@@ -1,0 +1,10 @@
+{
+  "backtest_mode": true,
+  "use_real_bot_config": true,
+  "override_params": {},
+  "initial_balance": 10000,
+  "fee_rate": 0.0004,
+  "output_folder": "results",
+  "warmup_bars": 100,
+  "scan_interval_hours": 1
+}
