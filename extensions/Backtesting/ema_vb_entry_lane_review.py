@@ -46,6 +46,14 @@ RUN_MATRIX = {
     "2B_EMA_VB": ["2B", "EMA_PULLBACK", "VOLUME_BREAKOUT"],
 }
 
+MATRIX_REQUIRED_FILES = (
+    "summary.json",
+    "trades.csv",
+    "signal_audit_summary.json",
+    "signal_entries.csv",
+    "lane_race_audit.csv",
+)
+
 RUNTIME_PARITY_OVERRIDES = {
     "V7_MIN_SIGNAL_TIER": "A",
     "REGIME_ARBITER_ENABLED": True,
@@ -244,6 +252,37 @@ def _load_run_trades(output_dir: Path, run_id: str) -> pd.DataFrame:
         df["window"] = window
         frames.append(df)
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
+
+def _validate_matrix_completeness(output_dir: Path) -> list[dict]:
+    missing = []
+    for run_id in RUN_MATRIX:
+        for window in WINDOWS:
+            cell = output_dir / run_id / window
+            missing_files = [
+                name for name in MATRIX_REQUIRED_FILES
+                if not (cell / name).exists()
+            ]
+            if missing_files:
+                missing.append({
+                    "run_id": run_id,
+                    "window": window,
+                    "missing_files": missing_files,
+                })
+    return missing
+
+
+def _collect_backtest_run_errors(output_dir: Path) -> list[dict]:
+    errors = []
+    for run_id in RUN_MATRIX:
+        for window in WINDOWS:
+            summary = _json_load(output_dir / run_id / window / "summary.json")
+            for error in summary.get("backtest_run_errors") or []:
+                payload = dict(error)
+                payload["run_id"] = run_id
+                payload["window"] = window
+                errors.append(payload)
+    return errors
 
 
 def _matrix_summary(output_dir: Path) -> pd.DataFrame:
@@ -511,6 +550,44 @@ def _candidate_passes(
     return not failures, failures
 
 
+def _validity_warning_lines(
+    incomplete_cells: list[dict],
+    run_errors: list[dict],
+    *,
+    allow_incomplete: bool,
+) -> list[str]:
+    if not incomplete_cells and not run_errors:
+        return []
+
+    lines = [
+        "## Report validity",
+        "",
+        "- Warning: this report is not promotion-eligible; verdict is forced to `NEEDS_SECOND_PASS`.",
+    ]
+    if allow_incomplete:
+        lines.append("- `--allow-incomplete` was used for debug reporting; promotion verdict remains disabled.")
+
+    if incomplete_cells:
+        total_cells = len(RUN_MATRIX) * len(WINDOWS)
+        lines.append(f"- Incomplete matrix: missing {len(incomplete_cells)}/{total_cells} cells.")
+        for cell in incomplete_cells:
+            files = ", ".join(cell["missing_files"])
+            lines.append(f"  - `{cell['run_id']}/{cell['window']}` missing: {files}")
+
+    if run_errors:
+        lines.append(f"- Backtest run errors: {len(run_errors)}.")
+        for error in run_errors:
+            lines.append(
+                "  - "
+                f"`{error.get('run_id')}/{error.get('window')}` "
+                f"{error.get('timestamp')} {error.get('stage')} "
+                f"{error.get('exc_type')}: {error.get('message')}"
+            )
+
+    lines.append("")
+    return lines
+
+
 def _write_tier_count_report(repo_root: Path, output_dir: Path, dry_counts: pd.DataFrame) -> None:
     report_path = repo_root / "reports" / "ema_vb_tier_count_dry_run.md"
     pivot = dry_counts.groupby("lane")[[
@@ -541,7 +618,11 @@ def _write_tier_count_report(repo_root: Path, output_dir: Path, dry_counts: pd.D
     report_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def _write_entry_lane_report(repo_root: Path, output_dir: Path) -> str:
+def _write_entry_lane_report(repo_root: Path, output_dir: Path, *, allow_incomplete: bool = False) -> str:
+    incomplete_cells = _validate_matrix_completeness(output_dir)
+    run_errors = _collect_backtest_run_errors(output_dir)
+    force_second_pass = bool(incomplete_cells or run_errors)
+
     matrix = _matrix_summary(output_dir)
     by_window = _by_window_summary(output_dir)
     by_regime = _by_regime_table(output_dir)
@@ -567,6 +648,9 @@ def _write_entry_lane_report(repo_root: Path, output_dir: Path) -> str:
     else:
         verdict = "NEEDS_SECOND_PASS"
 
+    if force_second_pass:
+        verdict = "NEEDS_SECOND_PASS"
+
     report_path = repo_root / "reports" / "ema_vb_entry_lane_review.md"
     lines = [
         "# EMA/VB Entry Lane Review",
@@ -579,6 +663,11 @@ def _write_entry_lane_report(repo_root: Path, output_dir: Path) -> str:
         "- `RANGING` and `MIXED` windows overlap; aggregate trade counts are deduped by entry time / symbol / signal type.",
         "- Any promotion still requires Ruei decision and second-pass stress windows.",
         "",
+        *_validity_warning_lines(
+            incomplete_cells,
+            run_errors,
+            allow_incomplete=allow_incomplete,
+        ),
         "## Matrix summary",
         "",
         _markdown_table(matrix),
@@ -647,7 +736,7 @@ def _write_tooling_notes(repo_root: Path, output_dir: Path) -> None:
     )
 
 
-def run_plan(*, phase: str, skip_existing: bool, jobs: int) -> None:
+def run_plan(*, phase: str, skip_existing: bool, jobs: int, allow_incomplete: bool = False) -> None:
     output_dir = BACKTEST_ROOT / "results" / "ema_vb_entry_lane_review_20260415"
     output_dir.mkdir(parents=True, exist_ok=True)
     (REPO_ROOT / "reports").mkdir(parents=True, exist_ok=True)
@@ -689,7 +778,11 @@ def run_plan(*, phase: str, skip_existing: bool, jobs: int) -> None:
         if not dry_counts.empty:
             dry_counts.to_csv(output_dir / "tier_count_summary.csv", index=False)
             _write_tier_count_report(REPO_ROOT, output_dir, dry_counts)
-        verdict = _write_entry_lane_report(REPO_ROOT, output_dir)
+        verdict = _write_entry_lane_report(
+            REPO_ROOT,
+            output_dir,
+            allow_incomplete=allow_incomplete,
+        )
         _write_tooling_notes(REPO_ROOT, output_dir)
         print(f"[done] verdict={verdict}")
 
@@ -713,8 +806,18 @@ def main() -> int:
         default=1,
         help="Parallel run/window workers. Use 1 for serial execution.",
     )
+    parser.add_argument(
+        "--allow-incomplete",
+        action="store_true",
+        help="Write a debug report even when matrix artifacts are incomplete; verdict remains NEEDS_SECOND_PASS.",
+    )
     args = parser.parse_args()
-    run_plan(phase=args.phase, skip_existing=args.skip_existing, jobs=max(1, args.jobs))
+    run_plan(
+        phase=args.phase,
+        skip_existing=args.skip_existing,
+        jobs=max(1, args.jobs),
+        allow_incomplete=args.allow_incomplete,
+    )
     return 0
 
 
