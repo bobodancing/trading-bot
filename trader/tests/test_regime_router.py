@@ -258,3 +258,21 @@ def test_scanner_router_disabled_keeps_legacy_can_enter(mock_bot, monkeypatch):
 
     mock_bot.regime_arbiter.can_enter.assert_called_once()
     mock_bot._execute_trade.assert_not_called()
+
+
+def test_scanner_router_trace_logs_when_disabled(mock_bot, monkeypatch, caplog):
+    monkeypatch.setattr(Config, "REGIME_ROUTER_ENABLED", False)
+    monkeypatch.setattr(Config, "REGIME_ROUTER_TRACE_ENABLED", True)
+    mock_bot.regime_arbiter.can_enter = MagicMock(return_value=(True, "legacy_allow"))
+    mock_bot.regime_router = RegimeRouter()
+
+    patches = _patch_scanner_to_emit_2b(mock_bot, monkeypatch)
+    with caplog.at_level("INFO", logger="trader.signal_scanner"):
+        with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5]:
+            mock_bot.signal_scanner.scan_for_signals()
+
+    assert "ETH/USDT: router_trace signal=2B side=LONG" in caplog.text
+    assert "allowed=True" in caplog.text
+    assert "strategy=v54_noscale" in caplog.text
+    mock_bot.regime_arbiter.can_enter.assert_called_once()
+    mock_bot._execute_trade.assert_called_once()
