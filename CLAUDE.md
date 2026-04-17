@@ -141,6 +141,8 @@ reports\ema_vb_tier_count_dry_run.md
 
 要 commit 前先跟 Ruei 對齊要進哪些、要分幾個 commit。
 
+**Backtesting 歷史斷點**：環境拆分（`19a6f1a chore(repo): split feat-regime-router into standalone folder`）時把 `extensions/Backtesting/.git/` flatten 掉，丟掉原 Backtesting repo 約 42 個 commit 的歷史。要回溯那段改動只能從 Ruei 手上其他機器 / 備份找，本 repo `git log -- extensions/Backtesting/` 看不到拆分前的軌跡。
+
 ## Safety Boundaries
 
 絕對不要做，除非 Ruei 明講：
