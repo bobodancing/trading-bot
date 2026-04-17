@@ -21,6 +21,7 @@ RUNTIME_LABELS = {
     "UNKNOWN",
 }
 FREEZE_LABELS = {"SQUEEZE", "NEUTRAL", "UNKNOWN"}
+TREND_LABELS = {"TRENDING_UP", "TRENDING_DOWN"}
 DEFAULT_POLICY = "v54_fallback_current"
 
 
@@ -112,6 +113,10 @@ class RegimeRouter:
             reason = getattr(snapshot, "reason", None) or f"{label.lower()}_freeze_new_entries"
             return self._block(snapshot, signal_type, signal_side, reason)
 
+        macro_reason = self._macro_block(snapshot, signal_side)
+        if macro_reason is not None:
+            return self._block(snapshot, signal_type, signal_side, macro_reason)
+
         candidates = sorted(
             (
                 route
@@ -170,6 +175,23 @@ class RegimeRouter:
                                 f"{existing},{route.strategy_name}"
                             )
                         seen[key] = route.strategy_name
+
+    @staticmethod
+    def _macro_block(snapshot, signal_side: str) -> Optional[str]:
+        if not getattr(Config, "MACRO_OVERLAY_ENABLED", False):
+            return None
+
+        if getattr(snapshot, "label", "UNKNOWN") not in TREND_LABELS:
+            return None
+
+        macro_state = getattr(snapshot, "macro_state", None) or "UNKNOWN"
+        if macro_state in {"UNKNOWN", "MACRO_STALLED"}:
+            return f"macro_overlay_blocked:{macro_state.lower()}"
+        if macro_state == "MACRO_BULL" and signal_side == "SHORT":
+            return "macro_overlay_blocked:bull_blocks_short"
+        if macro_state == "MACRO_BEAR" and signal_side == "LONG":
+            return "macro_overlay_blocked:bear_blocks_long"
+        return None
 
     def _block(self, snapshot, signal_type: str, signal_side: str, reason: str) -> RouterDecision:
         return RouterDecision(

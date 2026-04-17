@@ -7,14 +7,20 @@ from trader.config import Config
 from trader.routing import RegimeRouter, StrategyRoute
 
 
-def _snapshot(label: str, *, entry_allowed: bool = True, confidence: float = 0.85):
+def _snapshot(
+    label: str,
+    *,
+    entry_allowed: bool = True,
+    confidence: float = 0.85,
+    macro_state: str = "DISABLED",
+):
     return RegimeSnapshot(
         label=label,
         confidence=confidence,
         direction="LONG" if label == "TRENDING_UP" else None,
         source_regime="TRENDING" if label.startswith("TRENDING") else label,
         detected=label,
-        macro_state="DISABLED",
+        macro_state=macro_state,
         entry_allowed=entry_allowed,
         reason="clean_trend" if entry_allowed else f"{label.lower()}_freeze",
     )
@@ -170,6 +176,58 @@ def test_router_refuses_ambiguous_same_priority():
         assert "ambiguous route priority" in str(exc)
     else:
         raise AssertionError("same-priority duplicate route should fail closed")
+
+
+def test_router_blocks_macro_stalled(monkeypatch):
+    monkeypatch.setattr(Config, "MACRO_OVERLAY_ENABLED", True)
+
+    decision = RegimeRouter().route(
+        _snapshot("TRENDING_UP", macro_state="MACRO_STALLED"),
+        signal_type="2B",
+        signal_side="LONG",
+    )
+
+    assert decision.allowed is False
+    assert decision.reason == "macro_overlay_blocked:macro_stalled"
+
+
+def test_router_blocks_macro_bull_short(monkeypatch):
+    monkeypatch.setattr(Config, "MACRO_OVERLAY_ENABLED", True)
+
+    decision = RegimeRouter().route(
+        _snapshot("TRENDING_UP", macro_state="MACRO_BULL"),
+        signal_type="2B",
+        signal_side="SHORT",
+    )
+
+    assert decision.allowed is False
+    assert decision.reason == "macro_overlay_blocked:bull_blocks_short"
+
+
+def test_router_blocks_macro_bear_long(monkeypatch):
+    monkeypatch.setattr(Config, "MACRO_OVERLAY_ENABLED", True)
+
+    decision = RegimeRouter().route(
+        _snapshot("TRENDING_DOWN", macro_state="MACRO_BEAR"),
+        signal_type="2B",
+        signal_side="LONG",
+    )
+
+    assert decision.allowed is False
+    assert decision.reason == "macro_overlay_blocked:bear_blocks_long"
+
+
+def test_router_ignores_macro_when_overlay_disabled(monkeypatch):
+    monkeypatch.setattr(Config, "MACRO_OVERLAY_ENABLED", False)
+
+    decision = RegimeRouter().route(
+        _snapshot("TRENDING_UP", macro_state="MACRO_STALLED"),
+        signal_type="2B",
+        signal_side="LONG",
+    )
+
+    assert decision.allowed is True
+    assert decision.selected_strategy == "v54_noscale"
 
 
 def test_scanner_router_enabled_does_not_call_can_enter(mock_bot, monkeypatch):
