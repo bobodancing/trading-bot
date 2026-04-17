@@ -268,10 +268,14 @@ class BacktestResult:
     config: BacktestConfig
     summary: dict = field(default_factory=dict)
     signal_audit: Optional[object] = None  # SignalAuditCollector when available
+    backtest_run_errors: List[dict] = field(default_factory=list)
 
     def __post_init__(self):
         if not self.summary:
             self.summary = self._calc_summary()
+        errors = list(self.backtest_run_errors or [])
+        self.summary["backtest_run_errors"] = errors
+        self.summary["backtest_run_error_count"] = len(errors)
 
     def _calc_summary(self) -> dict:
         if not self.trades:
@@ -592,6 +596,7 @@ class BacktestEngine:
             strategy_map = STRATEGY_PRESETS.get(cfg.strategy)
             pm_registry: dict = {}
             regime_registry: dict = {}
+            backtest_run_errors: List[dict] = []
             audit = SignalAuditCollector()
             bot = create_backtest_bot(tse, mock_engine, effective_overrides)
 
@@ -615,6 +620,17 @@ class BacktestEngine:
             bot.perf_db.record_trade = _collect_trade
 
             Config.SYMBOLS = cfg.symbols
+
+            def _record_run_error(stage: str, ts, exc: Exception) -> None:
+                payload = {
+                    "timestamp": str(ts),
+                    "symbol": "*ALL*",
+                    "stage": stage,
+                    "exc_type": type(exc).__name__,
+                    "message": str(exc),
+                }
+                backtest_run_errors.append(payload)
+                logger.warning("%s error at %s: %s", stage, ts, exc)
 
             all_ts = tse.get_1h_timestamps(cfg.symbols)
             if verbose:
@@ -652,7 +668,7 @@ class BacktestEngine:
                 try:
                     bot.scan_for_signals()
                 except Exception as e:
-                    logger.debug(f"scan_for_signals error at {ts}: {e}")
+                    _record_run_error("scan_for_signals", ts, e)
 
                 _apply_strategy_map(bot.active_trades, strategy_map, pm_registry)
                 _assign_entry_regime(
@@ -664,7 +680,7 @@ class BacktestEngine:
                 try:
                     bot.monitor_positions()
                 except Exception as e:
-                    logger.debug(f"monitor_positions error at {ts}: {e}")
+                    _record_run_error("monitor_positions", ts, e)
 
                 # d) funding rate 結算（00:00, 08:00, 16:00 UTC）
                 if ts.hour in (0, 8, 16) and ts.minute == 0:
@@ -715,6 +731,7 @@ class BacktestEngine:
                 equity_curve=equity_curve,
                 config=cfg,
                 signal_audit=audit,
+                backtest_run_errors=backtest_run_errors,
             )
 
     def run(self) -> BacktestResult:

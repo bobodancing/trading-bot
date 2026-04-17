@@ -329,3 +329,48 @@ def test_effective_overrides_add_backtest_signal_allowlist_and_v54_map():
         "EMA_PULLBACK": "v54_noscale",
         "VOLUME_BREAKOUT": "v54_noscale",
     }
+
+
+def test_backtest_loop_records_scanner_exception(monkeypatch):
+    import backtest_engine as engine_mod
+    from data_loader import BacktestDataLoader
+    from funding_loader import FundingLoader
+
+    df = make_fake_df(5)
+    monkeypatch.setattr(BacktestDataLoader, "get_data", lambda self, *a, **kw: df)
+    monkeypatch.setattr(FundingLoader, "get_funding_rates", lambda self, *a, **kw: pd.Series(dtype=float))
+
+    calls = {"scan": 0}
+
+    def scan_for_signals():
+        calls["scan"] += 1
+        if calls["scan"] == 1:
+            raise RuntimeError("scanner boom")
+
+    fake_bot = SimpleNamespace(
+        active_trades={},
+        regime_engine=None,
+        perf_db=SimpleNamespace(),
+        scan_for_signals=scan_for_signals,
+        monitor_positions=lambda: None,
+        _update_btc_regime_context=lambda: {
+            "regime": "TRENDING",
+            "direction": "LONG",
+            "candle_time": "2026-01-01T00:00:00+00:00",
+            "reason": "test",
+        },
+    )
+    monkeypatch.setattr(engine_mod, "create_backtest_bot", lambda *a, **kw: fake_bot)
+
+    config = BacktestConfig(
+        symbols=["BTC/USDT"],
+        start="2026-01-01",
+        end="2026-01-02",
+        warmup_bars=0,
+    )
+    result = BacktestEngine(config).run_single(verbose=False)
+
+    assert result.summary["backtest_run_error_count"] == 1
+    assert result.summary["backtest_run_errors"][0]["stage"] == "scan_for_signals"
+    assert result.summary["backtest_run_errors"][0]["exc_type"] == "RuntimeError"
+    assert "scanner boom" in result.summary["backtest_run_errors"][0]["message"]
