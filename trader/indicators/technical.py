@@ -93,6 +93,8 @@ class TechnicalAnalysis:
     @staticmethod
     def extract_adx_series(df: pd.DataFrame, length: int = 14) -> Optional[pd.Series]:
         """安全提取 ADX Series"""
+        if 'adx' in df.columns:
+            return df['adx']
         adx_data = _adx(df['high'], df['low'], df['close'], length=length)
         if adx_data is None or adx_data.empty:
             return None
@@ -120,6 +122,8 @@ class TechnicalAnalysis:
 
         df['ema_fast'] = _ema(df['close'], length=Config.EMA_PULLBACK_FAST)
         df['ema_slow'] = _ema(df['close'], length=Config.EMA_PULLBACK_SLOW)
+        df['ema_10'] = _ema(df['close'], length=10)
+        df['ema_20'] = _ema(df['close'], length=20)
 
         adx_series = TechnicalAnalysis.extract_adx_series(df)
         if adx_series is not None:
@@ -359,8 +363,8 @@ class MarketFilter:
                 if current_atr > avg_atr * Config.ATR_SPIKE_MULTIPLIER:
                     return False, f"波動過大 (ATR={current_atr/avg_atr:.1f}x)", False
 
-        ema_10 = _ema(df_trend['close'], length=10)
-        ema_20 = _ema(df_trend['close'], length=20)
+        ema_10 = df_trend['ema_10'] if 'ema_10' in df_trend.columns else _ema(df_trend['close'], length=10)
+        ema_20 = df_trend['ema_20'] if 'ema_20' in df_trend.columns else _ema(df_trend['close'], length=20)
 
         if ema_10 is not None and ema_20 is not None and len(ema_10) > 0 and len(ema_20) > 0:
             if pd.notna(ema_10.iloc[-1]) and pd.notna(ema_20.iloc[-1]) and ema_20.iloc[-1] != 0:

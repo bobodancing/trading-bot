@@ -38,6 +38,9 @@ def test_parity_passes_when_aligned(tmp_path):
         "macro_stalled_size_mult": 0.0,
         "macro_weekly_ema_spread_threshold": 0.015,
         "regime_arbiter_enabled": False,
+        "regime_router_enabled": False,
+        "regime_router_policy": "v54_fallback_current",
+        "regime_router_trace_enabled": True,
         "v7_min_signal_tier": "A",
         "signal_strategy_map": {"2B": "v54_noscale"},
     }), encoding="utf-8")
@@ -52,6 +55,9 @@ def test_parity_passes_when_aligned(tmp_path):
         "MACRO_STALLED_SIZE_MULT": 0.0,
         "MACRO_WEEKLY_EMA_SPREAD_THRESHOLD": 0.015,
         "REGIME_ARBITER_ENABLED": False,
+        "REGIME_ROUTER_ENABLED": False,
+        "REGIME_ROUTER_POLICY": "v54_fallback_current",
+        "REGIME_ROUTER_TRACE_ENABLED": True,
         "V7_MIN_SIGNAL_TIER": "A",
         "SIGNAL_STRATEGY_MAP": {"2B": "v54_noscale"},
     })
