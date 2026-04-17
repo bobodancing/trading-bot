@@ -504,6 +504,13 @@ class SignalScanner:
                             signal_side=signal_side,
                         )
                         audit_diag.update(router_trace.audit_fields())
+                        logger.info(
+                            f"{symbol}: router_trace signal={best_type} side={signal_side} "
+                            f"arbiter={arbiter_snapshot.label} conf={arbiter_snapshot.confidence:.2f} "
+                            f"macro={arbiter_snapshot.macro_state} allowed={router_trace.allowed} "
+                            f"strategy={router_trace.selected_strategy} reason={router_trace.reason} "
+                            f"policy={router_trace.policy}"
+                        )
 
                     if router_enabled:
                         router_decision = bot.regime_router.route(
