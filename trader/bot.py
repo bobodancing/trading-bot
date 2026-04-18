@@ -1247,9 +1247,9 @@ if __name__ == "__main__":
     logging.getLogger().addHandler(_tg_handler)
 
     try:
-        # bot_config.json ??????????????ot.py ??????????????CWD
-        config_path = str(Path(__file__).parent.parent / "bot_config.json")
-        Config.load_from_json(config_path)
+        # Defaults live in trader/config.py; load_secrets only pulls credentials.
+        secrets_path = str(Path(__file__).parent.parent / "secrets.json")
+        Config.load_secrets(secrets_path)
         if args.dry_run:
             Config.DRY_RUN = True  # type: ignore[assignment]
 

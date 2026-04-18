@@ -389,8 +389,9 @@ def _backtest_context(config_overrides: dict):
         and not callable(value)
     }
 
-    # ??? bot_config.json????遴????謚????? live bot ?????
-    Config.load_from_json(str(TRADING_BOT_ROOT / "bot_config.json"))
+    # NOTE: bot_config.json removed; Config class defaults are now runtime truth.
+    # Follow-up: revisit backtest-specific config injection (per-run overrides
+    # already land via config_overrides below).
     _override_keys = set(config_overrides or {})
     _missing_override_keys = {key for key in _override_keys if not hasattr(Config, key)}
     if config_overrides:
