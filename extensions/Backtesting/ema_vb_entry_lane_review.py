@@ -23,6 +23,7 @@ sys.path.insert(0, str(BACKTEST_ROOT))
 sys.path.insert(0, str(REPO_ROOT))
 
 from backtest_engine import BacktestConfig, BacktestEngine  # noqa: E402
+from config_presets import explicit_symbol_universe, runtime_parity  # noqa: E402
 from report_generator import ReportGenerator  # noqa: E402
 
 
@@ -54,27 +55,16 @@ MATRIX_REQUIRED_FILES = (
     "lane_race_audit.csv",
 )
 
-RUNTIME_PARITY_OVERRIDES = {
-    "V7_MIN_SIGNAL_TIER": "A",
-    "REGIME_ARBITER_ENABLED": True,
-    "ARBITER_NEUTRAL_THRESHOLD": 0.5,
-    "ARBITER_NEUTRAL_EXIT_THRESHOLD": 0.5,
-    "ARBITER_NEUTRAL_MIN_BARS": 1,
-    "MACRO_OVERLAY_ENABLED": False,
-    "BTC_TREND_FILTER_ENABLED": True,
-    "BTC_COUNTER_TREND_MULT": 0.0,
-    "USE_SCANNER_SYMBOLS": False,
-    "REGIME_ROUTER_ENABLED": False,
-    "REGIME_ROUTER_TRACE_ENABLED": True,
-    "TELEGRAM_ENABLED": False,
-}
-
 
 @dataclass(frozen=True)
 class RunOutput:
     run_id: str
     window: str
     path: Path
+
+
+def _runtime_parity_run_overrides() -> dict:
+    return explicit_symbol_universe(runtime_parity())
 
 
 def _json_load(path: Path) -> dict:
@@ -120,7 +110,7 @@ def _run_backtest(
         allowed_signal_types=allowed_signal_types,
         dry_count_only=dry_count_only,
         precompute_indicators=True,
-        config_overrides=RUNTIME_PARITY_OVERRIDES,
+        config_overrides=_runtime_parity_run_overrides(),
     )
     print(f"[run] {run_id}/{window} lanes={','.join(allowed_signal_types)} dry={dry_count_only}")
     result = BacktestEngine(cfg).run_single(verbose=False)
@@ -136,7 +126,7 @@ def _run_backtest(
         "allowed_signal_types": allowed_signal_types,
         "dry_count_only": dry_count_only,
         "precompute_indicators": cfg.precompute_indicators,
-        "config_overrides": RUNTIME_PARITY_OVERRIDES,
+        "config_overrides": _runtime_parity_run_overrides(),
         "fee_rate": cfg.fee_rate,
         "initial_balance": cfg.initial_balance,
         "warmup_bars": cfg.warmup_bars,
@@ -658,7 +648,7 @@ def _write_entry_lane_report(repo_root: Path, output_dir: Path, *, allow_incompl
         "## Executive read",
         "",
         f"- Verdict: `{verdict}`.",
-        "- Runtime EMA/VB remains off; this report does not modify `bot_config.json`.",
+        "- Runtime EMA/VB remains off; this report does not modify runtime `Config` defaults.",
         "- Matrix used V54 exits for all tested lanes under runtime-parity filters.",
         "- `RANGING` and `MIXED` windows overlap; aggregate trade counts are deduped by entry time / symbol / signal type.",
         "- Any promotion still requires Ruei decision and second-pass stress windows.",
@@ -708,7 +698,7 @@ def _write_entry_lane_report(repo_root: Path, output_dir: Path, *, allow_incompl
         "",
         "- Symbols: `BTC/USDT ETH/USDT SOL/USDT BNB/USDT XRP/USDT DOGE/USDT`.",
         "- Fee rate: `0.0004`; initial balance: `10000`; warmup bars: `100`.",
-        "- Runtime parity: Tier A, neutral arbiter on, macro overlay off, BTC trend filter on, counter-trend multiplier 0.",
+        "- Runtime parity: `runtime_parity()` preset, with scanner JSON disabled only for explicit backtest symbols.",
         f"- Results root: `{output_dir}`.",
     ])
 
@@ -725,7 +715,7 @@ def _write_tooling_notes(repo_root: Path, output_dir: Path) -> None:
         "- Added backtest-only `dry_count_only` support so dry runs can count final candidates without opening positions.",
         "- Added optional precomputed-indicator replay for the review harness to avoid recalculating the same indicator windows on every 1H scan.",
         "- Added `lane_race_audit.csv` with priority and allowlist suppression fields.",
-        "- The tooling sets a backtest-only `SIGNAL_STRATEGY_MAP` from `--strategy v54`; runtime `bot_config.json` is not edited.",
+        "- The tooling uses `runtime_parity()` plus per-run `allowed_signal_types`; runtime `Config` defaults are not edited.",
         "- Dry count `market_filter_pass_count` is post-market by construction because signal detectors run after market filter in the runtime scanner.",
         f"- Review harness: `{BACKTEST_ROOT / 'ema_vb_entry_lane_review.py'}`.",
         f"- Results root: `{output_dir}`.",

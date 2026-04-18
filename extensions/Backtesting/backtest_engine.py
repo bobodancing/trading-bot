@@ -47,6 +47,7 @@ from time_series_engine import TimeSeriesEngine
 from mock_components import MockOrderEngine
 from backtest_bot import create_backtest_bot
 from bot_compat import get_config_class, get_datetime_patch_modules
+from config_presets import validate_backtest_overrides
 from signal_audit import SignalAuditCollector
 
 logger = logging.getLogger(__name__)
@@ -197,7 +198,9 @@ class BacktestConfig:
     initial_balance: float = 10000.0
     fee_rate: float = 0.0004
     warmup_bars: int = 100
+    strategy: Optional[str] = None
     enabled_strategies: List[str] = field(default_factory=list)
+    allowed_signal_types: Optional[List[str]] = None
     dry_count_only: bool = False
     precompute_indicators: bool = False
     config_overrides: dict = field(default_factory=dict)
@@ -268,7 +271,7 @@ class BacktestResult:
         trades_per_week = len(pnls) / max(duration_weeks, 1)
 
         return {
-            "strategy": ",".join(self.config.enabled_strategies) or "none",
+            "strategy": ",".join(self.config.enabled_strategies) or self.config.strategy or "none",
             "total_trades": len(pnls),
             "win_rate": round(win_rate, 4),
             "profit_factor": round(pf, 4),
@@ -370,7 +373,7 @@ def _record_regime_probe(bot, timestamp, *, grid_enabled: bool) -> None:
 
 
 @contextmanager
-def _backtest_context(config_overrides: dict):
+def _backtest_context(config_overrides: dict | None, *, use_precomputed_indicators: bool = False):
     """
     Context manager: ?豯?? Config ????+ datetime monkey-patch??
     ??????????????????????????run_single() ?????撓?????
@@ -389,14 +392,11 @@ def _backtest_context(config_overrides: dict):
         and not callable(value)
     }
 
-    # NOTE: bot_config.json removed; Config class defaults are now runtime truth.
-    # Follow-up: revisit backtest-specific config injection (per-run overrides
-    # already land via config_overrides below).
-    _override_keys = set(config_overrides or {})
-    _missing_override_keys = {key for key in _override_keys if not hasattr(Config, key)}
+    config_overrides = validate_backtest_overrides(config_overrides, config_cls=Config)
     if config_overrides:
         for k, v in config_overrides.items():
             setattr(Config, k, v)
+    Config.validate()
 
     # ????????
     _orig_symbols = Config.SYMBOLS
@@ -415,7 +415,7 @@ def _backtest_context(config_overrides: dict):
             module.datetime = _BacktestDatetime
     _sim_ts_container[0] = None
 
-    if getattr(Config, "BACKTEST_USE_PRECOMPUTED_INDICATORS", False):
+    if use_precomputed_indicators:
         required_indicator_columns = {
             "ema_trend", "vol_ma", "atr", "ema_fast", "ema_slow", "ema_10", "ema_20", "adx"
         }
@@ -432,9 +432,6 @@ def _backtest_context(config_overrides: dict):
     finally:
         for key, value in _orig_config_attrs.items():
             setattr(Config, key, value)
-        for key in _missing_override_keys:
-            if hasattr(Config, key):
-                delattr(Config, key)
         for module in datetime_modules:
             if module.__name__ in _orig_datetimes:
                 module.datetime = _orig_datetimes[module.__name__]
@@ -492,17 +489,7 @@ class BacktestEngine:
         overrides["ENABLED_STRATEGIES"] = enabled
         overrides["STRATEGY_CATALOG"] = catalog
 
-        if cfg.dry_count_only:
-            overrides["BACKTEST_DRY_COUNT_ONLY"] = True
-        else:
-            overrides.pop("BACKTEST_DRY_COUNT_ONLY", None)
-
-        if cfg.precompute_indicators:
-            overrides["BACKTEST_USE_PRECOMPUTED_INDICATORS"] = True
-        else:
-            overrides.pop("BACKTEST_USE_PRECOMPUTED_INDICATORS", None)
-
-        return overrides
+        return validate_backtest_overrides(overrides, config_cls=Config)
 
     def run_single(self, verbose: bool = False) -> BacktestResult:
         """
@@ -519,7 +506,10 @@ class BacktestEngine:
 
         effective_overrides = self._effective_config_overrides(cfg)
 
-        with _backtest_context(effective_overrides) as Config:
+        with _backtest_context(
+            effective_overrides,
+            use_precomputed_indicators=cfg.precompute_indicators,
+        ) as Config:
             data = self._load_data(cfg)
             if cfg.precompute_indicators:
                 self._precompute_indicators(data)
@@ -536,7 +526,12 @@ class BacktestEngine:
             regime_registry: dict = {}
             backtest_run_errors: List[dict] = []
             audit = SignalAuditCollector()
-            bot = create_backtest_bot(tse, mock_engine, effective_overrides)
+            bot = create_backtest_bot(
+                tse,
+                mock_engine,
+                effective_overrides,
+                allowed_signal_types=cfg.allowed_signal_types,
+            )
 
             # Inject signal audit collector
             bot._signal_audit = audit
@@ -689,6 +684,12 @@ if __name__ == "__main__":
     parser.add_argument("--end",   default=None, help="End date YYYY-MM-DD")
     parser.add_argument("--balance", type=float, default=10000.0)
     parser.add_argument("--strategies", nargs="+", default=[], help="Enabled strategy plugin ids")
+    parser.add_argument(
+        "--allowed-signal-types",
+        nargs="+",
+        default=None,
+        help="Backtest-only allowlist for emitted signal/strategy ids",
+    )
     parser.add_argument("--output", default="results", help="Output directory")
     parser.add_argument(
         "--dry-count-only",
@@ -709,6 +710,7 @@ if __name__ == "__main__":
         end=end,
         initial_balance=args.balance,
         enabled_strategies=args.strategies,
+        allowed_signal_types=args.allowed_signal_types,
         dry_count_only=args.dry_count_only,
         precompute_indicators=args.precompute_indicators,
     )

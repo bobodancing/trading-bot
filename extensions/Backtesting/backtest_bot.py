@@ -5,7 +5,6 @@ BacktestBot factory ????conftest.py patch 璅∪?撱箇? TradingBot runtime嚗?
 import os
 import sys
 import tempfile
-import logging
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -40,14 +39,17 @@ from trader.risk.manager import PrecisionHandler
 from time_series_engine import TimeSeriesEngine
 from mock_components import MockDataProvider, MockOrderEngine
 from bot_compat import get_bot_class, get_config_class
+from config_presets import validate_backtest_overrides
+from signal_type_filter import install_backtest_signal_type_filter
 
-logging.disable(logging.CRITICAL)  # ??葫?????bot log 頛詨?
 
 
 def create_backtest_bot(
     tse: TimeSeriesEngine,
     mock_engine: MockOrderEngine,
     config_overrides: dict = None,
+    *,
+    allowed_signal_types=None,
 ) -> object:
     """
     撱箇?摰?? mock ??TradingBot runtime嚗???澆?皜研??
@@ -74,9 +76,11 @@ def create_backtest_bot(
     Config = get_config_class()
 
     # 憟?? config overrides
+    config_overrides = validate_backtest_overrides(config_overrides, config_cls=Config)
     if config_overrides:
         for k, v in config_overrides.items():
             setattr(Config, k, v)
+    Config.validate()
 
     mock_exchange = MagicMock()
     mock_exchange.load_markets.return_value = {}
@@ -166,6 +170,10 @@ def create_backtest_bot(
     # ??葫?箏???Config.SYMBOLS嚗??霈? scanner JSON
     Config.USE_SCANNER_SYMBOLS = False
 
+    # Backtest replay must never send real Telegram messages; user-provided
+    # TELEGRAM_* overrides are still rejected by the injection contract.
+    Config.TELEGRAM_ENABLED = False
+
     # Mock get_balance() to block all Binance API calls for balance.
     # This lets us set DRY_RUN=False so _execute_trade() creates real
     # PositionManager instances and _handle_close() calls perf_db.record_trade().
@@ -174,5 +182,7 @@ def create_backtest_bot(
     # DRY_RUN must be False so _execute_trade and _handle_close run their
     # full code paths (create PositionManager, call perf_db.record_trade).
     Config.DRY_RUN = False
+
+    install_backtest_signal_type_filter(bot, allowed_signal_types)
 
     return bot
