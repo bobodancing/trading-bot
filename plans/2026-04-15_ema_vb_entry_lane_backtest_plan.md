@@ -10,7 +10,7 @@ Plan source: `projects/trading_bot/.worktrees/feat-grid`
 
 Execution branch / worktree: `projects/trading_bot/.worktrees/feat-regime-router` (`feat/regime-router-contract`)
 
-Backtest workspace: `tools/Backtesting/`
+Backtest workspace: `extensions/Backtesting/`
 
 ## 背景
 
@@ -42,7 +42,7 @@ VOLUME_BREAKOUT -> v54_noscale
    第一輪只跑現有 config shape。不要一邊看結果一邊調 `EMA_PULLBACK_THRESHOLD`、`VOLUME_BREAKOUT_MULT`、tier 門檻或 market filter threshold。
 
 4. **不污染 frozen research folder**  
-   不新增檔案到 `tools/Backtesting/results/ema_weekend_review_20260411/`。新結果放在新的 output folder。
+   不新增檔案到 `extensions/Backtesting/results/ema_weekend_review_20260411/`。新結果放在新的 output folder。
 
 5. **不把 EMA/VB 當成 range solution**  
    EMA/VB 可以增加 trend entry density，但 RANGING / MIXED / SQUEEZE 策略與 arbiter/router track 仍然獨立存在。
@@ -63,7 +63,7 @@ regime_arbiter_enabled = true
 macro_overlay_enabled = false
 ```
 
-`tools/Backtesting/backtest_engine.py` 的 `--strategy v54` 已經有「三種 signal 都接 V54」的 preset 概念：
+`extensions/Backtesting/backtest_engine.py` 的 `--strategy v54` 已經有「三種 signal 都接 V54」的 preset 概念：
 
 ```text
 {"2B": "v54", "EMA_PULLBACK": "v54", "VOLUME_BREAKOUT": "v54"}
@@ -174,7 +174,7 @@ final_candidate_count
 
 ```text
 reports/ema_vb_tier_count_dry_run.md
-tools/Backtesting/results/ema_vb_entry_lane_review_20260415/tier_count_summary.csv
+extensions/Backtesting/results/ema_vb_entry_lane_review_20260415/tier_count_summary.csv
 ```
 
 ## Lane Race / Cooldown Accounting
@@ -211,7 +211,7 @@ baseline_match_key
 
 ## Runtime-Parity Config
 
-第一輪 matrix 預設使用 R5 runtime parity：
+第一輪 matrix 預設使用 `extensions/Backtesting/config_presets.py` 的 `runtime_parity()` preset。preset 只能 copy `trader.config.Config` 既有 defaults，不可另建一份平行 runtime default：
 
 ```text
 v7_min_signal_tier = "A"
@@ -224,9 +224,11 @@ btc_trend_filter_enabled = true
 btc_counter_trend_mult = 0.0
 ```
 
+若某個舊 plan key 在當前 `Config` 不存在，不可在 preset 硬塞動態 attr；需先回 Ruei 對齊 current runtime contract。
+
 報告必須列出使用的 fee / slippage / starting balance / funding 設定，並說明是否與 R5 runtime/backtesting standard 一致。若工具預設值不明，該 run 不可用於 promotion。
 
-如果需要解釋為什麼某條 lane 沒交易，可以加 diagnostic-only run：
+如果需要解釋為什麼某條 lane 沒交易，可以加 diagnostic-only run，使用 `diagnostic_arbiter_off()` preset：
 
 ```text
 regime_arbiter_enabled = false
@@ -239,7 +241,7 @@ regime_arbiter_enabled = false
 新 output root：
 
 ```text
-tools/Backtesting/results/ema_vb_entry_lane_review_20260415/
+extensions/Backtesting/results/ema_vb_entry_lane_review_20260415/
 ```
 
 每個 run/window 至少產出：

@@ -89,9 +89,9 @@ Root 層級：
 `extensions/`（untracked，Ruei 拉進來的工具本體）：
 
 - `extensions/Backtesting/` — 本地 backtest workspace。
-  - `backtest_engine.py`、`backtest_bot.py`、`backtest_config.json`。
+  - `backtest_engine.py`、`backtest_bot.py`、`backtest_config.json`、`config_presets.py`。
   - `data_loader.py`、`funding_loader.py`、`mock_components.py`、`bot_compat.py`、`grid_adapter.py`。
-  - `regime_router_alignment.py`、`regime_router_replay.py`、`trade_replayer.py`。
+  - `regime_router_alignment.py`、`regime_router_replay.py`、`trade_replayer.py`、`signal_type_filter.py`。
   - `signal_audit.py`、`debug_signals.py`、`attribution_analysis.py`、`compare_baselines.py`、`report_generator.py`、`time_series_engine.py`。
   - `cache/`、`results/`（空）、`scripts/`、`tests/`。
 - `extensions/quantDashboard/` — dashboard 工具。

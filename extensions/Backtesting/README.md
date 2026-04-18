@@ -210,7 +210,7 @@ python -m pytest tools/Backtesting/tests/ -v
 
 | ? | ?箏蝑 | 隤芣? |
 |------|---------|------|
-| `live`嚗?閮哨? | 靘璅?bot tree / `bot_config.json` | 蝬剜? live bot 銵嚗ain ??feat-grid ?航銝? |
+| `live`嚗?閮哨? | `trader/config.py` defaults | 蝬剜? live bot 銵嚗ain ??feat-grid ?航銝? |
 | `v54` | V54NoScaleStrategy | ??縑?撥?嗉粥 V54 蝝宏??|
 | `v7` | V7StructureStrategy + V53 fallback | 2B 撘瑕韏?V7嚗MA/VB 韏?V53 |
 | `v6` | V6PyramidStrategy | ??縑?撥?嗉粥 3 畾菜遝??蝯?餈質馱 + ?脣??靽風嚗?|
