@@ -321,8 +321,8 @@ def test_effective_overrides_enable_strategy_runtime_catalog():
     assert overrides["STRATEGY_RUNTIME_ENABLED"] is True
     assert overrides["ENABLED_STRATEGIES"] == ["fixture_long"]
     assert overrides["STRATEGY_CATALOG"]["fixture_long"]["enabled"] is True
-    assert overrides["BACKTEST_DRY_COUNT_ONLY"] is True
-    assert overrides["BACKTEST_USE_PRECOMPUTED_INDICATORS"] is True
+    assert "BACKTEST_DRY_COUNT_ONLY" not in overrides
+    assert "BACKTEST_USE_PRECOMPUTED_INDICATORS" not in overrides
 
 
 def test_backtest_loop_records_scanner_exception(monkeypatch):
