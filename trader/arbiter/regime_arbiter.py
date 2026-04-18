@@ -1,7 +1,7 @@
 """Arbiter-layer regime confidence gate.
 
-This module guards entries before they reach V54. It does not modify
-RegimeEngine thresholds or V54 strategy logic.
+This module guards plugin entries before central execution. It does not modify
+RegimeEngine thresholds or strategy plugin logic.
 """
 
 from __future__ import annotations

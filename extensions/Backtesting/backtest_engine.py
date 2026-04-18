@@ -535,6 +535,8 @@ class BacktestEngine:
 
             # Inject signal audit collector
             bot._signal_audit = audit
+            if cfg.dry_count_only:
+                bot._execute_order_plan = lambda _order_plan: None
 
             # Wire regime transition callback
             if hasattr(bot, 'regime_engine') and bot.regime_engine is not None:

@@ -35,15 +35,11 @@ ALLOWED_BACKTEST_OVERRIDES = {
     "MAX_TOTAL_RISK",
     "MAX_POSITION_PERCENT",
     "MAX_SL_DISTANCE_PCT",
-    # Tier / legacy signal gates retained for compatibility with older plans.
+    # Current Config risk tier multipliers.
     "ENABLE_TIERED_ENTRY",
-    "V7_MIN_SIGNAL_TIER",
     "TIER_A_POSITION_MULT",
     "TIER_B_POSITION_MULT",
     "TIER_C_POSITION_MULT",
-    "SIGNAL_STRATEGY_MAP",
-    "ENABLE_EMA_PULLBACK",
-    "ENABLE_VOLUME_BREAKOUT",
     # Regime, arbiter, and router behavior.
     "REGIME_TIMEFRAME",
     "REGIME_ADX_TRENDING",
@@ -75,8 +71,7 @@ ALLOWED_BACKTEST_OVERRIDES = {
     "ENABLE_GRID_TRADING",
 }
 
-_RUNTIME_PARITY_DEFAULT_KEYS = (
-    "V7_MIN_SIGNAL_TIER",
+_PLUGIN_RUNTIME_DEFAULT_KEYS = (
     "REGIME_ARBITER_ENABLED",
     "ARBITER_NEUTRAL_THRESHOLD",
     "ARBITER_NEUTRAL_EXIT_THRESHOLD",
@@ -91,6 +86,9 @@ _RUNTIME_PARITY_DEFAULT_KEYS = (
     "TIER_A_POSITION_MULT",
     "TIER_B_POSITION_MULT",
     "TIER_C_POSITION_MULT",
+    "STRATEGY_RUNTIME_ENABLED",
+    "ENABLED_STRATEGIES",
+    "STRATEGY_CATALOG",
 )
 
 
@@ -137,36 +135,28 @@ def _existing_defaults(keys: Iterable[str]) -> dict[str, Any]:
     }
 
 
-def runtime_parity() -> dict[str, Any]:
-    """R5-compatible promotion baseline, copied from current Config defaults."""
-    return _existing_defaults(_RUNTIME_PARITY_DEFAULT_KEYS)
+def plugin_runtime_defaults() -> dict[str, Any]:
+    """Current plugin-runtime baseline copied from Config defaults."""
+    return _existing_defaults(_PLUGIN_RUNTIME_DEFAULT_KEYS)
 
 
 def diagnostic_arbiter_off() -> dict[str, Any]:
     """Diagnostic-only overlay for explaining zero-trade arbiter blocks."""
-    overrides = runtime_parity()
+    overrides = plugin_runtime_defaults()
     overrides["REGIME_ARBITER_ENABLED"] = False
     return validate_backtest_overrides(overrides)
 
 
 def explicit_symbol_universe(overrides: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """Use BacktestConfig.symbols instead of scanner JSON for isolated runs."""
-    scoped = dict(runtime_parity() if overrides is None else overrides)
+    scoped = dict(plugin_runtime_defaults() if overrides is None else overrides)
     scoped["USE_SCANNER_SYMBOLS"] = False
     return validate_backtest_overrides(scoped)
 
 
-def lane_allowlist(signal_types: Iterable[str]) -> dict[str, list[str]]:
-    """Return BacktestConfig kwargs for a backtest-only signal-type allowlist."""
-    allowed = [str(item) for item in signal_types]
+def strategy_id_allowlist(strategy_ids: Iterable[str]) -> dict[str, list[str]]:
+    """Return BacktestConfig kwargs for a backtest-only strategy-id allowlist."""
+    allowed = [str(item) for item in strategy_ids]
     if not allowed:
-        raise ValueError("allowed_signal_types must contain at least one signal type")
+        raise ValueError("allowed_signal_types must contain at least one strategy id")
     return {"allowed_signal_types": list(dict.fromkeys(allowed))}
-
-
-def ema_lane_enabled() -> dict[str, list[str]]:
-    return lane_allowlist(["EMA_PULLBACK"])
-
-
-def vb_lane_enabled() -> dict[str, list[str]]:
-    return lane_allowlist(["VOLUME_BREAKOUT"])
