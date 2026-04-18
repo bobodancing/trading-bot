@@ -385,22 +385,22 @@ runtime promotion 不只改 flag，還要同時決定：
 - Telegram / DB / signal audit 是否清楚標記 entry lane
 - scanner multi-lane candidate 是否需要同步調整
 
-## Config Parity Requirement
+## Config Validation Requirement
 
-任何 runtime patch 後都必須跑：
+`bot_config.json` 已移除；runtime config 單一來源是 `trader/config.py`。任何 runtime patch 後都必須跑：
 
 ```bash
-python scripts/config_parity_check.py --critical-only
+python -c "from trader.config import Config; Config.validate()"
 ```
 
-critical count 必須是 0。non-critical warning 可記錄但不阻擋，除非碰到 entry lane 相關 key。
+必須無例外。entry lane 相關 key 的調整仍需經 Ruei 核對。
 
 ## Stop Conditions
 
 Codex / executor 完成第一輪 matrix 和報告後停手。不要自行：
 
 - 開 runtime EMA/VB
-- 修改 `bot_config.json`
+- 修改 `trader/config.py` 的 runtime flag default
 - push
 - restart rwUbuntu services
 - 調整 thresholds

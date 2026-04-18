@@ -61,7 +61,7 @@ class TradingBot:
     """Primary trading bot runtime."""
 
     def __init__(self):
-        self._verify_config_parity()
+        Config.validate()
         self.exchange = self._init_exchange()
         self.data_provider = MarketDataProvider(
             self.exchange,
@@ -130,34 +130,6 @@ class TradingBot:
         self.position_monitor = PositionMonitor(self)
         self.signal_scanner = SignalScanner(self)
         self.strategy_runtime = StrategyRuntime(self)
-
-    @staticmethod
-    def _verify_config_parity():
-        """Fail closed when runtime-critical config file defaults drift."""
-        if os.environ.get("BYPASS_CONFIG_PARITY") == "1":
-            logger.warning("Config parity check bypassed via BYPASS_CONFIG_PARITY=1")
-            return True
-
-        try:
-            from scripts.config_parity_check import compare_config_parity
-        except Exception as e:
-            raise RuntimeError(f"Config parity check unavailable: {e}") from e
-
-        json_path = Path(__file__).parent.parent / "bot_config.json"
-        config_path = Path(__file__).parent / "config.py"
-        result = compare_config_parity(json_path=json_path, config_path=config_path)
-        critical = result.critical_issues
-        if critical:
-            findings = ", ".join(f"{issue.category}:{issue.key}" for issue in critical)
-            raise RuntimeError(f"Config parity check failed: {findings}")
-
-        noncritical_count = len(result.issues)
-        if noncritical_count:
-            logger.warning(
-                "Config parity check found %s non-critical issue(s); see reports/config_parity_*.md",
-                noncritical_count,
-            )
-        return True
 
     def _init_exchange(self):
         """Initialize exchange client."""

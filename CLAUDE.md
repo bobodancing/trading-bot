@@ -1,6 +1,6 @@
 # CLAUDE.md - feat-regime-router 工作守則
 
-Last updated: 2026-04-16。如果這份檔案和 code 衝突，以 code 為準。
+Last updated: 2026-04-18。如果這份檔案和 code 衝突，以 code 為準。
 
 ## 身份與溝通
 
@@ -48,13 +48,13 @@ btc_counter_trend_mult = 0.0
 use_scanner_symbols = true
 ```
 
-信任 runtime config 前，從 repo root 跑：
+Runtime config 的唯一來源是 `trader/config.py`（`Config` class defaults）。信任前從 repo root 跑：
 
 ```bash
-python scripts/config_parity_check.py --critical-only
+python -c "from trader.config import Config; Config.validate()"
 ```
 
-非 critical warning 可能存在。critical 必須為 0。
+Credentials 走 `secrets.json`（repo 外、不入 git），由 `Config.load_secrets()` 載入。
 
 ## 實際資料夾地圖（以 2026-04-16 驗證為準）
 
@@ -62,10 +62,10 @@ Repo root = `C:\Users\user\Documents\tradingbot\feat-regime-router\`
 
 Root 層級：
 
-- `bot_config.json` — runtime config 實檔（注意：在 root，不在 `trader/`）。
+- `secrets.json` — API key / telegram token（untracked；由 `Config.load_secrets()` 載入）。
 - `grid_positions.json` — grid 持倉快照。
 - `requirements.txt` / `requirements-optional.txt`。
-- `trader/`、`scanner/`、`scripts/`、`plans/`、`reports/`、`extensions/`。
+- `trader/`、`scanner/`、`plans/`、`reports/`、`extensions/`。
 
 `trader/`（runtime bot）：
 
@@ -85,10 +85,6 @@ Root 層級：
 
 - `market_scanner.py`、`scanner_config.json`、`README.md`。
 - 廣候選產生器。scanner confirmed signal **不等於** runtime 進場；還要過 market filter / tier / BTC trend / arbiter / cooldown / risk。
-
-`scripts/`：
-
-- `config_parity_check.py` — runtime vs 預期 config 比對器。
 
 `extensions/`（untracked，Ruei 拉進來的工具本體）：
 
@@ -135,8 +131,8 @@ reports\ema_vb_tier_count_dry_run.md
 
 已知本地改動（**不要**順手 revert / clean，這是 Ruei 拆環境的產物）：
 
-- 刪除：`README.md`、`codeReview.md`、`map_generator_v3.py`、`project_structure_map_v3.md`、舊 R0–R5 plans。
-- 修改：`bot_config.json`、`scripts/config_parity_check.py`、`trader/bot.py`、`trader/config.py`、`trader/signal_scanner.py`、`trader/tests/test_config_parity.py`。
+- 刪除：`README.md`、`codeReview.md`、`map_generator_v3.py`、`project_structure_map_v3.md`、舊 R0–R5 plans、`bot_config.json`、`scripts/config_parity_check.py`、`trader/tests/test_config_parity.py`。
+- 修改：`trader/bot.py`、`trader/config.py`、`trader/signal_scanner.py`。
 - Untracked：`extensions/`、`plans/2026-04-15_ema_vb_entry_lane_backtest_plan.md`、`trader/routing/`、`trader/tests/test_regime_router.py`。
 
 要 commit 前先跟 Ruei 對齊要進哪些、要分幾個 commit。
@@ -149,7 +145,7 @@ reports\ema_vb_tier_count_dry_run.md
 
 - 改 core 2B structure 邏輯。
 - 動到 production / testnet 實際交易行為。
-- 開 EMA/VB runtime flag、改 `bot_config.json` 做 live promotion、push、重啟 rwUbuntu service。
+- 開 EMA/VB runtime flag、擅自改 `trader/config.py` 的 runtime default 做 live promotion、push、重啟 rwUbuntu service。
 - 為 EMA/VB lane review 去 patch `v54_noscale`。
 - 破壞 `positions.json` / 持倉持久化的向後相容。
 - Revert / clean 現有本地 git 改動。
@@ -188,7 +184,7 @@ reports\ema_vb_tier_count_dry_run.md
    - 對照 `AGENTS.md` 檢查 Codex 有沒有走歪（如：碰了 frozen 的 `v54_noscale`、動了 production scanner default、鬆了門檻、盲調參）。
    - 檢查新邏輯有沒有對應 focused test。
    - 檢查 plan 裡的路徑是否已正規化到 `feat-regime-router` / `extensions\Backtesting`。
-   - 懷疑時 → 跑 test、跑 `scripts/config_parity_check.py --critical-only`、讀 Codex 改動的上下文，不要只看表面。
+   - 懷疑時 → 跑 test、`python -c "from trader.config import Config; Config.validate()"`、讀 Codex 改動的上下文，不要只看表面。
 2. **Commit**
    - 訊息寫 why。照 repo 既有的 conventional commit 風格（`feat(...)` / `fix(...)` / `docs(...)` / `test(...)`）。
    - **不順手 revert** 現有 deleted/modified（那是環境拆分產物），commit 前先跟 Ruei 對齊哪些進、分幾個 commit。
@@ -197,7 +193,7 @@ reports\ema_vb_tier_count_dry_run.md
 3. **Push to GitHub**
    - 除非 Ruei 講，不 push 到 main/master。
    - 絕不 `push --force` 到 main/master。
-   - Push 前最後檢查：test 綠、critical parity = 0、diff 對得起 commit message。
+   - Push 前最後檢查：test 綠、`Config.validate()` 通過、diff 對得起 commit message。
 
 **我不做**（除非 Ruei 明講）：
 
@@ -218,5 +214,5 @@ reports\ema_vb_tier_count_dry_run.md
 ## 現在可以直接做的事
 
 1. 等 Codex 交第一批施作 → review。
-2. 或者 Ruei 明講要我自己動的：例如驗證 `extensions/` 能否 import、整理 untracked 檔案進 git、跑 `scripts/config_parity_check.py --critical-only`。
+2. 或者 Ruei 明講要我自己動的：例如驗證 `extensions/` 能否 import、整理 untracked 檔案進 git、跑 `Config.validate()`。
 3. 正式執行 `plans\2026-04-15_ema_vb_entry_lane_backtest_plan.md` 前，替 Codex 把 plan 裡的舊路徑替換方案跟 Ruei 對齊。
