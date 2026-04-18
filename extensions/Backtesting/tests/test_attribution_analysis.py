@@ -31,10 +31,10 @@ def test_analyze_baselines_classifies_trend_delay(tmp_path):
     after_dir = _make_dir(tmp_path, "after")
 
     _write_csv(before_dir / "signal_entries.csv", [
-        {"timestamp": "2026-01-01T00:00:00+00:00", "symbol": "BTC/USDT", "signal_type": "EMA_PULLBACK"},
+        {"timestamp": "2026-01-01T00:00:00+00:00", "symbol": "BTC/USDT", "signal_type": "fixture_long"},
     ])
     _write_csv(after_dir / "signal_entries.csv", [
-        {"timestamp": "2026-01-01T04:00:00+00:00", "symbol": "BTC/USDT", "signal_type": "EMA_PULLBACK"},
+        {"timestamp": "2026-01-01T04:00:00+00:00", "symbol": "BTC/USDT", "signal_type": "fixture_long"},
     ])
     _write_csv(after_dir / "signal_rejects.csv", [
         {
@@ -42,7 +42,7 @@ def test_analyze_baselines_classifies_trend_delay(tmp_path):
             "symbol": "BTC/USDT",
             "stage": "post_filter",
             "reject_reason": "trend_filter",
-            "signal_type": "EMA_PULLBACK",
+            "signal_type": "fixture_long",
         },
     ])
     _write_csv(before_dir / "trades.csv", [
@@ -50,7 +50,7 @@ def test_analyze_baselines_classifies_trend_delay(tmp_path):
             "entry_time": "2026-01-01T00:00:00+00:00",
             "exit_time": "2026-01-01T08:00:00+00:00",
             "symbol": "BTC/USDT",
-            "signal_type": "EMA_PULLBACK",
+            "signal_type": "fixture_long",
             "pnl_usdt": 10.0,
         },
     ])
@@ -59,7 +59,7 @@ def test_analyze_baselines_classifies_trend_delay(tmp_path):
             "entry_time": "2026-01-01T04:00:00+00:00",
             "exit_time": "2026-01-01T10:00:00+00:00",
             "symbol": "BTC/USDT",
-            "signal_type": "EMA_PULLBACK",
+            "signal_type": "fixture_long",
             "pnl_usdt": 4.0,
         },
     ])
@@ -78,7 +78,7 @@ def test_analyze_baselines_classifies_signal_disappeared(tmp_path):
     after_dir = _make_dir(tmp_path, "after")
 
     _write_csv(before_dir / "signal_entries.csv", [
-        {"timestamp": "2026-01-01T00:00:00+00:00", "symbol": "ETH/USDT", "signal_type": "2B"},
+        {"timestamp": "2026-01-01T00:00:00+00:00", "symbol": "ETH/USDT", "signal_type": "fixture_exit"},
     ])
     _write_csv(after_dir / "signal_entries.csv", [])
     _write_csv(after_dir / "signal_rejects.csv", [
@@ -104,10 +104,10 @@ def test_analyze_baselines_classifies_same_time_retype(tmp_path):
     after_dir = _make_dir(tmp_path, "after")
 
     _write_csv(before_dir / "signal_entries.csv", [
-        {"timestamp": "2026-01-01T00:00:00+00:00", "symbol": "SOL/USDT", "signal_type": "VOLUME_BREAKOUT"},
+        {"timestamp": "2026-01-01T00:00:00+00:00", "symbol": "SOL/USDT", "signal_type": "fixture_exit"},
     ])
     _write_csv(after_dir / "signal_entries.csv", [
-        {"timestamp": "2026-01-01T00:00:00+00:00", "symbol": "SOL/USDT", "signal_type": "EMA_PULLBACK"},
+        {"timestamp": "2026-01-01T00:00:00+00:00", "symbol": "SOL/USDT", "signal_type": "fixture_long"},
     ])
     _write_csv(after_dir / "signal_rejects.csv", [])
     _write_csv(before_dir / "trades.csv", [])
@@ -117,7 +117,7 @@ def test_analyze_baselines_classifies_same_time_retype(tmp_path):
     rows = result["rows"]
 
     assert len(rows) == 1
-    assert rows.iloc[0]["attribution"] == "retyped_to_ema_pullback"
+    assert rows.iloc[0]["attribution"] == "retyped_to_fixture_long"
 
 
 def test_analyze_baselines_preserves_tier_mtf_diagnostics(tmp_path):
@@ -128,7 +128,7 @@ def test_analyze_baselines_preserves_tier_mtf_diagnostics(tmp_path):
         {
             "timestamp": "2026-01-01T00:00:00+00:00",
             "symbol": "BTC/USDT",
-            "signal_type": "EMA_PULLBACK",
+            "signal_type": "fixture_long",
             "signal_tier": "A",
             "tier_score": 7,
             "mtf_status": "aligned",
@@ -139,7 +139,7 @@ def test_analyze_baselines_preserves_tier_mtf_diagnostics(tmp_path):
         {
             "timestamp": "2026-01-01T04:00:00+00:00",
             "symbol": "BTC/USDT",
-            "signal_type": "EMA_PULLBACK",
+            "signal_type": "fixture_long",
             "signal_tier": "B",
             "tier_score": 5,
             "mtf_status": "aligned",
@@ -152,7 +152,7 @@ def test_analyze_baselines_preserves_tier_mtf_diagnostics(tmp_path):
             "symbol": "BTC/USDT",
             "stage": "post_filter",
             "reject_reason": "tier_filter",
-            "signal_type": "EMA_PULLBACK",
+            "signal_type": "fixture_long",
             "tier_score": 0,
             "tier_min": "A",
             "mtf_status": "misaligned",

@@ -325,6 +325,36 @@ def test_effective_overrides_enable_strategy_runtime_catalog():
     assert "BACKTEST_USE_PRECOMPUTED_INDICATORS" not in overrides
 
 
+def test_dry_count_only_records_candidate_without_opening_trade(monkeypatch):
+    from data_loader import BacktestDataLoader
+    from funding_loader import FundingLoader
+
+    df = make_fake_df(200)
+    monkeypatch.setattr(BacktestDataLoader, "get_data", lambda self, *a, **kw: df)
+    monkeypatch.setattr(FundingLoader, "get_funding_rates", lambda self, *a, **kw: pd.Series(dtype=float))
+
+    config = BacktestConfig(
+        symbols=["BTC/USDT"],
+        start="2026-01-01",
+        end="2026-01-30",
+        warmup_bars=20,
+        enabled_strategies=["fixture_long"],
+        allowed_signal_types=["fixture_long"],
+        dry_count_only=True,
+        config_overrides={
+            "SYMBOL_LOSS_COOLDOWN_HOURS": 0,
+            "REGIME_ARBITER_ENABLED": False,
+            "REGIME_ROUTER_ENABLED": False,
+        },
+    )
+
+    result = BacktestEngine(config).run_single(verbose=False)
+
+    assert result.trades == []
+    assert result.summary["total_trades"] == 0
+    assert result.signal_audit.summary()["entries_by_signal_type"]["fixture_long"] > 0
+
+
 def test_backtest_loop_records_scanner_exception(monkeypatch):
     import backtest_engine as engine_mod
     from data_loader import BacktestDataLoader

@@ -15,7 +15,7 @@ def test_signal_audit_save_preserves_diagnostic_columns(tmp_path):
         symbol="BTC/USDT",
         stage="post_filter",
         reject_reason="tier_filter",
-        signal_type="EMA_PULLBACK",
+        signal_type="fixture_long",
         signal_side="LONG",
         signal_tier="C",
         detail="tier=C min=A score=0",
@@ -34,7 +34,7 @@ def test_signal_audit_save_preserves_diagnostic_columns(tmp_path):
     collector.record_entry(
         timestamp="2026-01-01T04:00:00+00:00",
         symbol="BTC/USDT",
-        signal_type="EMA_PULLBACK",
+        signal_type="fixture_long",
         signal_side="LONG",
         signal_tier="A",
         mtf_status="aligned",
@@ -83,7 +83,7 @@ def test_signal_audit_summary_includes_tier_and_mtf_breakdowns():
     collector.record_entry(
         timestamp="2026-01-01T04:00:00+00:00",
         symbol="BTC/USDT",
-        signal_type="EMA_PULLBACK",
+        signal_type="fixture_long",
         signal_side="LONG",
         signal_tier="A",
         mtf_status="aligned",
@@ -107,13 +107,13 @@ def test_signal_audit_saves_lane_race_audit(tmp_path):
     collector.record_lane_race(
         timestamp="2026-01-01T00:00:00+00:00",
         symbol="ETH/USDT",
-        candidate_signal_type="EMA_PULLBACK",
-        selected_signal_type="2B",
+        candidate_signal_type="fixture_long",
+        selected_signal_type="fixture_exit",
         suppressed_by="priority",
         won_race_vs=None,
         same_symbol_cooldown_block=False,
         position_slot_block=False,
-        block_reason="priority:2B",
+        block_reason="priority:fixture_exit",
         baseline_match_key="ETH/USDT|2026-01-01T00:00:00+00:00",
         candidate_signal_side="LONG",
     )
@@ -121,11 +121,11 @@ def test_signal_audit_saves_lane_race_audit(tmp_path):
     collector.save(tmp_path)
 
     lane_df = pd.read_csv(tmp_path / "lane_race_audit.csv")
-    assert lane_df.iloc[0]["candidate_signal_type"] == "EMA_PULLBACK"
-    assert lane_df.iloc[0]["selected_signal_type"] == "2B"
+    assert lane_df.iloc[0]["candidate_signal_type"] == "fixture_long"
+    assert lane_df.iloc[0]["selected_signal_type"] == "fixture_exit"
     assert lane_df.iloc[0]["suppressed_by"] == "priority"
 
     summary = collector.summary()
     assert summary["lane_race_events"] == 1
-    assert summary["lane_candidates_by_signal_type"] == {"EMA_PULLBACK": 1}
+    assert summary["lane_candidates_by_signal_type"] == {"fixture_long": 1}
     assert summary["lane_suppressed_by"] == {"priority": 1}

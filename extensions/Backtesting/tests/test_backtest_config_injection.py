@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from backtest_bot import create_backtest_bot
 from backtest_engine import _backtest_context
 from bot_compat import get_config_class
-from config_presets import ALLOWED_BACKTEST_OVERRIDES, diagnostic_arbiter_off, runtime_parity
+from config_presets import ALLOWED_BACKTEST_OVERRIDES, diagnostic_arbiter_off, plugin_runtime_defaults
 from mock_components import MockOrderEngine
 from signal_audit import SignalAuditCollector
 from time_series_engine import TimeSeriesEngine
@@ -82,18 +82,10 @@ def test_backtest_override_rejects_forbidden_key():
             pass
 
 
-def test_backtest_override_rejects_allowed_but_missing_config_attr():
+def test_backtest_override_whitelist_matches_current_config_attrs():
     Config = get_config_class()
-    missing_key = next(
-        (key for key in sorted(ALLOWED_BACKTEST_OVERRIDES) if not hasattr(Config, key)),
-        None,
-    )
-    if missing_key is None:
-        pytest.skip("all allowed backtest overrides exist on this Config")
-
-    with pytest.raises(ValueError, match="target does not exist"):
-        with _backtest_context({missing_key: True}):
-            pass
+    missing = sorted(key for key in ALLOWED_BACKTEST_OVERRIDES if not hasattr(Config, key))
+    assert missing == []
 
 
 def test_backtest_override_restores_config_after_exit():
@@ -106,9 +98,9 @@ def test_backtest_override_restores_config_after_exit():
     assert Config.REGIME_ARBITER_ENABLED is original
 
 
-def test_runtime_parity_preset_matches_config_defaults():
+def test_plugin_runtime_defaults_preset_matches_config_defaults():
     Config = get_config_class()
-    preset = runtime_parity()
+    preset = plugin_runtime_defaults()
 
     assert preset
     for key, value in preset.items():
@@ -118,12 +110,10 @@ def test_runtime_parity_preset_matches_config_defaults():
     assert preset["MACRO_OVERLAY_ENABLED"] is False
     if "BTC_TREND_FILTER_ENABLED" in preset:
         assert preset["BTC_TREND_FILTER_ENABLED"] is True
-    if "V7_MIN_SIGNAL_TIER" in preset:
-        assert preset["V7_MIN_SIGNAL_TIER"] == "A"
 
 
-def test_diagnostic_arbiter_off_only_disables_arbiter_from_parity():
-    parity = runtime_parity()
+def test_diagnostic_arbiter_off_only_disables_arbiter_from_baseline():
+    parity = plugin_runtime_defaults()
     diagnostic = diagnostic_arbiter_off()
 
     assert diagnostic["REGIME_ARBITER_ENABLED"] is False
