@@ -1,4 +1,4 @@
-"""回測主引擎"""
+"""?????????"""
 import os
 import sys
 import logging
@@ -54,18 +54,18 @@ logger = logging.getLogger(__name__)
 DEFAULT_WINDOW_DAYS = 180
 
 
-# ── Simulation time patch ────────────────────────────────────────────────────
-# bot.py / positions.py 用 datetime.now(timezone.utc) 做冷卻計時與 entry_time。
-# 回測跑在秒級，real now() 永遠相差 <1s，導致：
-#   (1) 冷卻永不過期 → 第一筆 trade 關倉後 symbol 永久鎖死
-#   (2) entry_time ≈ exit_time → holding_hours ≈ 0 → TIME_EXIT 永不觸發
-# 修法：monkey-patch trader.bot.datetime / trader.positions.datetime，讓 now() 回傳模擬時間。
+# ???? Simulation time patch ????????????????????????????????????????????????????????????????????????????????????????????????????????
+# bot.py / positions.py ??datetime.now(timezone.utc) ????????? entry_time??
+# ????????????eal now() ?豯????啣? <1s??????
+#   (1) ????豯折???? ???謍????trade ????? symbol ?豯折?????
+#   (2) entry_time ??exit_time ??holding_hours ??0 ??TIME_EXIT ?豯折?????
+# ?鞈?僱???onkey-patch trader.bot.datetime / trader.positions.datetime??? now() ?????穿???????
 
-_sim_ts_container: list = [None]   # [pd.Timestamp | None]，loop 每 bar 更新
+_sim_ts_container: list = [None]   # [pd.Timestamp | None]??oop ??bar ???
 
 
 class _BacktestDatetime(_real_datetime_module.datetime):
-    """datetime 子類：now() 改回傳模擬時間，其餘行為不變。"""
+    """datetime ?????ow() ????????????????????????"""
 
     @classmethod
     def now(cls, tz=None):
@@ -80,25 +80,7 @@ class _BacktestDatetime(_real_datetime_module.datetime):
         return result
 
 
-# ── Strategy presets ────────────────────────────────────────────
-# strategy_map: signal_type → exit strategy name ("v54" | "v7" | "v6" | "v53" | future)
-# None = live mode: use bot_config.json / Config defaults without override
-STRATEGY_PRESETS: dict = {
-    "live": None,
-    "v54": {"2B": "v54", "EMA_PULLBACK": "v54", "VOLUME_BREAKOUT": "v54"},
-    "v7":  {"2B": "v7",  "EMA_PULLBACK": "v53", "VOLUME_BREAKOUT": "v53"},
-    "v6":  {"2B": "v6",  "EMA_PULLBACK": "v6",  "VOLUME_BREAKOUT": "v6"},  # deprecated
-    "v53": {"2B": "v53", "EMA_PULLBACK": "v53", "VOLUME_BREAKOUT": "v53"},
-}
-
-STRATEGY_NAME_OVERRIDES = {
-    "v54": "v54_noscale",
-    "v7": "v7_structure",
-    "v6": "v6_pyramid",
-    "v53": "v53_sop",
-}
-
-KNOWN_SIGNAL_TYPES = ("2B", "EMA_PULLBACK", "VOLUME_BREAKOUT")
+# Strategy plugins are supplied by id via --strategies.
 
 
 def _cache_symbol(symbol: str) -> str:
@@ -197,53 +179,14 @@ def resolve_backtest_window(
     return start_date.isoformat(), end_date.isoformat()
 
 
-def _apply_strategy_map(
-    active_trades: dict,
-    strategy_map,
-    pm_registry: dict,
-) -> None:
+def _record_strategy_ids(active_trades: dict, pm_registry: dict) -> None:
     """
-    Override strategy_name on each PositionManager in active_trades.
-
-    Args:
-        active_trades: bot.active_trades (symbol -> PositionManager)
-        strategy_map:  STRATEGY_PRESETS[strategy], None = live mode (no override)
-        pm_registry:   engine-maintained {trade_id -> "v54"|"v7"|"v6"|"v53"} original exit strategy
+    Record strategy ids for report attribution without mutating positions.
     """
     for pm in active_trades.values():
         tid = pm.trade_id
         if tid not in pm_registry:
-            sn = getattr(pm, 'strategy_name', None)
-            if sn == "v54_noscale":
-                pm_registry[tid] = "v54"
-            elif sn == "v7_structure":
-                pm_registry[tid] = "v7"
-            elif sn == "v6_pyramid" or pm.is_v6_pyramid:
-                pm_registry[tid] = "v6"
-            else:
-                pm_registry[tid] = "v53"
-
-    if strategy_map is None:
-        return
-
-    _STRATEGY_NAME_MAP = {
-        "v54": "v54_noscale",
-        "v7": "v7_structure",
-        "v6": "v6_pyramid",
-        "v53": "v53_sop",
-    }
-    for pm in active_trades.values():
-        orig = pm_registry[pm.trade_id]
-        if orig in ("v7", "v6"):
-            sig_key = "2B"
-        elif orig == "v54":
-            # In feat-grid all 3 signals route to V54. Use neckline as the best
-            # available proxy for distinguishing 2B from EMA/volume entries.
-            sig_key = "2B" if getattr(pm, "neckline", None) is not None else "EMA_PULLBACK"
-        else:
-            sig_key = "EMA_PULLBACK"
-        target = strategy_map.get(sig_key, orig)
-        pm.strategy_name = _STRATEGY_NAME_MAP.get(target, pm.strategy_name)
+            pm_registry[tid] = getattr(pm, "strategy_id", "unknown")
 
 
 @dataclass
@@ -254,8 +197,7 @@ class BacktestConfig:
     initial_balance: float = 10000.0
     fee_rate: float = 0.0004
     warmup_bars: int = 100
-    strategy: str = "live"
-    allowed_signal_types: Optional[List[str]] = None
+    enabled_strategies: List[str] = field(default_factory=list)
     dry_count_only: bool = False
     precompute_indicators: bool = False
     config_overrides: dict = field(default_factory=dict)
@@ -316,9 +258,9 @@ class BacktestResult:
                 if values[i - 1] > 0
             ]
             if daily_rets and statistics.stdev(daily_rets) > 0:
-                sharpe = (statistics.mean(daily_rets) / statistics.stdev(daily_rets)) * (8760 ** 0.5)  # hourly → annualized
+                sharpe = (statistics.mean(daily_rets) / statistics.stdev(daily_rets)) * (8760 ** 0.5)  # hourly ??annualized
 
-        # trades_per_week: 回測區間天數 / 7
+        # trades_per_week: ??????????/ 7
         from datetime import datetime
         start_dt = datetime.fromisoformat(self.config.start)
         end_dt = datetime.fromisoformat(self.config.end)
@@ -326,7 +268,7 @@ class BacktestResult:
         trades_per_week = len(pnls) / max(duration_weeks, 1)
 
         return {
-            "strategy": self.config.strategy,
+            "strategy": ",".join(self.config.enabled_strategies) or "none",
             "total_trades": len(pnls),
             "win_rate": round(win_rate, 4),
             "profit_factor": round(pf, 4),
@@ -337,8 +279,8 @@ class BacktestResult:
         }
 
 
-# ── Backtest context manager ────────────────────────────────────────────────
-# Config override + datetime patch + cleanup，確保每次 run 不互相污染。
+# ???? Backtest context manager ????????????????????????????????????????????????????????????????????????????????????????????????
+# Config override + datetime patch + cleanup????遴?????run ?????撓?????
 
 def _derive_regime_probe_trend(context: dict) -> Optional[str]:
     """Mirror regime routing into a comparable trend label for audit only."""
@@ -430,8 +372,8 @@ def _record_regime_probe(bot, timestamp, *, grid_enabled: bool) -> None:
 @contextmanager
 def _backtest_context(config_overrides: dict):
     """
-    Context manager: 管理 Config 覆寫 + datetime monkey-patch。
-    進入時套用，離開時還原，確保多次 run_single() 不互相污染。
+    Context manager: ?豯?? Config ????+ datetime monkey-patch??
+    ??????????????????????????run_single() ?????撓?????
     """
     Config = get_config_class()
     datetime_modules = get_datetime_patch_modules()
@@ -447,7 +389,7 @@ def _backtest_context(config_overrides: dict):
         and not callable(value)
     }
 
-    # 載入 bot_config.json（確保回測參數與 live bot 一致）
+    # ??? bot_config.json????遴????謚????? live bot ?????
     Config.load_from_json(str(TRADING_BOT_ROOT / "bot_config.json"))
     _override_keys = set(config_overrides or {})
     _missing_override_keys = {key for key in _override_keys if not hasattr(Config, key)}
@@ -455,10 +397,10 @@ def _backtest_context(config_overrides: dict):
         for k, v in config_overrides.items():
             setattr(Config, k, v)
 
-    # 儲存原始值
+    # ????????
     _orig_symbols = Config.SYMBOLS
     _orig_use_scanner = Config.USE_SCANNER_SYMBOLS
-    _orig_dry_run = Config.V6_DRY_RUN
+    _orig_dry_run = Config.DRY_RUN
     _orig_datetimes = {
         module.__name__: module.datetime
         for module in datetime_modules
@@ -466,7 +408,7 @@ def _backtest_context(config_overrides: dict):
     }
     _orig_calculate_indicators = TechnicalAnalysis.calculate_indicators
 
-    # 套用 datetime patch（覆蓋所有使用 datetime.now() 的 module）
+    # ??? datetime patch???????????datetime.now() ??module??
     for module in datetime_modules:
         if hasattr(module, "datetime"):
             module.datetime = _BacktestDatetime
@@ -505,7 +447,7 @@ class BacktestEngine:
         self.loader = BacktestDataLoader()
 
     def _load_data(self, cfg: BacktestConfig) -> dict:
-        """載入所有 symbol 的 1H + 4H + 1D 數據 + funding rate"""
+        """???????symbol ??1H + 4H + 1D ??? + funding rate"""
         from datetime import datetime, timedelta
         from funding_loader import FundingLoader
         trend_start = (
@@ -535,23 +477,19 @@ class BacktestEngine:
 
     def _effective_config_overrides(self, cfg: BacktestConfig) -> dict:
         """Build backtest-only Config overrides without mutating runtime files."""
+        from trader.config import Config
+
         overrides = dict(cfg.config_overrides or {})
-        strategy_map = STRATEGY_PRESETS.get(cfg.strategy)
-
-        if strategy_map is not None:
-            overrides["SIGNAL_STRATEGY_MAP"] = {
-                signal_type: STRATEGY_NAME_OVERRIDES[strategy_name]
-                for signal_type, strategy_name in strategy_map.items()
-                if strategy_name in STRATEGY_NAME_OVERRIDES
-            }
-
-        if cfg.allowed_signal_types is not None:
-            allowed = [sig for sig in cfg.allowed_signal_types if sig in KNOWN_SIGNAL_TYPES]
-            overrides["BACKTEST_ALLOWED_SIGNAL_TYPES"] = allowed
-            overrides["ENABLE_EMA_PULLBACK"] = "EMA_PULLBACK" in allowed
-            overrides["ENABLE_VOLUME_BREAKOUT"] = "VOLUME_BREAKOUT" in allowed
-        else:
-            overrides.pop("BACKTEST_ALLOWED_SIGNAL_TYPES", None)
+        enabled = list(cfg.enabled_strategies or [])
+        catalog = dict(getattr(Config, "STRATEGY_CATALOG", {}))
+        for strategy_id in enabled:
+            entry = dict(catalog.get(strategy_id) or {})
+            if entry:
+                entry["enabled"] = True
+                catalog[strategy_id] = entry
+        overrides["STRATEGY_RUNTIME_ENABLED"] = bool(enabled)
+        overrides["ENABLED_STRATEGIES"] = enabled
+        overrides["STRATEGY_CATALOG"] = catalog
 
         if cfg.dry_count_only:
             overrides["BACKTEST_DRY_COUNT_ONLY"] = True
@@ -567,16 +505,16 @@ class BacktestEngine:
 
     def run_single(self, verbose: bool = False) -> BacktestResult:
         """
-        Side-effect-free single backtest，回傳 BacktestResult。
-        不寫檔、不產報告，純計算。供 AutoTrader 等程式化呼叫。
+        Side-effect-free single backtest?????BacktestResult??
+        ???∵策??????????????????? AutoTrader ???????????
 
         Args:
-            verbose: True 時印出載入進度（CLI 用），False 時靜默（AutoTrader 用）
+            verbose: True ??????????????LI ?????alse ??????AutoTrader ???
         """
         cfg = self.config
 
         if verbose:
-            print(f"\n[Backtest] 載入 {len(cfg.symbols)} 個標的數據...")
+            print(f"\n[Backtest] ??? {len(cfg.symbols)} ????????..")
 
         effective_overrides = self._effective_config_overrides(cfg)
 
@@ -593,7 +531,6 @@ class BacktestEngine:
             mock_engine = MockOrderEngine(tse, cfg.fee_rate, cfg.initial_balance)
 
             captured_trades: List[dict] = []
-            strategy_map = STRATEGY_PRESETS.get(cfg.strategy)
             pm_registry: dict = {}
             regime_registry: dict = {}
             backtest_run_errors: List[dict] = []
@@ -611,7 +548,7 @@ class BacktestEngine:
 
             def _collect_trade(d):
                 tid = d.get("trade_id")
-                d["exit_strategy"] = pm_registry.get(tid, "unknown") if tid else "unknown"
+                d["exit_strategy"] = d.get("strategy_name") or pm_registry.get(tid, "unknown") if tid else "unknown"
                 if tid and tid in regime_registry:
                     d.update(regime_registry[tid])
                 captured_trades.append(d)
@@ -634,7 +571,7 @@ class BacktestEngine:
 
             all_ts = tse.get_1h_timestamps(cfg.symbols)
             if verbose:
-                print(f"[Backtest] 共 {len(all_ts)} 根 1H bars，warmup={cfg.warmup_bars}")
+                print(f"[Backtest] ??{len(all_ts)} ??1H bars??armup={cfg.warmup_bars}")
 
             equity_curve: List[Tuple] = []
             iter_ts = tqdm(all_ts, desc="Backtesting") if verbose else all_ts
@@ -653,7 +590,7 @@ class BacktestEngine:
                     equity_curve.append((ts, cfg.initial_balance))
                     continue
 
-                # a) 止損觸發 → 強制平倉
+                # a) ??單?????? ???謢???賹???
                 triggered = mock_engine.check_stop_triggers()
                 for sym in triggered:
                     if sym in bot.active_trades:
@@ -664,13 +601,14 @@ class BacktestEngine:
                             decision_reason="BACKTEST_STOP_TRIGGER",
                         )
 
-                # b) 掃信號 + 監控持倉
+                # b) ?????+ ???????
                 try:
                     bot.scan_for_signals()
                 except Exception as e:
                     _record_run_error("scan_for_signals", ts, e)
 
-                _apply_strategy_map(bot.active_trades, strategy_map, pm_registry)
+                for pm in bot.active_trades.values():
+                    pm_registry.setdefault(pm.trade_id, getattr(pm, "strategy_id", "unknown"))
                 _assign_entry_regime(
                     bot.active_trades,
                     regime_registry,
@@ -682,7 +620,7 @@ class BacktestEngine:
                 except Exception as e:
                     _record_run_error("monitor_positions", ts, e)
 
-                # d) funding rate 結算（00:00, 08:00, 16:00 UTC）
+                # d) funding rate ?????0:00, 08:00, 16:00 UTC??
                 if ts.hour in (0, 8, 16) and ts.minute == 0:
                     for sym, pm in bot.active_trades.items():
                         if getattr(pm, "is_closed", False):
@@ -694,7 +632,7 @@ class BacktestEngine:
                             total_size = getattr(pm, "total_size", 0.0) or 0.0
                             mock_engine.deduct_funding(sym, pm.side, total_size, avg_entry, rate)
 
-                # c) 計算當前 equity
+                # c) ?????? equity
                 closed_pnl = sum(t.get("pnl_usdt", 0) for t in captured_trades)
                 unrealized = 0.0
                 for sym, pm in bot.active_trades.items():
@@ -713,7 +651,7 @@ class BacktestEngine:
                 )
                 equity_curve.append((ts, portfolio_value))
 
-            # 強制平倉所有剩餘持倉
+            # ?謢???賹????????????
             for sym, pm in list(bot.active_trades.items()):
                 if not getattr(pm, "is_closed", False):
                     try:
@@ -735,7 +673,7 @@ class BacktestEngine:
             )
 
     def run(self) -> BacktestResult:
-        """向後相容 CLI 入口：run_single(verbose=True)"""
+        """?????啣? CLI ?????un_single(verbose=True)"""
         return self.run_single(verbose=True)
 
 
@@ -743,26 +681,14 @@ if __name__ == "__main__":
     import argparse
     from report_generator import ReportGenerator
 
-    parser = argparse.ArgumentParser(description="V6 Backtest Engine")
+    parser = argparse.ArgumentParser(description="Strategy Runtime Backtest Engine")
     parser.add_argument("--symbols", nargs="+", default=["BTC/USDT"],
-                        help="標的列表，e.g. BTC/USDT ETH/USDT")
-    parser.add_argument("--start", default=None, help="開始日期 YYYY-MM-DD；不帶則使用 cache 最新 180 天")
-    parser.add_argument("--end",   default=None, help="結束日期 YYYY-MM-DD；不帶則使用 cache 最新 180 天")
+                        help="Symbols, e.g. BTC/USDT ETH/USDT")
+    parser.add_argument("--start", default=None, help="Start date YYYY-MM-DD")
+    parser.add_argument("--end",   default=None, help="End date YYYY-MM-DD")
     parser.add_argument("--balance", type=float, default=10000.0)
-    parser.add_argument("--output", default="results", help="輸出目錄")
-    parser.add_argument(
-        "--strategy",
-        default="live",
-        choices=list(STRATEGY_PRESETS.keys()),
-        help="出場策略: live（依 bot_config.json）| v7（2B→V7, EMA/VOL→V53）| v6（全部 V6Pyramid, deprecated）| v53（全部 V53Sop）",
-    )
-    parser.add_argument(
-        "--allowed-signal-types",
-        nargs="+",
-        choices=list(KNOWN_SIGNAL_TYPES),
-        default=None,
-        help="Backtest-only signal allowlist, e.g. EMA_PULLBACK",
-    )
+    parser.add_argument("--strategies", nargs="+", default=[], help="Enabled strategy plugin ids")
+    parser.add_argument("--output", default="results", help="Output directory")
     parser.add_argument(
         "--dry-count-only",
         action="store_true",
@@ -781,8 +707,7 @@ if __name__ == "__main__":
         start=start,
         end=end,
         initial_balance=args.balance,
-        strategy=args.strategy,
-        allowed_signal_types=args.allowed_signal_types,
+        enabled_strategies=args.strategies,
         dry_count_only=args.dry_count_only,
         precompute_indicators=args.precompute_indicators,
     )

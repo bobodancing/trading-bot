@@ -34,39 +34,13 @@
     "enable_mtf_confirmation": true,
     "enable_dynamic_thresholds": true,
     "enable_tiered_entry": true,
-    "enable_ema_pullback": false,
-    "enable_volume_breakout": false,
     "enable_structure_break_exit": true,
     "tier_a_position_mult": 0.7,
     "tier_b_position_mult": 0.7,
     "tier_c_position_mult": 0.5,
-    "max_hold_hours": 168,
-    "first_partial_pct": 30,
-    "second_partial_pct": 30,
     "use_scanner_symbols": true,
-    "aplus_trailing_atr_mult": 1.5,
     "scanner_json_path": "hot_symbols.json",
     "scanner_max_age_minutes": 30,
-    "pyramid_enabled": true,
-    "equity_cap_percent": 0.20,
-    "stage1_ratio": 0.33,
-    "stage2_ratio": 0.37,
-    "stage3_ratio": 0.30,
-    "v53_equity_cap_percent": 0.10,
-    "stage2_volume_mult": 1.2,
-    "stage3_ema_period": 20,
-    "swing_left_bars": 7,
-    "swing_right_bars": 3,
-    "sl_atr_buffer": 0.8,
-    "min_fakeout_atr": 0.3,
-    "reverse_2b_min_fakeout_atr": 0.3,
-    "v6_structure_trailing": true,
-    "v6_4h_ema20_force_exit": false,
-    "v6_reverse_2b_exit": true,
-    "v6_stage1_max_hours": 36,
-    "v7_stage1_max_hours": 36,
-    "v7_stage_volume_mult": 1.0,
-    "early_stop_r_threshold": 0.75,
     "early_exit_cooldown_hours": 10,
     "enable_grid_trading": false,
     "regime_arbiter_enabled": true,
@@ -77,18 +51,40 @@
     "macro_stalled_size_mult": 0.0,
     "macro_weekly_ema_spread_threshold": 0.015,
     "regime_router_enabled": false,
-    "regime_router_policy": "v54_fallback_current",
     "regime_router_trace_enabled": true,
-    "v7_min_signal_tier": "A",
-    "signal_strategy_map": {
-        "2B": "v54_noscale"
+    "strategy_runtime_enabled": false,
+    "enabled_strategies": [],
+    "strategy_catalog": {
+        "fixture_long": {
+            "enabled": false,
+            "module": "trader.strategies.plugins.fixture",
+            "class": "FixtureLongStrategy",
+            "params": {}
+        },
+        "fixture_exit": {
+            "enabled": false,
+            "module": "trader.strategies.plugins.fixture",
+            "class": "FixtureExitStrategy",
+            "params": {}
+        },
+        "macd_zero_line_btc_1d": {
+            "enabled": false,
+            "module": "trader.strategies.plugins.macd_zero_line",
+            "class": "MacdZeroLineLongStrategy",
+            "params": {
+                "symbol": "BTC/USDT",
+                "timeframe": "1d"
+            }
+        }
     },
-    "v6_dry_run": false,
+    "default_strategy_risk_profile": "central_default",
+    "dry_run": false,
     "positions_json_path": "positions.json",
     "auto_backup_on_stage_change": true,
     "btc_trend_filter_enabled": true,
     "btc_counter_trend_mult": 0.0,
     "max_sl_distance_pct": 0.06,
     "symbol_loss_cooldown_hours": 24,
-    "DB_PATH": "performance.db"
+    "DB_PATH": "performance.db",
+    "strategy_router_policy": "fail_closed"
 }

@@ -1,4 +1,4 @@
-"""Debug script: run one bar through scan_for_signals with verbose output"""
+﻿"""Debug script: run one bar through scan_for_signals with verbose output"""
 import sys
 import logging
 from pathlib import Path
@@ -31,7 +31,7 @@ bot = create_backtest_bot(tse, mock_engine)
 Config = get_config_class()
 Config.SYMBOLS = ["BTC/USDT"]
 print(f"Config.SYMBOLS = {Config.SYMBOLS}")
-print(f"Config.V6_DRY_RUN = {Config.V6_DRY_RUN}")
+print(f"Config.DRY_RUN = {Config.DRY_RUN}")
 print(f"Config.USE_SCANNER_SYMBOLS = {Config.USE_SCANNER_SYMBOLS}")
 print(f"Config.TIMEFRAME_TREND = {Config.TIMEFRAME_TREND}")
 print(f"Config.TIMEFRAME_SIGNAL = {Config.TIMEFRAME_SIGNAL}")

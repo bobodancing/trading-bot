@@ -8,7 +8,7 @@ from typing import Iterable
 def import_optional(module_name: str) -> ModuleType | None:
     try:
         return import_module(module_name)
-    except ModuleNotFoundError:
+    except (ModuleNotFoundError, ImportError):
         return None
 
 
@@ -41,24 +41,7 @@ def get_config_class():
 
 
 def get_strategy_modules() -> dict[str, ModuleType]:
-    modules = {
-        "v53": import_first((
-            "trader.strategies.legacy.v53_sop",
-            "trader.strategies.v53_sop",
-        )),
-        "v6": import_first((
-            "trader.strategies.legacy.v6_pyramid",
-            "trader.strategies.v6_pyramid",
-        )),
-        "v7": import_first((
-            "trader.strategies.legacy.v7_structure",
-            "trader.strategies.v7_structure",
-        )),
-    }
-    v54 = import_optional("trader.strategies.v54_noscale")
-    if v54 is not None:
-        modules["v54"] = v54
-    return modules
+    return {}
 
 
 def get_datetime_patch_modules() -> list[ModuleType]:
@@ -90,12 +73,6 @@ def get_datetime_patch_module_names() -> set[str]:
         "trader.position_monitor",
         "trader.grid_manager",
         "trader.utils",
-        "trader.strategies.v53_sop",
-        "trader.strategies.v6_pyramid",
-        "trader.strategies.v7_structure",
-        "trader.strategies.legacy.v53_sop",
-        "trader.strategies.legacy.v6_pyramid",
-        "trader.strategies.legacy.v7_structure",
-        "trader.strategies.v54_noscale",
+        "trader.strategy_runtime",
     })
     return names

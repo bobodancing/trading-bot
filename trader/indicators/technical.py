@@ -120,8 +120,8 @@ class TechnicalAnalysis:
         df['vol_ma'] = _sma(df['volume'], length=Config.VOLUME_MA_PERIOD)
         df['atr'] = _atr(df['high'], df['low'], df['close'], length=Config.ATR_PERIOD)
 
-        df['ema_fast'] = _ema(df['close'], length=Config.EMA_PULLBACK_FAST)
-        df['ema_slow'] = _ema(df['close'], length=Config.EMA_PULLBACK_SLOW)
+        df['ema_fast'] = _ema(df['close'], length=10)
+        df['ema_slow'] = _ema(df['close'], length=20)
         df['ema_10'] = _ema(df['close'], length=10)
         df['ema_20'] = _ema(df['close'], length=20)
 

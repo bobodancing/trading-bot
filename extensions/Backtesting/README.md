@@ -1,83 +1,83 @@
-# Trading Bot 回測外掛
+﻿# Trading Bot ?葫憭?
 
-Trading Bot 的獨立回測工具。**零修改** `projects/trading_bot/trader/` — 完全透過 patch + inject 的方式將 bot 的網路 I/O 替換成本地 mock，讓真實策略邏輯在歷史數據上執行。
+Trading Bot ?蝡?皜砍極?瑯?*?嗡耨??* `projects/trading_bot/trader/` ??摰?? patch + inject ?撘? bot ?雯頝?I/O ?踵????mock嚗??祕蝑?摩?冽風?脫???瑁???
 
 ---
 
-## 目錄
+## ?桅?
 
-- [架構概覽](#架構概覽)
-- [前置需求](#前置需求)
-- [目錄結構](#目錄結構)
-- [快速開始](#快速開始)
-- [策略選擇](#策略選擇)
-- [模組說明](#模組說明)
-- [CLI 參考](#cli-參考)
-- [程式化使用](#程式化使用)
+- [?嗆?璁汗](#?嗆?璁汗)
+- [?蔭?瘙(#?蔭?瘙?
+- [?桅?蝯?](#?桅?蝯?)
+- [敹恍?憪(#敹恍?憪?
+- [蝑?豢?](#蝑?豢?)
+- [璅∠?隤芣?](#璅∠?隤芣?)
+- [CLI ?(#cli-??
+- [蝔??蝙?沘(#蝔??蝙??
 - [Multi-Window Backtest Standard](#multi-window-backtest-standard)
-- [AutoTrader 整合](#autotrader-整合)
+- [AutoTrader ?游?](#autotrader-?游?)
 - [Trade Replayer](#trade-replayer)
-- [設計決策](#設計決策)
-- [已知限制](#已知限制)
-- [執行測試](#執行測試)
+- [閮剛?瘙箇?](#閮剛?瘙箇?)
+- [撌脩?](#撌脩?)
+- [?瑁?皜祈岫](#?瑁?皜祈岫)
 
 ---
 
-## 架構概覽
+## ?嗆?璁汗
 
 ```
-歷史 K 線 (Binance API / Parquet 快取)
-        ↓
-  BacktestDataLoader  ←  FundingLoader（funding rate Parquet 快取）
-        ↓
-  TimeSeriesEngine          ← 時間視窗控制（防 look-ahead bias）
-        ↓              ↓
+甇瑕 K 蝺?(Binance API / Parquet 敹怠?)
+        ??
+  BacktestDataLoader  ?? FundingLoader嚗unding rate Parquet 敹怠?嚗?
+        ??
+  TimeSeriesEngine          ????閬??批嚗 look-ahead bias嚗?
+        ??             ??
 MockDataProvider    MockOrderEngine
-                       ├─ deduct_funding()  ← funding rate 結算
-                       └─ check_stop_triggers()
-        ↓              ↓
-   create_backtest_bot()   ← patch TradingBot runtime（5 patches + 7 injections）
-        ↓
-  _backtest_context()       ← Context Manager（Config + datetime patch，覆蓋 current/legacy modules）
-        ↓
-  BacktestEngine            ← 主迴圈（per 1H bar）
-   ├─ run_single()          ← 純計算 API（供 AutoTrader 程式化呼叫）
-   │   ├─ check_stop_triggers()
-   │   ├─ scan_for_signals()    ← 真實進場邏輯（2B / EMA Pullback / Volume Breakout）
-   │   ├─ _apply_strategy_map() ← 策略覆寫（v54 / v7 / v6 / v53 / live）
-   │   ├─ monitor_positions()   ← 真實出場邏輯（由策略決定）
-   │   ├─ funding rate 結算     ← 每 8H（00:00 / 08:00 / 16:00 UTC）
-   │   └─ equity_curve 計算
-   └─ run()                 ← CLI 入口（= run_single(verbose=True)）
-        ↓
-  BacktestResult（含 trades_per_week metric）
-        ↓
-  ReportGenerator           → trades.csv / summary.json / equity_curve.html
+                       ?? deduct_funding()  ??funding rate 蝯?
+                       ?? check_stop_triggers()
+        ??             ??
+   create_backtest_bot()   ??patch TradingBot runtime嚗? patches + 7 injections嚗?
+        ??
+  _backtest_context()       ??Context Manager嚗onfig + datetime patch嚗???current/legacy modules嚗?
+        ??
+  BacktestEngine            ??銝餉艘??per 1H bar嚗?
+   ?? run_single()          ??蝝?蝞?API嚗? AutoTrader 蝔???恬?
+   ??  ?? check_stop_triggers()
+   ??  ?? scan_for_signals()    ???祕?脣?摩嚗?B / EMA Pullback / Volume Breakout嚗?
+   ??  ?? _apply_strategy_map() ??蝑閬神嚗54 / v7 / v6 / v53 / live嚗?
+   ??  ?? monitor_positions()   ???祕?箏?摩嚗蝑瘙箏?嚗?
+   ??  ?? funding rate 蝯?     ??瘥?8H嚗?0:00 / 08:00 / 16:00 UTC嚗?
+   ??  ?? equity_curve 閮?
+   ?? run()                 ??CLI ?亙嚗? run_single(verbose=True)嚗?
+        ??
+  BacktestResult嚗 trades_per_week metric嚗?
+        ??
+  ReportGenerator           ??trades.csv / summary.json / equity_curve.html
 ```
 
-**核心原則：** `TimeSeriesEngine.set_time(ts)` 在每根 bar 前呼叫，確保 `get_bars()` 只回傳 `<= ts` 的資料，徹底防止 look-ahead bias。
+**?詨???嚗?* `TimeSeriesEngine.set_time(ts)` ?冽???bar ??恬?蝣箔? `get_bars()` ?芸???`<= ts` ????敺孵??脫迫 look-ahead bias??
 
 ---
 
-## 前置需求
+## ?蔭?瘙?
 
-### Python 套件
+### Python 憟辣
 
 ```bash
 pip install ccxt pandas pyarrow plotly tqdm rich
 ```
 
-| 套件 | 用途 |
+| 憟辣 | ?券?|
 |------|------|
-| ccxt | K 線下載 + Funding Rate 下載（Binance） |
-| pandas + pyarrow | DataFrame + Parquet 快取 |
+| ccxt | K 蝺?頛?+ Funding Rate 銝?嚗inance嚗?|
+| pandas + pyarrow | DataFrame + Parquet 敹怠? |
 | plotly | equity_curve.html |
-| tqdm | 進度條 |
-| rich | Trade Replayer 表格輸出（可選） |
+| tqdm | ?脣漲璇?|
+| rich | Trade Replayer 銵冽頛詨嚗?賂? |
 
-### 路徑結構
+### 頝臬?蝯?
 
-路徑由各模組自動解析，環境變數優先，fallback 到相對路徑：
+頝臬??勗?璅∠??芸?閫??嚗憓??詨??fallback ?啁撠楝敺?
 
 ```python
 def _resolve_bot_root() -> Path:
@@ -87,82 +87,82 @@ def _resolve_bot_root() -> Path:
     return Path(__file__).resolve().parent.parent.parent / "projects" / "trading_bot"
 ```
 
-| 環境變數 | 預設值 | 用途 |
+| ?啣?霈 | ?身??| ?券?|
 |---------|-------|------|
-| `TRADING_BOT_ROOT` | `Claude.ai/projects/trading_bot` | trading bot 根目錄；要測 feat-grid 可指到 `.worktrees/feat-grid` |
-| `BACKTEST_CACHE_DIR` | `tools/Backtesting/cache` | Parquet 快取目錄 |
+| `TRADING_BOT_ROOT` | `Claude.ai/projects/trading_bot` | trading bot ?寧??閬葫 feat-grid ?舀???`.worktrees/feat-grid` |
+| `BACKTEST_CACHE_DIR` | `tools/Backtesting/cache` | Parquet 敹怠??桅? |
 
-確保 `tools/Backtesting/` 在 `Claude.ai/tools/` 下，且 `projects/trading_bot/` 在 `Claude.ai/projects/` 下即可（若不改環境變數）。
+蝣箔? `tools/Backtesting/` ??`Claude.ai/tools/` 銝?銝?`projects/trading_bot/` ??`Claude.ai/projects/` 銝?荔??乩??寧憓??賂???
 
 ---
 
-## 目錄結構
+## ?桅?蝯?
 
 ```
 tools/Backtesting/
-├── data_loader.py          # K 線下載 + Parquet 快取（支援 BACKTEST_CACHE_DIR env）
-├── funding_loader.py       # Funding Rate 下載 + Parquet 快取
-├── time_series_engine.py   # 時間推進引擎（防 look-ahead）
-├── mock_components.py      # MockDataProvider + MockOrderEngine（含 deduct_funding）
-├── backtest_bot.py         # TradingBot runtime 工廠函式（patch + inject）
-├── backtest_engine.py      # 主迴圈 + CLI + run_single() API + _backtest_context CM
-├── report_generator.py     # 報表輸出（CSV / JSON / HTML）
-├── trade_replayer.py       # 歷史交易重播 + CLI
-├── pull_db.sh              # 從 rwUbuntu 拉 v6_performance.db
-├── cache/                  # Parquet 快取（自動建立）
-│   ├── BTCUSDT_1h_....parquet
-│   └── BTCUSDT_funding_....parquet
-├── tests/
-│   ├── test_time_series_engine.py   (6 tests)
-│   ├── test_mock_components.py      (9 tests)
-│   ├── test_backtest_bot.py         (3 tests)
-│   ├── test_backtest_engine.py      (8 tests)
-│   ├── test_report_generator.py     (3 tests)
-│   ├── test_trade_replayer.py       (3 tests)
-│   ├── test_strategy_selection.py   (5 tests)
-│   ├── test_datetime_patch.py       (2 tests)  ← datetime patch 覆蓋驗證
-│   ├── test_funding_rate.py         (4 tests)  ← FundingLoader + deduct_funding
-│   ├── test_patch_contract.py       (10 tests) ← interface contract（防 patch 點靜默失效）
-│   └── test_paths.py                (2 tests)  ← env var 路徑解析
-└── docs/
-    └── plans/
-        ├── 2026-02-28-backtesting-phase2-4.md
-        ├── 2026-02-28-backtesting-phase2-4-design.md
-        ├── 2026-02-28-strategy-selection.md
-        ├── 2026-02-28-strategy-selection-design.md
-        └── 2026-03-23-backtest-hardening.md     ← datetime fix + funding + contract + paths
+??? data_loader.py          # K 蝺?頛?+ Parquet 敹怠?嚗??BACKTEST_CACHE_DIR env嚗?
+??? funding_loader.py       # Funding Rate 銝? + Parquet 敹怠?
+??? time_series_engine.py   # ???券脣?????look-ahead嚗?
+??? mock_components.py      # MockDataProvider + MockOrderEngine嚗 deduct_funding嚗?
+??? backtest_bot.py         # TradingBot runtime 撌亙??賢?嚗atch + inject嚗?
+??? backtest_engine.py      # 銝餉艘??+ CLI + run_single() API + _backtest_context CM
+??? report_generator.py     # ?梯”頛詨嚗SV / JSON / HTML嚗?
+??? trade_replayer.py       # 甇瑕鈭斗?? + CLI
+??? pull_db.sh              # 敺?rwUbuntu ??v6_performance.db
+??? cache/                  # Parquet 敹怠?嚗?遣蝡?
+??  ??? BTCUSDT_1h_....parquet
+??  ??? BTCUSDT_funding_....parquet
+??? tests/
+??  ??? test_time_series_engine.py   (6 tests)
+??  ??? test_mock_components.py      (9 tests)
+??  ??? test_backtest_bot.py         (3 tests)
+??  ??? test_backtest_engine.py      (8 tests)
+??  ??? test_report_generator.py     (3 tests)
+??  ??? test_trade_replayer.py       (3 tests)
+??  ??? test_strategy_selection.py   (5 tests)
+??  ??? test_datetime_patch.py       (2 tests)  ??datetime patch 閬?撽?
+??  ??? test_funding_rate.py         (4 tests)  ??FundingLoader + deduct_funding
+??  ??? test_patch_contract.py       (10 tests) ??interface contract嚗 patch 暺?暺仃??
+??  ??? test_paths.py                (2 tests)  ??env var 頝臬?閫??
+??? docs/
+    ??? plans/
+        ??? 2026-02-28-backtesting-phase2-4.md
+        ??? 2026-02-28-backtesting-phase2-4-design.md
+        ??? 2026-02-28-strategy-selection.md
+        ??? 2026-02-28-strategy-selection-design.md
+        ??? 2026-03-23-backtest-hardening.md     ??datetime fix + funding + contract + paths
 ```
 
 ---
 
-## 快速開始
+## 敹恍?憪?
 
-### 1. 回測
+### 1. ?葫
 
 ```bash
 cd /c/Users/user/Documents/Claude.ai
 
-# 單一標的（預設 live 策略）
+# ?桐?璅?嚗?閮?live 蝑嚗?
 python tools/Backtesting/backtest_engine.py \
   --symbols BTC/USDT \
   --start 2026-01-01 \
   --end 2026-02-28 \
   --balance 10000
 
-# 指定出場策略
+# ???箏蝑
 python tools/Backtesting/backtest_engine.py \
   --symbols SOL/USDT \
   --start 2026-01-01 \
   --end 2026-02-28 \
-  --strategy v54    # 全部走 V54NoScale 出場
+  --strategy v54    # ?券韏?V54NoScale ?箏
 
 python tools/Backtesting/backtest_engine.py \
   --symbols SOL/USDT \
   --start 2026-01-01 \
   --end 2026-02-28 \
-  --strategy v53    # 全部走 V53SopStrategy 出場
+  --strategy v53    # ?券韏?V53SopStrategy ?箏
 
-# 多標的
+# 憭???
 python tools/Backtesting/backtest_engine.py \
   --symbols BTC/USDT ETH/USDT SOL/USDT \
   --start 2026-01-01 \
@@ -171,56 +171,56 @@ python tools/Backtesting/backtest_engine.py \
   --output my_results
 ```
 
-輸出在 `tools/Backtesting/results/`（或 `--output` 指定目錄）：
-- `trades.csv` — 每筆交易明細
-- `summary.json` — 績效摘要
-- `equity_curve.html` — 互動式 Plotly 圖表
+頛詨??`tools/Backtesting/results/`嚗? `--output` ???桅?嚗?
+- `trades.csv` ??瘥?鈭斗??敦
+- `summary.json` ??蝮暹???
+- `equity_curve.html` ??鈭?撘?Plotly ?”
 
 ### 2. Trade Replayer
 
 ```bash
-# 從 rwUbuntu 拉取 DB
+# 敺?rwUbuntu ?? DB
 bash tools/Backtesting/pull_db.sh
 
-# 重播最近 10 筆
+# ??餈?10 蝑?
 python tools/Backtesting/trade_replayer.py \
   --db tools/Backtesting/v6_performance.db \
   --limit 10
 
-# 重播特定交易 + what_if 參數測試
+# ??孵?鈭斗? + what_if ?皜祈岫
 python tools/Backtesting/trade_replayer.py \
   --db tools/Backtesting/v6_performance.db \
   --trade-id abc123 \
   --what_if MIN_MFE_R_FOR_PULLBACK=0.5
 ```
 
-### 3. 執行測試
+### 3. ?瑁?皜祈岫
 
 ```bash
 cd /c/Users/user/Documents/Claude.ai
 python -m pytest tools/Backtesting/tests/ -v
-# 預期：60/60 passed
+# ??嚗?0/60 passed
 ```
 
 ---
 
-## 策略選擇
+## 蝑?豢?
 
-回測支援 `--strategy` 參數，選擇哪個**出場策略**套用到所有交易：
+?葫?舀 `--strategy` ?嚗???*?箏蝑**憟?唳??漱??
 
-| 參數 | 出場策略 | 說明 |
+| ? | ?箏蝑 | 隤芣? |
 |------|---------|------|
-| `live`（預設） | 依目標 bot tree / `bot_config.json` | 維持 live bot 行為；main 與 feat-grid 可能不同 |
-| `v54` | V54NoScaleStrategy | 所有信號強制走 V54 純移損 |
-| `v7` | V7StructureStrategy + V53 fallback | 2B 強制走 V7；EMA/VB 走 V53 |
-| `v6` | V6PyramidStrategy | 所有信號強制走 3 段滾倉（結構追蹤 + 獲利回吐保護） |
-| `v53` | V53SopStrategy | 所有信號強制走 1R/1.5R/2.0R SOP |
+| `live`嚗?閮哨? | 靘璅?bot tree / `bot_config.json` | 蝬剜? live bot 銵嚗ain ??feat-grid ?航銝? |
+| `v54` | V54NoScaleStrategy | ??縑?撥?嗉粥 V54 蝝宏??|
+| `v7` | V7StructureStrategy + V53 fallback | 2B 撘瑕韏?V7嚗MA/VB 韏?V53 |
+| `v6` | V6PyramidStrategy | ??縑?撥?嗉粥 3 畾菜遝??蝯?餈質馱 + ?脣??靽風嚗?|
+| `v53` | V53SopStrategy | ??縑?撥?嗉粥 1R/1.5R/2.0R SOP |
 
-> **進場邏輯不變**：所有模式都跑相同的 `scan_for_signals()`（2B / EMA Pullback / Volume Breakout）。差別只在出場。
+> **?脣?摩銝?**嚗??芋撘頝?? `scan_for_signals()`嚗?B / EMA Pullback / Volume Breakout嚗榆?亙?典?氬?
 
-### 設計原理
+### 閮剛???
 
-`STRATEGY_PRESETS` 是 `strategy_map` dict，映射 signal type → 出場策略名稱：
+`STRATEGY_PRESETS` ??`strategy_map` dict嚗?撠?signal type ???箏蝑?迂嚗?
 
 ```python
 STRATEGY_PRESETS = {
@@ -232,30 +232,30 @@ STRATEGY_PRESETS = {
 }
 ```
 
-每根 bar `scan_for_signals()` 之後，`_apply_strategy_map()` 根據 `strategy_map` 覆寫 `pm.strategy_name`，讓 `monitor_positions()` 走正確的策略出場路徑。`pm_registry`（keyed by `trade_id`）記錄每個 PM 的**原始** exit strategy，避免多 bar 重設覆寫污染。
+瘥 bar `scan_for_signals()` 銋?嚗_apply_strategy_map()` ?寞? `strategy_map` 閬神 `pm.strategy_name`嚗? `monitor_positions()` 韏唳迤蝣箇?蝑?箏頝臬??pm_registry`嚗eyed by `trade_id`嚗?????PM ??*??** exit strategy嚗?? bar ?身閬神瘙⊥???
 
-### 新增自訂策略
+### ?啣??芾?蝑
 
-1. 在 `trader/strategies/` 實作新策略（繼承 `TradingStrategy`）
-2. 在 `STRATEGY_PRESETS` 加新 key：
+1. ??`trader/strategies/` 撖虫??啁??伐?蝜潭 `TradingStrategy`嚗?
+2. ??`STRATEGY_PRESETS` ? key嚗?
    ```python
    "v7": {"2B": "v7", "EMA_PULLBACK": "v53", "VOLUME_BREAKOUT": "v53"},
    ```
-3. 新增 CLI choice 會自動生效（`choices=list(STRATEGY_PRESETS.keys())`）
+3. ?啣? CLI choice ?????`choices=list(STRATEGY_PRESETS.keys())`嚗?
 
-### 報表欄位
+### ?梯”甈?
 
-- `summary.json` 新增 `strategy` 欄位
-- `trades.csv` 新增 `exit_strategy` 欄（每筆交易實際使用的出場策略）
-- `equity_curve.html` 標題加入 strategy 名稱
+- `summary.json` ?啣? `strategy` 甈?
+- `trades.csv` ?啣? `exit_strategy` 甈?瘥?鈭斗?撖阡?雿輻??渡??伐?
+- `equity_curve.html` 璅?? strategy ?迂
 
 ---
 
-## 模組說明
+## 璅∠?隤芣?
 
-### `data_loader.py` — BacktestDataLoader
+### `data_loader.py` ??BacktestDataLoader
 
-從 Binance 下載 OHLCV，自動存 Parquet 快取。
+敺?Binance 銝? OHLCV嚗?? Parquet 敹怠???
 
 ```python
 from data_loader import BacktestDataLoader
@@ -265,15 +265,15 @@ df = loader.get_data("BTC/USDT", "1h", "2026-01-01", "2026-02-28")
 # Returns: DataFrame, index=UTC DatetimeIndex, columns=[open,high,low,close,volume]
 ```
 
-- 快取目錄：預設 `cache/`，可用 `BACKTEST_CACHE_DIR` 環境變數覆蓋
-- 快取命名：`BTCUSDT_1h_20260101_20260228.parquet`
-- 批次下載（每批 1500 根），rate limit 友善（0.5s sleep）
+- 敹怠??桅?嚗?閮?`cache/`嚗??`BACKTEST_CACHE_DIR` ?啣?霈閬?
+- 敹怠??賢?嚗BTCUSDT_1h_20260101_20260228.parquet`
+- ?寞活銝?嚗???1500 ?對?嚗ate limit ??嚗?.5s sleep嚗?
 
 ---
 
-### `funding_loader.py` — FundingLoader
+### `funding_loader.py` ??FundingLoader
 
-從 Binance 下載歷史 funding rate（Futures），自動存 Parquet 快取。
+敺?Binance 銝?甇瑕 funding rate嚗utures嚗??芸?摮?Parquet 敹怠???
 
 ```python
 from funding_loader import FundingLoader
@@ -281,18 +281,18 @@ from funding_loader import FundingLoader
 loader = FundingLoader()
 rates = loader.get_funding_rates("BTC/USDT", "2026-01-01", "2026-02-28")
 # Returns: pd.Series, index=UTC DatetimeIndex, values=funding_rate
-# 每 8 小時一筆（00:00 / 08:00 / 16:00 UTC）
+# 瘥?8 撠?銝蝑?00:00 / 08:00 / 16:00 UTC嚗?
 ```
 
-- 快取命名：`BTCUSDT_funding_20260101_20260228.parquet`
-- 批次下載（每批 1000 筆），batch 間 `sleep(0.5)`，失敗 `sleep(5)` retry
-- `BacktestEngine._load_data()` 自動為每個 symbol 載入並存入 `data[sym]["funding"]`
+- 敹怠??賢?嚗BTCUSDT_funding_20260101_20260228.parquet`
+- ?寞活銝?嚗???1000 蝑?嚗atch ??`sleep(0.5)`嚗仃??`sleep(5)` retry
+- `BacktestEngine._load_data()` ?芸??箸???symbol 頛銝血???`data[sym]["funding"]`
 
 ---
 
-### `time_series_engine.py` — TimeSeriesEngine
+### `time_series_engine.py` ??TimeSeriesEngine
 
-回測核心：控制時間視窗，防 look-ahead bias。
+?葫?詨?嚗?嗆???蝒???look-ahead bias??
 
 ```python
 from time_series_engine import TimeSeriesEngine
@@ -304,26 +304,26 @@ tse = TimeSeriesEngine({
     }
 })
 
-# 設定當前時間（必須在 get_bars 之前呼叫）
+# 閮剖??嗅???嚗?? get_bars 銋??澆嚗?
 tse.set_time(timestamp)
 
-# 只回傳 <= current_time 的最後 N 根
+# ?芸???<= current_time ??敺?N ??
 bars = tse.get_bars("BTC/USDT", "1h", limit=100)
 
-# 當前 bar close price
+# ?嗅? bar close price
 price = tse.get_current_price("BTC/USDT")
 
-# 取所有 symbol 共同的 1H timestamps（交集，已排序）
+# ????symbol ?勗???1H timestamps嚗漱??撌脫?摨?
 ts_list = tse.get_1h_timestamps(["BTC/USDT", "ETH/USDT"])
 ```
 
-> 未呼叫 `set_time()` 就呼叫 `get_bars()` → 拋出 `RuntimeError`（防止靜默 look-ahead）
+> ?芸??`set_time()` 撠勗??`get_bars()` ??? `RuntimeError`嚗甇ａ?暺?look-ahead嚗?
 
 ---
 
-### `mock_components.py` — MockDataProvider / MockOrderEngine
+### `mock_components.py` ??MockDataProvider / MockOrderEngine
 
-替換 bot 的真實 I/O 元件。
+?踵? bot ??撖?I/O ?辣??
 
 #### MockDataProvider
 
@@ -332,7 +332,7 @@ from mock_components import MockDataProvider
 
 provider = MockDataProvider(tse)
 df = provider.fetch_ohlcv("BTC/USDT", "1h", limit=100)
-# 回傳格式與 MarketDataProvider 完全一致：timestamp 為 column（非 index），UTC-naive
+# ??澆???MarketDataProvider 摰銝?湛?timestamp ??column嚗? index嚗?UTC-naive
 ```
 
 #### MockOrderEngine
@@ -342,41 +342,41 @@ from mock_components import MockOrderEngine
 
 engine = MockOrderEngine(tse, fee_rate=0.0004, initial_balance=10000.0)
 
-# 下單（回傳 Binance 格式）
+# 銝嚗???Binance ?澆?嚗?
 result = engine.create_order("BTC/USDT", "BUY", 0.1)
 # {"orderId": ..., "avgPrice": 40000.0, "status": "FILLED", "executedQty": "0.1"}
 
-# 止損單
+# 甇Ｘ???
 order_id = engine.place_hard_stop_loss("BTC/USDT", "LONG", 0.1, stop_price=39000.0)
 engine.cancel_stop_loss_order("BTC/USDT", order_id)
 engine.update_hard_stop_loss(pm, new_stop=39500.0)
 
-# 每 bar 檢查止損觸發（BacktestEngine 負責呼叫）
+# 瘥?bar 瑼Ｘ甇Ｘ?閫貊嚗acktestEngine 鞎痊?澆嚗?
 triggered_symbols = engine.check_stop_triggers()
 
-# Funding rate 結算（BacktestEngine 每 8H 呼叫）
+# Funding rate 蝯?嚗acktestEngine 瘥?8H ?澆嚗?
 engine.deduct_funding("BTC/USDT", "LONG", 0.1, 100000.0, 0.0001)
-# fee = size * entry_price * rate（LONG 付錢，SHORT 收錢）
+# fee = size * entry_price * rate嚗ONG 隞嚗HORT ?園嚗?
 
-# 累計費用（含交易手續費 + funding fee）
+# 蝝航?鞎餌嚗鈭斗???鞎?+ funding fee嚗?
 print(engine.total_fees)
 ```
 
-止損觸發邏輯：
-- LONG：`bar.low <= stop_price` → 觸發
-- SHORT：`bar.high >= stop_price` → 觸發
+甇Ｘ?閫貊?摩嚗?
+- LONG嚗bar.low <= stop_price` ??閫貊
+- SHORT嚗bar.high >= stop_price` ??閫貊
 
-Funding fee 邏輯：
+Funding fee ?摩嚗?
 ```
-LONG:  fee = size * entry_price * rate       (rate > 0 → 付錢, rate < 0 → 收錢)
-SHORT: fee = size * entry_price * (-rate)    (相反)
+LONG:  fee = size * entry_price * rate       (rate > 0 ??隞, rate < 0 ???園)
+SHORT: fee = size * entry_price * (-rate)    (?詨?)
 ```
 
 ---
 
-### `backtest_bot.py` — create_backtest_bot()
+### `backtest_bot.py` ??create_backtest_bot()
 
-工廠函式，建立完全 mock 的 TradingBot runtime。
+撌亙??賢?嚗遣蝡???mock ??TradingBot runtime??
 
 ```python
 from backtest_bot import create_backtest_bot
@@ -384,62 +384,62 @@ from backtest_bot import create_backtest_bot
 bot = create_backtest_bot(
     tse=tse,
     mock_engine=mock_engine,
-    config_overrides={"SL_ATR_BUFFER": 1.5},  # 可選，會覆蓋 Config
+    config_overrides={"SL_ATR_BUFFER": 1.5},  # ?舫嚗?閬? Config
 )
 ```
 
-內部執行的 patches：
+?折?瑁???patches嚗?
 
-| Patch 對象 | 替換為 |
+| Patch 撠情 | ?踵???|
 |-----------|--------|
-| `TradingBot._init_exchange` / `TradingBotV6._init_exchange` | `MagicMock()`（阻斷 ccxt 網路） |
-| `PrecisionHandler._load_exchange_info` | no-op（阻斷 Binance HTTP） |
-| `TradingBot._restore_positions` / `TradingBotV6._restore_positions` | no-op（不載入真實 positions.json） |
+| `TradingBot._init_exchange` / `TradingBotV6._init_exchange` | `MagicMock()`嚗??ccxt 蝬脰楝嚗?|
+| `PrecisionHandler._load_exchange_info` | no-op嚗??Binance HTTP嚗?|
+| `TradingBot._restore_positions` / `TradingBotV6._restore_positions` | no-op嚗?頛?祕 positions.json嚗?|
 | `Config.POSITIONS_JSON_PATH` | tempfile |
 | `Config.DB_PATH` | tempfile |
 
-注入的元件：
+瘜典??隞塚?
 
-| 屬性 | 注入內容 |
+| 撅祆?| 瘜典?批捆 |
 |------|---------|
 | `bot.data_provider` | `MockDataProvider(tse)` |
 | `bot.execution_engine` | `mock_engine` |
 | `bot.exchange.fetch_ticker` | `lambda sym: {"last": tse.get_current_price(sym), ...}` |
-| `bot.perf_db.record_trade` | `MagicMock()`（BacktestEngine 會覆寫為收集器） |
+| `bot.perf_db.record_trade` | `MagicMock()`嚗acktestEngine ??撖怎?園??剁? |
 | `bot.persistence` | `MagicMock()` |
 | `bot._sync_exchange_positions` | `MagicMock()` |
 | `Config.USE_SCANNER_SYMBOLS` | `False` |
-| `Config.V6_DRY_RUN` | `False`（讓 `_execute_trade` / `_handle_close` 走完整路徑） |
-| `bot.risk_manager.get_balance` | `MagicMock(return_value=10000.0)`（阻斷 get_balance() 網路呼叫） |
+| `Config.DRY_RUN` | `False`嚗? `_execute_trade` / `_handle_close` 韏啣??渲楝敺? |
+| `bot.risk_manager.get_balance` | `MagicMock(return_value=10000.0)`嚗??get_balance() 蝬脰楝?澆嚗?|
 
 ---
 
-### `backtest_engine.py` — BacktestEngine
+### `backtest_engine.py` ??BacktestEngine
 
-主迴圈。每根 1H bar 執行：止損觸發 → 掃信號 → 監控持倉 → funding 結算 → 計算 equity。
+銝餉艘????1H bar ?瑁?嚗迫?孛?????縑??????????funding 蝯? ??閮? equity??
 
-提供兩層 API：
-- **`run_single(verbose=False)`** — 純計算，回傳 `BacktestResult`，無 side effect（供 AutoTrader 等程式化呼叫）
-- **`run()`** — CLI 入口，等同 `run_single(verbose=True)`
+???拙惜 API嚗?
+- **`run_single(verbose=False)`** ??蝝?蝞?? `BacktestResult`嚗 side effect嚗? AutoTrader 蝑?撘??澆嚗?
+- **`run()`** ??CLI ?亙嚗???`run_single(verbose=True)`
 
-#### `_backtest_context` — Config/Datetime 隔離
+#### `_backtest_context` ??Config/Datetime ?
 
-Context manager，管理 Config 覆寫 + datetime monkey-patch。進入時套用，離開時還原，確保多次 `run_single()` 不互相污染。
+Context manager嚗恣??Config 閬神 + datetime monkey-patch?脣???剁??ａ?????蝣箔?憭活 `run_single()` 銝??豢情??
 
-**datetime patch 覆蓋的 4 個 modules：**
+**datetime patch 閬???4 ??modules嚗?*
 
-| Module | 為何需要 patch |
+| Module | ?箔??閬?patch |
 |--------|--------------|
-| `trader.bot` | 冷卻計時（`datetime.now()` 比較 entry/cooldown） |
-| `trader.positions` | `entry_time` 記錄 |
-| `trader.signal_scanner` | cooldown / recently_exited / order_failed 計時 |
-| `trader.position_monitor` | close/summary timestamp 與 `holding_hours` |
-| `trader.strategies.legacy.v53_sop` or `trader.strategies.v53_sop` | `hours_held` 計算（`TIME_EXIT` 觸發） |
-| `trader.strategies.legacy.v6_pyramid` or `trader.strategies.v6_pyramid` | `hours_held` 計算（`V6_STAGE1_MAX_HOURS` 觸發） |
+| `trader.bot` | ?瑕閮?嚗datetime.now()` 瘥? entry/cooldown嚗?|
+| `trader.positions` | `entry_time` 閮? |
+| `trader.signal_scanner` | cooldown / recently_exited / order_failed 閮? |
+| `trader.position_monitor` | close/summary timestamp ??`holding_hours` |
+| `trader.strategies.legacy.v53_sop` or `trader.strategies.v53_sop` | `hours_held` 閮?嚗TIME_EXIT` 閫貊嚗?|
+| `trader.strategies.legacy.v6_pyramid` or `trader.strategies.v6_pyramid` | `hours_held` 閮?嚗V6_STAGE1_MAX_HOURS` 閫貊嚗?|
 | `trader.strategies.legacy.v7_structure` or `trader.strategies.v7_structure` | Stage 1 timeout / V7 lifecycle |
-| `trader.strategies.v54_noscale` | feat-grid 主力策略的 `hours_held` / timeout |
+| `trader.strategies.v54_noscale` | feat-grid 銝餃?蝑??`hours_held` / timeout |
 
-> legacy `v53_sop` / `v6_pyramid` / `v7_structure` 與 feat-grid 的 `v54_noscale`、`signal_scanner`、`position_monitor` 都會直接吃 module-level `datetime`，漏 patch 會讓 `hours_held`、cooldown 或 summary timestamp 偏離模擬時間。
+> legacy `v53_sop` / `v6_pyramid` / `v7_structure` ??feat-grid ??`v54_noscale`?signal_scanner`?position_monitor` ?賣??湔??module-level `datetime`嚗? patch ?? `hours_held`?ooldown ??summary timestamp ?璅⊥????
 
 ```python
 from backtest_engine import BacktestConfig, BacktestEngine
@@ -450,44 +450,44 @@ cfg = BacktestConfig(
     end="2026-02-28",
     initial_balance=10000.0,   # USDT
     fee_rate=0.0004,           # 0.04% per trade
-    warmup_bars=100,           # 前 N 根 bar 不執行策略（indicator 暖機）
+    warmup_bars=100,           # ??N ??bar 銝銵??伐?indicator ??嚗?
     strategy="live",           # "live" | "v6" | "v53"
-    config_overrides={},       # 覆蓋 Config 參數（回測結束後自動還原）
+    config_overrides={},       # 閬? Config ?嚗?皜祉????芸???嚗?
 )
 
 engine = BacktestEngine(cfg)
 
-# 程式化呼叫（AutoTrader 用）
-result = engine.run_single()          # 靜默，純回傳 BacktestResult
+# 蝔???恬?AutoTrader ?剁?
+result = engine.run_single()          # ??嚗?? BacktestResult
 
-# CLI 呼叫（人工用）
-result = engine.run()                 # 等同 run_single(verbose=True)
+# CLI ?澆嚗犖撌亦嚗?
+result = engine.run()                 # 蝑? run_single(verbose=True)
 
 print(result.summary)
 # {
-#   "strategy": "live",       # 使用的出場策略
+#   "strategy": "live",       # 雿輻??渡???
 #   "total_trades": 15,
 #   "win_rate": 0.6,
 #   "profit_factor": 1.85,
 #   "total_return_pct": 12.34,
 #   "max_drawdown_pct": 5.67,
-#   "sharpe": 1.42,           # 年化（1H resolution，sqrt(8760)）
-#   "trades_per_week": 3.75,  # 交易頻率（AutoTrader 評分用）
+#   "sharpe": 1.42,           # 撟游?嚗?H resolution嚗qrt(8760)嚗?
+#   "trades_per_week": 3.75,  # 鈭斗??餌?嚗utoTrader 閰??剁?
 # }
 
-print(result.trades)         # List[dict]，來自 perf_db.record_trade
+print(result.trades)         # List[dict]嚗???perf_db.record_trade
 print(result.equity_curve)   # List[(pd.Timestamp, float)]
 ```
 
-**Equity 計算公式：**
+**Equity 閮??砍?嚗?*
 ```
 portfolio_value = initial_balance + gross_closed_pnl - total_fees + unrealized_pnl
 ```
-`pnl_usdt` 來自 `perf_db.record_trade`，是 **GROSS**（未扣費）。`total_fees` 由 `MockOrderEngine` 獨立追蹤（交易手續費 + funding fee），不重複扣減。
+`pnl_usdt` 靘 `perf_db.record_trade`嚗 **GROSS**嚗??祥嚗total_fees` ??`MockOrderEngine` ?函?餈質馱嚗漱??蝥祥 + funding fee嚗?銝?銴皜?
 
 ---
 
-### `report_generator.py` — ReportGenerator
+### `report_generator.py` ??ReportGenerator
 
 ```python
 from report_generator import ReportGenerator
@@ -496,39 +496,39 @@ from pathlib import Path
 ReportGenerator().generate(result, output_dir=Path("results"))
 ```
 
-輸出：
+頛詨嚗?
 
-| 檔案 | 內容 |
+| 瑼? | ?批捆 |
 |------|------|
-| `trades.csv` | 所有交易欄位，含 `exit_strategy`（每筆實際使用的出場策略）；無交易時輸出含標頭的空 CSV |
+| `trades.csv` | ??漱??雿???`exit_strategy`嚗?蝑祕?蝙?函??箏蝑嚗??∩漱??頛詨?急??剔?蝛?CSV |
 | `summary.json` | `strategy / total_trades / win_rate / profit_factor / total_return_pct / max_drawdown_pct / sharpe / trades_per_week` |
-| `equity_curve.html` | Plotly dark theme 互動圖表，標題含 strategy 名稱 |
+| `equity_curve.html` | Plotly dark theme 鈭??”嚗?憿 strategy ?迂 |
 
 ---
 
-### `trade_replayer.py` — TradeReplayer
+### `trade_replayer.py` ??TradeReplayer
 
-從本機 `v6_performance.db` 讀歷史交易，逐根 K 線重播 `PositionManager` 決策，比對 actual vs replayed exit。
+敺璈?`v6_performance.db` 霈甇瑕鈭斗?嚗 K 蝺???`PositionManager` 瘙箇?嚗?撠?actual vs replayed exit??
 
 ```python
 from trade_replayer import TradeReplayer
 
 replayer = TradeReplayer(
     db_path="v6_performance.db",
-    what_if={"MIN_MFE_R_FOR_PULLBACK": 0.5},  # 可選，Config 覆蓋（執行後自動還原）
+    what_if={"MIN_MFE_R_FOR_PULLBACK": 0.5},  # ?舫嚗onfig 閬?嚗銵??芸???嚗?
 )
 
-# 載入交易
+# 頛鈭斗?
 trades = replayer.load_trades(limit=20, symbol="BTC/USDT")
 
-# 重播
+# ?
 results = [replayer.replay(t) for t in trades]
 
-# 輸出表格
+# 頛詨銵冽
 replayer.report(results)
 ```
 
-`replay()` 回傳結構：
+`replay()` ?蝯?嚗?
 
 ```python
 {
@@ -537,8 +537,8 @@ replayer.report(results)
     "side": "LONG",
     "actual_exit_reason": "STRUCTURE_TRAIL",
     "actual_exit_price": 42000.0,
-    "replayed_exit_reason": "PROFIT_PULLBACK",  # 若不同→黃色高亮
-    "replayed_exit_price": 41800.0,             # None 表示重播超時未觸發出場
+    "replayed_exit_reason": "PROFIT_PULLBACK",  # ?乩???暺擃漁
+    "replayed_exit_price": 41800.0,             # None 銵函內?頞??芾孛?澆??
     "decisions": [
         {"time": "2026-01-15 12:00:00+00:00", "price": 40500.0,
          "action": "ACTIVE", "reason": None, "new_sl": None},
@@ -548,29 +548,29 @@ replayer.report(results)
 }
 ```
 
-**PositionManager 重建：**
-- `stop_loss` 從 `trade["initial_r"]` 推導（`entry_price - initial_r` for LONG）
-- 非 5% 硬碼，確保 `risk_dist` 正確 → Stage 2/3 觸發與 trailing 邏輯忠實重現
+**PositionManager ?遣嚗?*
+- `stop_loss` 敺?`trade["initial_r"]` ?典?嚗entry_price - initial_r` for LONG嚗?
+- ??5% 蝖祉Ⅳ嚗Ⅱ靽?`risk_dist` 甇?Ⅱ ??Stage 2/3 閫貊??trailing ?摩敹祕?
 
 ---
 
-### `pull_db.sh` — 拉取 DB
+### `pull_db.sh` ???? DB
 
 ```bash
 bash tools/Backtesting/pull_db.sh
 ```
 
-從 rwUbuntu 拉 `v6_performance.db` 到 `tools/Backtesting/v6_performance.db`。失敗立即退出（`set -e`）。
+敺?rwUbuntu ??`v6_performance.db` ??`tools/Backtesting/v6_performance.db`?仃???喲?綽?`set -e`嚗?
 
-手動等效指令：
+??蝑??誘嚗?
 ```bash
-scp rwfunder@100.67.114.104:/home/rwfunder/文件/tradingbot/trading_bot_v6/v6_performance.db \
+scp rwfunder@100.67.114.104:/home/rwfunder/?辣/tradingbot/trading_bot_v6/v6_performance.db \
     tools/Backtesting/v6_performance.db
 ```
 
 ---
 
-## CLI 參考
+## CLI ??
 
 ### backtest_engine.py
 
@@ -578,12 +578,12 @@ scp rwfunder@100.67.114.104:/home/rwfunder/文件/tradingbot/trading_bot_v6/v6_p
 python tools/Backtesting/backtest_engine.py [options]
 
 Options:
-  --symbols    BTC/USDT ETH/USDT ...   標的列表（預設：BTC/USDT）
-  --start      YYYY-MM-DD              開始日期（預設：2026-01-01）
-  --end        YYYY-MM-DD              結束日期（預設：2026-02-28）
-  --balance    float                   初始資金 USDT（預設：10000.0）
-  --output     dir                     輸出目錄（預設：results，相對於腳本）
-  --strategy   live|v54|v7|v6|v53      出場策略（預設：live）
+  --symbols    BTC/USDT ETH/USDT ...   璅??”嚗?閮哨?BTC/USDT嚗?
+  --start      YYYY-MM-DD              ???交?嚗?閮哨?2026-01-01嚗?
+  --end        YYYY-MM-DD              蝯??交?嚗?閮哨?2026-02-28嚗?
+  --balance    float                   ??鞈? USDT嚗?閮哨?10000.0嚗?
+  --output     dir                     頛詨?桅?嚗?閮哨?results嚗撠?單嚗?
+  --strategy   live|v54|v7|v6|v53      ?箏蝑嚗?閮哨?live嚗?
 ```
 
 ### trade_replayer.py
@@ -592,24 +592,24 @@ Options:
 python tools/Backtesting/trade_replayer.py [options]
 
 Required:
-  --db         path                    v6_performance.db 路徑
+  --db         path                    v6_performance.db 頝臬?
 
 Options:
-  --limit      int                     讀取筆數（預設：10）
-  --symbol     str                     過濾 symbol（e.g. BTC/USDT）
-  --trade-id   str                     重播指定 trade_id
-  --what_if    KEY=VALUE ...           覆蓋 Config 參數
+  --limit      int                     霈???賂??身嚗?0嚗?
+  --symbol     str                     ?蕪 symbol嚗.g. BTC/USDT嚗?
+  --trade-id   str                     ??? trade_id
+  --what_if    KEY=VALUE ...           閬? Config ?
 
-What_if 範例：
+What_if 蝭?嚗?
   --what_if MIN_MFE_R_FOR_PULLBACK=0.5 MIN_FAKEOUT_ATR=0.5
   --what_if V6_4H_EMA20_FORCE_EXIT=true
 ```
 
 ---
 
-## 程式化使用
+## 蝔??蝙??
 
-### 完整回測流程（CLI 風格）
+### 摰?葫瘚?嚗LI 憸冽嚗?
 
 ```python
 from backtest_engine import BacktestConfig, BacktestEngine
@@ -629,7 +629,7 @@ result = BacktestEngine(cfg).run()
 ReportGenerator().generate(result, Path("results"))
 ```
 
-### 程式化呼叫（AutoTrader 用）
+### 蝔???恬?AutoTrader ?剁?
 
 ```python
 from backtest_engine import BacktestConfig, BacktestEngine
@@ -641,15 +641,15 @@ cfg = BacktestConfig(
     config_overrides={"SL_ATR_BUFFER": 0.6, "ADX_THRESHOLD": 20},
 )
 
-# run_single(): 靜默、無 side effect、純回傳 BacktestResult
+# run_single(): ??? side effect??? BacktestResult
 result = BacktestEngine(cfg).run_single()
 
-print(result.summary["trades_per_week"])  # AutoTrader 評分 gate
+print(result.summary["trades_per_week"])  # AutoTrader 閰? gate
 print(result.summary["profit_factor"])
 print(result.summary["sharpe"])
 ```
 
-### 客製化資料注入（不下載）
+### 摰Ｚˊ???釣?伐?銝?頛?
 
 ```python
 import pandas as pd
@@ -657,14 +657,14 @@ from time_series_engine import TimeSeriesEngine
 from mock_components import MockOrderEngine
 from backtest_bot import create_backtest_bot
 
-# 自備數據
+# ?芸??豢?
 df = pd.read_parquet("my_data.parquet")  # index=UTC DatetimeIndex
 
 tse = TimeSeriesEngine({"BTC/USDT": {"1h": df, "4h": df}})
 engine = MockOrderEngine(tse, fee_rate=0.0004)
 bot = create_backtest_bot(tse, engine)
 
-# 手動推進時間
+# ???券脫???
 for ts in df.index:
     tse.set_time(ts)
     bot.scan_for_signals()
@@ -675,11 +675,11 @@ for ts in df.index:
 
 ## Multi-Window Backtest Standard
 
-單一 window 很容易把 regime 偏差誤讀成策略 edge。任何要升級到 runtime 的 detector / filter / exit 變更，預設要跑 multi-window，比較重點放在相對變化，而不是只看某一段的絕對 PF。
+?桐? window 敺捆?? regime ?榆隤方?????edge?遙雿?????runtime ??detector / filter / exit 霈嚗?閮剛?頝?multi-window嚗?頛?暺?函撠??????臬??銝畾萇?蝯? PF??
 
 ### Baseline Matrix
 
-基準 symbol 組合：
+?箸? symbol 蝯?嚗?
 
 ```text
 BTC/USDT
@@ -690,20 +690,20 @@ XRP/USDT
 DOGE/USDT
 ```
 
-基準 period 組合 (Ruei 回填 2026-04-11，來自 BTC 4H RegimeEngine + avg BBW 回放)：
+?箸? period 蝯? (Ruei ?‵ 2026-04-11嚗???BTC 4H RegimeEngine + avg BBW ?)嚗?
 
 | period label | date range | BTC replay note |
 |---|---|---|
-| TRENDING up | `2023-10-01 -> 2024-03-31` | 強上升段 |
-| TRENDING down | `2022-02-15 -> 2022-06-15` | BTC -50.8%; TRENDING 75.9%, trend dir SHORT 64.2%; 比 2025/26 的 recent bear 更乾淨 |
+| TRENDING up | `2023-10-01 -> 2024-03-31` | 撘瑚??挾 |
+| TRENDING down | `2022-02-15 -> 2022-06-15` | BTC -50.8%; TRENDING 75.9%, trend dir SHORT 64.2%; 瘥?2025/26 ??recent bear ?港嗾瘛?|
 | RANGING | `2024-12-31 -> 2025-03-31` | BTC -11.9%; RANGING 51.8% / TRENDING 48.2% |
-| SQUEEZE (low-vol proxy) | `2023-07-01 -> 2023-10-01` | RegimeEngine SQUEEZE 0% **但** avg BBW 較低；**標為 proxy，不是真正 RegimeEngine SQUEEZE** |
+| SQUEEZE (low-vol proxy) | `2023-07-01 -> 2023-10-01` | RegimeEngine SQUEEZE 0% **雿?* avg BBW 頛?嚗?*璅 proxy嚗??舐?甇?RegimeEngine SQUEEZE** |
 | mixed | `2025-02-01 -> 2025-08-31` | BTC +6.8%; TRENDING 59.3% / RANGING 40.7%; mixed / transition |
-| recent 90d | `2026-01-06 -> 2026-04-06` | 最新 cache 90d; BTC -26.3%; TRENDING 68.4% / RANGING 31.6% |
+| recent 90d | `2026-01-06 -> 2026-04-06` | ???cache 90d; BTC -26.3%; TRENDING 68.4% / RANGING 31.6% |
 
-**Caveat — SQUEEZE proxy**: `SQUEEZE (low-vol proxy)` 那格 **不是** 真正 RegimeEngine SQUEEZE。RegimeEngine 回放 BTC 4H 幾乎抓不到 SQUEEZE regime (大部分 period 為 0%)，所以這欄使用 avg BBW 較低的 2023 夏季區間作 proxy，目的是觀察 V54 在低波動環境的 shape，不要當成 "SQUEEZE regime gate test"。
+**Caveat ??SQUEEZE proxy**: `SQUEEZE (low-vol proxy)` ?? **銝** ?迤 RegimeEngine SQUEEZE?egimeEngine ? BTC 4H 撟曆?????SQUEEZE regime (憭折??period ??0%)嚗?隞仿?雿輻 avg BBW 頛???2023 憭迤??? proxy嚗?閫撖?V54 ?其?瘜Ｗ??啣???shape嚗?閬??"SQUEEZE regime gate test"??
 
-**Caveat — cache coverage**: `tools/Backtesting/cache/` 目前缺 `BNBUSDT` / `XRPUSDT` 的 `1h` / `4h` / `1d` / `funding` parquet cache。跑 full 6 symbols × 6 periods matrix 前必須先補齊，覆蓋範圍 `2022-02-15` 到 `2026-04-06`。
+**Caveat ??cache coverage**: `tools/Backtesting/cache/` ?桀?蝻?`BNBUSDT` / `XRPUSDT` ??`1h` / `4h` / `1d` / `funding` parquet cache?? full 6 symbols ? 6 periods matrix ????鋆?嚗?????`2022-02-15` ??`2026-04-06`??
 
 ### Gate Reading
 
@@ -714,134 +714,134 @@ DOGE/USDT
 
 ### Case Study
 
-`results/ema_weekend_review_20260411/ema_research_epilogue.md` 的 `Window selection bias` 段記錄了一次具體踩坑：EMA 研究長時間落在同一個 BTC bear / downtrend / ranging slice，導致 evidence 幾乎都是 SHORT-only。後續重開 EMA 或類似 detector 研究時，第一步應先修正/確認 review window 覆蓋，而不是直接調 detector。
+`results/ema_weekend_review_20260411/ema_research_epilogue.md` ??`Window selection bias` 畾菔???銝甈∪擃萱??EMA ?弦?瑟???典?銝??BTC bear / downtrend / ranging slice嚗???evidence 撟曆??賣 SHORT-only??蝥???EMA ??隡?detector ?弦??蝚砌?甇交??耨甇?蝣箄? review window 閬?嚗??舐?亥矽 detector??
 
 ---
 
-## AutoTrader 整合
+## AutoTrader ?游?
 
-回測引擎是 AutoTrader（AI 自主參數優化）的底層。已完成 Phase 0 Round 1 基礎設施：
+?葫撘???AutoTrader嚗I ?芯蜓??芸?嚗?摨惜?歇摰? Phase 0 Round 1 ?箇?閮剜嚗?
 
-| 完成項目 | 說明 |
+| 摰?? | 隤芣? |
 |---------|------|
-| `run_single()` API | 純計算，無 side effect，供 AutoTrader 連續呼叫 |
-| `_backtest_context` CM | Config + datetime patch 隔離（4 modules），多次 run 不互相污染 |
-| `trades_per_week` metric | 交易頻率統計，AutoTrader 評分 gate 用 |
-| Import path 對齊 | 全部用 `trader.*`，與主專案一致 |
-| Funding rate 模擬 | `FundingLoader` + `MockOrderEngine.deduct_funding()`，equity 更精確 |
+| `run_single()` API | 蝝?蝞???side effect嚗? AutoTrader ????澆 |
+| `_backtest_context` CM | Config + datetime patch ?嚗? modules嚗?憭活 run 銝??豢情??|
+| `trades_per_week` metric | 鈭斗??餌?蝯梯?嚗utoTrader 閰? gate ??|
+| Import path 撠? | ?券??`trader.*`嚗?銝餃?獢???|
+| Funding rate 璅⊥ | `FundingLoader` + `MockOrderEngine.deduct_funding()`嚗quity ?渡移蝣?|
 
-### Phase 0 Round 2（待做）
+### Phase 0 Round 2嚗???
 
-| 項目 | 說明 |
+| ? | 隤芣? |
 |------|------|
-| `evaluator.py` | Gates + composite score（PF/Sharpe/DD/WR/Freq 加權） |
-| `experiment_db.py` | SQLite CRUD，記錄實驗參數/分數/推理 |
-| Regime data | 定義 bull/bear/sideways/lowvol 時間區間 + 下載 K-line cache |
-| Baseline calibration | 用現有參數跑 baseline，校準 trade frequency gate |
+| `evaluator.py` | Gates + composite score嚗F/Sharpe/DD/WR/Freq ??嚗?|
+| `experiment_db.py` | SQLite CRUD嚗??祕撽????/?函? |
+| Regime data | 摰儔 bull/bear/sideways/lowvol ?????+ 銝? K-line cache |
+| Baseline calibration | ?函???貉? baseline嚗皞?trade frequency gate |
 
-> 詳見 `docs/superpowers/specs/2026-03-22-autotrader-design.md`
+> 閰唾? `docs/superpowers/specs/2026-03-22-autotrader-design.md`
 
 ---
 
 ## Trade Replayer
 
-Trade Replayer 的設計目的是**驗證出場邏輯**：給定一筆真實交易的進場條件，用當時的市場數據重跑 PositionManager，看出場原因是否與實際一致。
+Trade Replayer ?身閮?**撽??箏?摩**嚗策摰?蝑?撖虫漱???脣璇辣嚗?嗆????湔??頝?PositionManager嚗??箏???臬?祕???氬?
 
-### 典型用途
+### ?詨??券?
 
-**1. 驗證參數調整效果**
+**1. 撽??隤踵??**
 ```bash
-# 目前參數重播
+# ?桀???
 python trade_replayer.py --db v6_performance.db --limit 20
 
-# what_if：提高 MIN_MFE_R 門檻後，profit_pullback 觸發率是否下降？
+# what_if嚗?擃?MIN_MFE_R ?瑼餃?嚗rofit_pullback 閫貊??虫???
 python trade_replayer.py --db v6_performance.db --limit 20 \
   --what_if MIN_MFE_R_FOR_PULLBACK=0.5
 ```
 
-**2. 診斷特定交易**
+**2. 閮箸?孵?鈭斗?**
 ```bash
-# 看某筆交易每根 bar 的決策過程
+# ??蝑漱????bar ?捱蝑?蝔?
 python trade_replayer.py --db v6_performance.db --trade-id <trade_id>
 ```
 
-**3. 輸出解讀**
+**3. 頛詨閫??**
 
-| 顏色 | 意思 |
+| 憿 | ??|
 |------|------|
-| 綠色 | actual_exit_reason == replayed_exit_reason（完全一致） |
-| 黃色 | 出場原因不同（可能是 SL 位移、參數差異） |
-| `replayed_exit_price = None` | 重播超時未觸發出場（`timeout_in_replay`） |
+| 蝬 | actual_exit_reason == replayed_exit_reason嚗??其??湛? |
+| 暺 | ?箏??銝?嚗?賣 SL 雿宏???詨榆?堆? |
+| `replayed_exit_price = None` | ?頞??芾孛?澆?湛?`timeout_in_replay`嚗?|
 
-### 限制
+### ?
 
-- `stop_loss` 從 `initial_r` 推導（近似值）。若實際持倉在 Stage 2/3 時 SL 已移動，重播起點的 SL 與實際可能有落差。
-- 重播從 entry_time 所在 bar 開始，不含進場前的 indicator 暖機。bars < 10 時跳過 `pm.monitor()`。
-
----
-
-## 設計決策
-
-### 為何 Composition + Patch，不繼承？
-
-直接繼承 TradingBot runtime 會讓回測耦合 bot 內部實作。用 `unittest.mock.patch` 替換具體元件（data_provider、execution_engine），bot 的 `scan_for_signals()` / `monitor_positions()` / `_handle_close()` 等核心邏輯完全不動，最大化 fidelity。
-
-### 為何 TimeSeriesEngine？
-
-直接操作 DataFrame 的 iloc 也能實作，但容易不小心 slice 到未來的 bar（look-ahead bias）。TimeSeriesEngine 提供明確的 API 邊界：只有 `set_time()` 呼叫後，`get_bars()` 才回傳對應時間點的資料，從根本消除這個風險。
-
-### datetime patch 為何需要 4 個 modules？
-
-`bot.py` 和 `positions.py` 之外，feat-grid 拆出的 `signal_scanner.py`、`position_monitor.py`、`grid_manager.py`、`utils.py`，以及 `v54_noscale.py` / legacy strategies 也都可能直接用到 `datetime.now()`。因此 `_backtest_context()` 會一次 patch current + legacy modules；若漏掉，`hours_held`、cooldown、`CYCLE_SUMMARY` 時間戳都會回到真實時鐘。`test_patch_contract.py` 會 AST 掃描 trader/ 確保所有 `datetime.now()` 呼叫都在 patch 清單中。
-
-### pnl_usdt 是 GROSS 還是 NET？
-
-`perf_db.record_trade` 的 `pnl_usdt` 是 **GROSS**（未扣手續費）。這是 bot 原始計算方式（`_handle_close`：`pnl_usdt = pm.total_size * (exit_price - avg_entry)`）。`MockOrderEngine.total_fees` 獨立累計所有 entry + exit 手續費和 funding fee。兩者分開避免重複扣減。
-
-### Sharpe 年化因子
-
-Equity curve 是 1H resolution，所以每個 return 是小時報酬。年化需乘 `sqrt(24 × 365) = sqrt(8760)` ≈ 93.6，而非 `sqrt(24)`。
+- `stop_loss` 敺?`initial_r` ?典?嚗?隡澆潘??撖阡?? Stage 2/3 ??SL 撌脩宏???韏琿???SL ?祕??賣??賢榆??
+- ?敺?entry_time ???bar ??嚗??恍脣?? indicator ???ars < 10 ?歲??`pm.monitor()`??
 
 ---
 
-## 已知限制
+## 閮剛?瘙箇?
 
-1. **成交模型簡化**：以 current bar close price 成交，無 slippage 模型。真實市價單有滑點，尤其 Stage 2/3 加倉。
-2. **Stop 觸發近似**：`check_stop_triggers()` 用 bar close 作為成交價（實際 SL 以 stop price 成交）。影響 pnl 計算的精確度。
-3. **多標的並行限制**：BacktestEngine 按 1H bar 串行處理所有 symbol，不模擬真實 bot 的 asyncio 並發。
-4. **4H EMA20 force exit 暫停**：`V6_4H_EMA20_FORCE_EXIT=False`（bot 主線），回測也沿用此設定。
-5. **Parquet 快取 key 包含日期**：回測相同 symbol 但不同日期範圍時，舊快取不會自動合併，需手動管理 `cache/` 目錄。
-6. **Funding rate 精確度**：以 1H bar 時間戳對 `funding_series.index` 做精確 match（需 timestamp 完全對齊）。若 Binance 回傳的 timestamp 有秒級誤差，當根 bar 不會結算。
+### ?箔? Composition + Patch嚗?蝜潭嚗?
+
+?湔蝜潭 TradingBot runtime ???葫?血? bot ?折撖虫?? `unittest.mock.patch` ?踵??琿??辣嚗ata_provider?xecution_engine嚗?bot ??`scan_for_signals()` / `monitor_positions()` / `_handle_close()` 蝑敹?頛臬??其????憭批? fidelity??
+
+### ?箔? TimeSeriesEngine嚗?
+
+?湔?? DataFrame ??iloc 銋撖虫?嚗?摰寞?銝?敹?slice ?唳靘? bar嚗ook-ahead bias嚗imeSeriesEngine ???Ⅱ??API ??嚗??`set_time()` ?澆敺?`get_bars()` ???喳?????????敺?祆??日◢?芥?
+
+### datetime patch ?箔??閬?4 ??modules嚗?
+
+`bot.py` ??`positions.py` 銋?嚗eat-grid ???`signal_scanner.py`?position_monitor.py`?grid_manager.py`?utils.py`嚗誑??`v54_noscale.py` / legacy strategies 銋?航?湔?典 `datetime.now()`??甇?`_backtest_context()` ??甈?patch current + legacy modules嚗瞍?嚗hours_held`?ooldown?CYCLE_SUMMARY` ???喲???啁?撖行??test_patch_contract.py` ??AST ?? trader/ 蝣箔????`datetime.now()` ?澆?賢 patch 皜銝准?
+
+### pnl_usdt ??GROSS ? NET嚗?
+
+`perf_db.record_trade` ??`pnl_usdt` ??**GROSS**嚗???蝥祥嚗 bot ??閮??孵?嚗_handle_close`嚗pnl_usdt = pm.total_size * (exit_price - avg_entry)`嚗MockOrderEngine.total_fees` ?函?蝝航????entry + exit ??鞎餃? funding fee??????銴皜?
+
+### Sharpe 撟游???
+
+Equity curve ??1H resolution嚗?隞交???return ?臬???研僑??銋?`sqrt(24 ? 365) = sqrt(8760)` ??93.6嚗? `sqrt(24)`??
 
 ---
 
-## 執行測試
+## 撌脩?
+
+1. **?漱璅∪?蝪∪?**嚗誑 current bar close price ?漱嚗 slippage 璅∪???撖血??孵??暺?撠文 Stage 2/3 ??
+2. **Stop 閫貊餈撮**嚗check_stop_triggers()` ??bar close 雿?漱?對?撖阡? SL 隞?stop price ?漱嚗蔣??pnl 閮??移蝣箏漲??
+3. **憭??蒂銵???*嚗acktestEngine ??1H bar 銝脰??????symbol嚗?璅⊥?祕 bot ??asyncio 銝衣??
+4. **4H EMA20 force exit ?怠?**嚗V6_4H_EMA20_FORCE_EXIT=False`嚗ot 銝餌?嚗??葫銋窒?冽迨閮剖???
+5. **Parquet 敹怠? key ??交?**嚗?皜祉??symbol 雿??????嚗?敹怠?銝??芸??蔥嚗???蝞∠? `cache/` ?桅???
+6. **Funding rate 蝎曄Ⅱ摨?*嚗誑 1H bar ???喳? `funding_series.index` ?移蝣?match嚗? timestamp 摰撠?嚗 Binance ???timestamp ??蝝炊撌殷??嗆 bar 銝?蝯???
+
+---
+
+## ?瑁?皜祈岫
 
 ```bash
 cd /c/Users/user/Documents/Claude.ai
 
-# 全部測試
+# ?券皜祈岫
 python -m pytest tools/Backtesting/tests/ -v
 
-# 單一模組
+# ?桐?璅∠?
 python -m pytest tools/Backtesting/tests/test_backtest_engine.py -v
 
-# 含覆蓋率
+# ?怨???
 python -m pytest tools/Backtesting/tests/ --cov=tools/Backtesting --cov-report=term-missing
 ```
 
-| 測試檔 | 測試數 | 涵蓋範圍 |
+| 皜祈岫瑼?| 皜祈岫??| 瘨菔?蝭? |
 |--------|--------|---------|
-| test_time_series_engine.py | 6 | look-ahead 防護、limit、get_current_price、intersection |
-| test_mock_components.py | 9 | 格式對齊、fee deduction、stop 觸發邏輯 |
-| test_backtest_bot.py | 3 | 無網路建立、data_provider/execution_engine 注入 |
-| test_backtest_engine.py | 8 | smoke test、Config 還原、trades_per_week、run_single API |
-| test_report_generator.py | 3 | 三個輸出檔、欄位、summary keys |
-| test_trade_replayer.py | 3 | load_trades、symbol filter、replay 結構 |
-| test_strategy_selection.py | 8 | v54 / v7 / v6 / v53 override、registry 原始值、registry 冪等 |
-| test_datetime_patch.py | 2 | strategy modules 使用模擬時間、離開 context 後還原 |
-| test_funding_rate.py | 4 | cache hit、download rate limit、LONG/SHORT fee 方向 |
-| test_patch_contract.py | 10 | patch 目標存在、inject 屬性存在、datetime.now() 全覆蓋掃描 |
-| test_paths.py | 2 | env var 優先、fallback 相對路徑 |
+| test_time_series_engine.py | 6 | look-ahead ?脰風?imit?et_current_price?ntersection |
+| test_mock_components.py | 9 | ?澆?撠??ee deduction?top 閫貊?摩 |
+| test_backtest_bot.py | 3 | ?∠雯頝臬遣蝡ata_provider/execution_engine 瘜典 |
+| test_backtest_engine.py | 8 | smoke test?onfig ???rades_per_week?un_single API |
+| test_report_generator.py | 3 | 銝撓?箸???雿ummary keys |
+| test_trade_replayer.py | 3 | load_trades?ymbol filter?eplay 蝯? |
+| test_strategy_selection.py | 8 | v54 / v7 / v6 / v53 override?egistry ???潦egistry ?芰? |
+| test_datetime_patch.py | 2 | strategy modules 雿輻璅⊥?????context 敺???|
+| test_funding_rate.py | 4 | cache hit?ownload rate limit?ONG/SHORT fee ?孵? |
+| test_patch_contract.py | 10 | patch ?格?摮?nject 撅祆批??具atetime.now() ?刻?????|
+| test_paths.py | 2 | env var ?芸??allback ?詨?頝臬? |
 
-**合計：60/60 passed**
+**??嚗?0/60 passed**

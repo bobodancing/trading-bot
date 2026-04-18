@@ -1,6 +1,6 @@
 """
-BacktestBot factory — 用 conftest.py patch 模式建立 TradingBot runtime，
-注入 MockDataProvider + MockOrderEngine。
+BacktestBot factory ????conftest.py patch 璅∪?撱箇? TradingBot runtime嚗?
+瘜典? MockDataProvider + MockOrderEngine??
 """
 import os
 import sys
@@ -32,7 +32,7 @@ def _resolve_bot_root() -> Path:
     return local_repo
 
 
-# ── 加入 trading_bot 到 import path ──
+# ???? ??? trading_bot ??import path ????
 TRADING_BOT_ROOT = _resolve_bot_root()
 sys.path.insert(0, str(TRADING_BOT_ROOT))
 
@@ -41,7 +41,7 @@ from time_series_engine import TimeSeriesEngine
 from mock_components import MockDataProvider, MockOrderEngine
 from bot_compat import get_bot_class, get_config_class
 
-logging.disable(logging.CRITICAL)  # 回測時關閉 bot log 輸出
+logging.disable(logging.CRITICAL)  # ??葫?????bot log 頛詨?
 
 
 def create_backtest_bot(
@@ -50,30 +50,30 @@ def create_backtest_bot(
     config_overrides: dict = None,
 ) -> object:
     """
-    建立完全 mock 的 TradingBot runtime，用於回測。
+    撱箇?摰?? mock ??TradingBot runtime嚗???澆?皜研??
 
-    patch 清單：
-    - _init_exchange → MagicMock（阻斷 ccxt 網路）
-    - PrecisionHandler._load_exchange_info → no-op（阻斷 Binance HTTP）
-    - _restore_positions → no-op（不載入真實 positions.json）
-    - Config.POSITIONS_JSON_PATH → tempfile
-    - Config.DB_PATH → tempfile
+    patch 皜??嚗?
+    - _init_exchange ??MagicMock嚗????ccxt 蝬脰楝嚗?
+    - PrecisionHandler._load_exchange_info ??no-op嚗????Binance HTTP嚗?
+    - _restore_positions ??no-op嚗??頛????祕 positions.json嚗?
+    - Config.POSITIONS_JSON_PATH ??tempfile
+    - Config.DB_PATH ??tempfile
 
-    注入：
-    - bot.data_provider → MockDataProvider(tse)
-    - bot.execution_engine → mock_engine
-    - bot.exchange.fetch_ticker → 回傳 tse.get_current_price()
-    - bot.perf_db.record_trade → MagicMock（呼叫方自行設 side_effect）
-    - bot.persistence → MagicMock
-    - bot._sync_exchange_positions → MagicMock
-    - Config.USE_SCANNER_SYMBOLS → False
-    - Config.V6_DRY_RUN → False (allows _execute_trade + _handle_close full paths)
-    - bot.risk_manager.get_balance → MagicMock(return_value=10000.0) (blocks API)
+    瘜典?嚗?
+    - bot.data_provider ??MockDataProvider(tse)
+    - bot.execution_engine ??mock_engine
+    - bot.exchange.fetch_ticker ????? tse.get_current_price()
+    - bot.perf_db.record_trade ??MagicMock嚗???急??芾?閮?side_effect嚗?
+    - bot.persistence ??MagicMock
+    - bot._sync_exchange_positions ??MagicMock
+    - Config.USE_SCANNER_SYMBOLS ??False
+    - Config.DRY_RUN ??False (allows _execute_trade + _handle_close full paths)
+    - bot.risk_manager.get_balance ??MagicMock(return_value=10000.0) (blocks API)
     """
     TradingBotClass = get_bot_class()
     Config = get_config_class()
 
-    # 套用 config overrides
+    # 憟?? config overrides
     if config_overrides:
         for k, v in config_overrides.items():
             setattr(Config, k, v)
@@ -93,11 +93,11 @@ def create_backtest_bot(
          patch("trader.bot.Config.DB_PATH", db_path):
         bot = TradingBotClass()
 
-    # 注入 mock 元件
+    # 瘜典? mock ??辣
     bot.data_provider = MockDataProvider(tse)
     bot.execution_engine = mock_engine
 
-    # fetch_ticker → TSE 當前價格（動態）
+    # fetch_ticker ??TSE ?嗅??寞?嚗?????
     bot.exchange.fetch_ticker = MagicMock(
         side_effect=lambda sym: {
             "last": tse.get_current_price(sym),
@@ -106,16 +106,16 @@ def create_backtest_bot(
         }
     )
 
-    # Telegram: TelegramNotifier 使用靜態方法（TelegramNotifier.notify_signal()），
-    # 不透過 self.notifier。Config.TELEGRAM_ENABLED 預設 False，不發 HTTP 請求。
+    # Telegram: TelegramNotifier 雿輻?????寞?嚗?elegramNotifier.notify_signal()嚗??
+    # 銝???? self.notifier??onfig.TELEGRAM_ENABLED ??身 False嚗????HTTP 隢????
 
-    # perf_db.record_trade 保留為 MagicMock（BacktestEngine 設 side_effect 收集交易）
+    # perf_db.record_trade 靽????MagicMock嚗?acktestEngine 閮?side_effect ?園?鈭斗?嚗?
     bot.perf_db.record_trade = MagicMock()
 
-    # 停用 persistence
+    # ??? persistence
     bot.persistence = MagicMock()
 
-    # 停用 exchange sync
+    # ??? exchange sync
     bot._sync_exchange_positions = MagicMock()
 
     # Backtest-only cache: BTC regime/trend candles update far slower than the
@@ -163,16 +163,16 @@ def create_backtest_bot(
 
     bot.btc_context_manager.get_daily_btc_trend_context = _cached_daily_context
 
-    # 回測固定用 Config.SYMBOLS，不讀 scanner JSON
+    # ??葫?箏???Config.SYMBOLS嚗??霈? scanner JSON
     Config.USE_SCANNER_SYMBOLS = False
 
     # Mock get_balance() to block all Binance API calls for balance.
-    # This lets us set V6_DRY_RUN=False so _execute_trade() creates real
+    # This lets us set DRY_RUN=False so _execute_trade() creates real
     # PositionManager instances and _handle_close() calls perf_db.record_trade().
     bot.risk_manager.get_balance = MagicMock(return_value=10000.0)
 
-    # V6_DRY_RUN must be False so _execute_trade and _handle_close run their
+    # DRY_RUN must be False so _execute_trade and _handle_close run their
     # full code paths (create PositionManager, call perf_db.record_trade).
-    Config.V6_DRY_RUN = False
+    Config.DRY_RUN = False
 
     return bot

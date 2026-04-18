@@ -49,7 +49,7 @@ class TestNotifierEscape:
             'stop_loss': 95.0,
             'target_ref': '$110&more',
             'position_size': 0.01,
-            'is_v6': True,
+            'strategy_name': 'fixture_long',
         }
         TelegramNotifier.notify_signal('<TEST>', details)
         payload = mock_post.call_args.kwargs.get('data', {})
@@ -60,10 +60,10 @@ class TestNotifierEscape:
         # 1.5R 自算: entry=100, stop=95, risk=5, 1.5R = 107.5
         assert '$107.50' in text
         # 策略名稱
-        assert 'V6 Pyramid' in text
+        assert 'fixture_long' in text
 
     @patch('trader.infrastructure.notifier.requests.post')
-    def test_notify_signal_uses_strategy_name_label_for_v54(self, mock_post):
+    def test_notify_signal_uses_strategy_name_label(self, mock_post):
         mock_post.return_value = MagicMock(ok=True)
         details = {
             'signal_strength': 'moderate',
@@ -75,14 +75,12 @@ class TestNotifierEscape:
             'stop_loss': 105.0,
             'target_ref': 'neckline',
             'position_size': 0.02,
-            'is_v6': False,
-            'strategy_name': 'v54_noscale',
+            'strategy_name': 'legacy_manual',
         }
         TelegramNotifier.notify_signal('BTCUSDT', details)
         payload = mock_post.call_args.kwargs.get('data', {})
         text = payload.get('text', '')
-        assert 'V54 NoScale' in text
-        assert 'V53 SOP' not in text
+        assert 'Manual/Protective' in text
 
     @patch('trader.infrastructure.notifier.requests.post')
     def test_notify_signal_includes_arbiter_fields(self, mock_post):
@@ -97,7 +95,7 @@ class TestNotifierEscape:
             'stop_loss': 95.0,
             'target_ref': 'neckline',
             'position_size': 0.01,
-            'strategy_name': 'v54_noscale',
+            'strategy_name': 'fixture_long',
             'arbiter_label': 'TRENDING_UP',
             'arbiter_confidence': 0.73,
             'arbiter_reason': 'clean<trend>',
@@ -112,7 +110,7 @@ class TestNotifierEscape:
     def test_notify_arbiter_block_escapes_fields(self, mock_post):
         mock_post.return_value = MagicMock(ok=True)
         TelegramNotifier.notify_arbiter_block('<BTC>', {
-            'signal_type': '2B',
+            'signal_type': 'fixture_long',
             'side': 'LONG',
             'signal_tier': 'A',
             'arbiter_label': 'NEUTRAL',

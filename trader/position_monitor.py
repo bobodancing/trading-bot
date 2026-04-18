@@ -6,14 +6,13 @@ Handles position lifecycle: monitoring, close, stage add, partial reduce.
 
 import logging
 from datetime import datetime, timezone
-from typing import Dict, Optional
+from typing import Optional
 
 from trader.config import Config
-from trader.indicators.technical import TechnicalAnalysis
 from trader.infrastructure.notifier import TelegramNotifier
 from trader.positions import PositionManager
 from trader.strategies.base import Action
-from trader.utils import trade_log as _trade_log, calculate_pnl, get_close_side, build_log_base, drop_unfinished_candle
+from trader.utils import trade_log as _trade_log, calculate_pnl, build_log_base
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +24,7 @@ class PositionMonitor:
         self.bot = bot
 
     def monitor_positions(self):
-        """Monitor all active positions."""
+        """Monitor active positions through strategy-neutral lifecycle."""
         bot = self.bot
         if not bot.active_trades:
             self._emit_cycle_summary(closed_count=0)
@@ -36,7 +35,7 @@ class PositionMonitor:
         closed_symbols = []
         state_changed = False
 
-        for symbol, pm in bot.active_trades.items():
+        for symbol, pm in list(bot.active_trades.items()):
             try:
                 if pm.is_closed:
                     closed_symbols.append(symbol)
@@ -61,20 +60,19 @@ class PositionMonitor:
                 ticker = bot.fetch_ticker(symbol)
                 current_price = ticker['last']
 
-                df_1h = bot.fetch_ohlcv(symbol, Config.TIMEFRAME_SIGNAL, limit=50)
-                if not df_1h.empty:
-                    # Calculate on the full fetch window, then drop the live candle.
-                    # Dropping first would shrink 50 -> 49 rows and skip indicator refresh.
-                    df_1h = TechnicalAnalysis.calculate_indicators(df_1h)
-                    df_1h = drop_unfinished_candle(df_1h)
+                pm.highest_price = max(pm.highest_price, current_price)
+                pm.lowest_price = min(pm.lowest_price, current_price)
+                pm.monitor_count += 1
 
-                df_4h = None
-                if pm.strategy_name in ("v6_pyramid", "v7_structure"):
-                    df_4h = bot.fetch_ohlcv(symbol, '4h', limit=50)
-                    if df_4h is not None and not df_4h.empty:
-                        df_4h = TechnicalAnalysis.calculate_indicators(df_4h)
+                if self._stop_hit(pm, current_price):
+                    pm.exit_reason = "sl_hit"
+                    if self.handle_close(pm, current_price, decision_reason="SL_HIT"):
+                        closed_symbols.append(symbol)
+                        state_changed = True
+                    continue
 
-                decision = pm.monitor(current_price, df_1h, df_4h)
+                decision_obj = bot.strategy_runtime.update_position(pm, current_price)
+                decision = decision_obj.as_dict() if hasattr(decision_obj, "as_dict") else dict(decision_obj or {})
                 action = decision.get('action', Action.HOLD)
                 new_sl = decision.get('new_sl')
                 decision_reason = decision.get('reason')
@@ -87,9 +85,9 @@ class PositionMonitor:
                         pm.current_sl = old_sl
                     if old_sl > 0 and abs(new_sl - old_sl) / old_sl > 0.01 and pm.current_sl == new_sl:
                         TelegramNotifier.notify_action(
-                            symbol, '1.5R移損',
+                            symbol, '1.5R蝘餅?',
                             current_price,
-                            f"SL ${old_sl:.2f} → ${new_sl:.2f}"
+                            f"SL ${old_sl:.2f} ??${new_sl:.2f}"
                         )
 
                 if action == Action.CLOSE:
@@ -97,20 +95,12 @@ class PositionMonitor:
                         closed_symbols.append(symbol)
                         state_changed = True
 
-                elif action == Action.ADD:
-                    stage = decision.get('add_stage', 2)
-                    if stage == 2:
-                        self.handle_stage2(pm, current_price, df_1h, decision=decision)
-                    else:
-                        self.handle_stage3(pm, current_price, df_1h, decision=decision)
-                    state_changed = True
-
                 elif action == Action.PARTIAL_CLOSE:
                     close_pct = decision.get('close_pct', 0.3)
                     pct_int = round(close_pct * 100)
                     reason = decision.get('reason', 'PARTIAL_CLOSE')
                     label = "2.0R" if "20R" in reason or "25R" in reason else "1.5R"
-                    self.handle_v53_reduce(pm, pct_int, label, current_price)
+                    self.handle_partial_close(pm, pct_int, label, current_price)
                     state_changed = True
 
                 if pm.side == 'LONG':
@@ -118,14 +108,7 @@ class PositionMonitor:
                 else:
                     profit_pct = (pm.avg_entry - current_price) / pm.avg_entry * 100
 
-                if pm.strategy_name == "v54_noscale":
-                    mode = "V54"
-                elif pm.strategy_name == "v7_structure":
-                    mode = f"V7/S{pm.stage}"
-                elif pm.strategy_name == "v6_pyramid":
-                    mode = f"V6/S{pm.stage}"
-                else:
-                    mode = "V53"
+                mode = pm.strategy_id
                 logger.debug(
                     f"{symbol} [{mode}]: ${current_price:.2f} | "
                     f"PnL={profit_pct:+.2f}% | SL=${pm.current_sl:.2f}"
@@ -180,6 +163,12 @@ class PositionMonitor:
         logger.debug(f"Monitor done | remaining: {len(bot.active_trades)}")
         self._emit_cycle_summary(closed_count=len(closed_symbols))
 
+    @staticmethod
+    def _stop_hit(pm: PositionManager, current_price: float) -> bool:
+        if pm.side == "LONG":
+            return current_price <= pm.current_sl
+        return current_price >= pm.current_sl
+
     def _emit_cycle_summary(self, closed_count: int = 0):
         """Emit CYCLE_SUMMARY trade log -- called even when active_trades is empty."""
         bot = self.bot
@@ -188,7 +177,7 @@ class PositionMonitor:
             for s, t in bot.active_trades.items()
         ) or "none"
 
-        cycle_balance = bot.risk_manager.get_balance() if not Config.V6_DRY_RUN else 10000.0
+        cycle_balance = bot.risk_manager.get_balance() if not Config.DRY_RUN else 10000.0
         cycle_unrealized_pnl = 0.0
         for pos in bot.active_trades.values():
             try:
@@ -231,26 +220,6 @@ class PositionMonitor:
             max_r = (pm.avg_entry - pm.lowest_price) / pm.risk_dist
 
         return round(max(max_r, 0.0), 4)
-
-    @staticmethod
-    def _get_v54_protection_state(pm: PositionManager) -> Optional[str]:
-        """Return the strongest V54 protection milestone active at exit."""
-        if pm.strategy_name != 'v54_noscale':
-            return None
-
-        strategy = getattr(pm, 'strategy', None)
-        if strategy is None:
-            return None
-
-        if getattr(strategy, 'is_25r_locked', False):
-            return 'V54_LOCK_20R'
-        if getattr(strategy, 'is_15r_locked', False):
-            return 'V54_LOCK_15R'
-        if getattr(strategy, 'is_breakeven_protected', False):
-            return 'V54_BREAKEVEN'
-        if getattr(strategy, 'is_trailing_active', False):
-            return 'V54_TRAILING'
-        return None
 
     @staticmethod
     def _resolve_exit_price(order_result: dict, fallback_price: float) -> tuple[float, str]:
@@ -370,7 +339,7 @@ class PositionMonitor:
                 decision_reason=decision_reason,
             )
 
-            if Config.V6_DRY_RUN:
+            if Config.DRY_RUN:
                 logger.info(f"[DRY_RUN] Close {pm.symbol} {pm.side} size={pm.total_size:.6f}")
             else:
                 if external_close:
@@ -426,11 +395,6 @@ class PositionMonitor:
             safe_capture = round(pnl_pct / mfe_pct, 4) if mfe_pct > 0.0001 else None
             holding_time_min = round(duration_h * 60, 1)
             max_r_reached = self._calc_max_r_reached(pm)
-            protection_state = self._get_v54_protection_state(pm)
-            protected_exit = None
-            if pm.strategy_name == 'v54_noscale':
-                protected_exit = int(exit_reason == 'sl_hit' and protection_state is not None)
-
             _trade_log({
                 **build_log_base('TRADE_CLOSE', pm.trade_id, pm.symbol, pm.side),
                 'exit_price': f'{exit_price:.2f}',
@@ -450,16 +414,16 @@ class PositionMonitor:
                 'signal_type': getattr(pm, 'signal_type', None),
                 'decision_reason': decision_reason,
                 'max_r_reached': f'{max_r_reached:.4f}' if max_r_reached is not None else None,
-                'protection_state': protection_state,
-                'protected_exit': protected_exit,
+                'protection_state': None,
+                'protected_exit': None,
             })
 
-            if not Config.V6_DRY_RUN:
+            if not Config.DRY_RUN:
                 bot.perf_db.record_trade({
                     "trade_id":      pm.trade_id,
                     "symbol":        pm.symbol,
                     "side":          pm.side,
-                    "is_v6_pyramid": int(pm.is_v6_pyramid),
+                    "is_v6_pyramid": 0,
                     "signal_tier":   pm.signal_tier,
                     "signal_type":   getattr(pm, 'signal_type', None),
                     "entry_price":   pm.avg_entry,
@@ -479,8 +443,8 @@ class PositionMonitor:
                     "max_r_reached": max_r_reached,
                     "stage_reached":   pm.stage,
                     "exit_reason":     exit_reason,
-                    "protection_state": protection_state,
-                    "protected_exit": protected_exit,
+                    "protection_state": None,
+                    "protected_exit": None,
                     "market_regime":   pm.market_regime,
                     "entry_adx":          getattr(pm, 'entry_adx', None),
                     "fakeout_depth_atr":  getattr(pm, 'fakeout_depth_atr', None),
@@ -517,183 +481,8 @@ class PositionMonitor:
             logger.error(f"{pm.symbol} _handle_close unexpected error: {e}")
             return False
 
-    def handle_stage2(self, pm: PositionManager, current_price: float, df_1h, decision: dict = None):
-        """Handle Stage 2 add."""
-        bot = self.bot
-        try:
-            entry_price = current_price
-
-            if pm.strategy_name == 'v7_structure':
-                from trader.strategies.legacy.v7_structure import V7StructureStrategy
-                new_sl = decision.get('new_sl') if decision else None
-                if new_sl is None:
-                    logger.error(f"{pm.symbol} V7 Stage 2: decision missing new_sl")
-                    return
-
-                if Config.V6_DRY_RUN:
-                    balance = 10000.0
-                else:
-                    balance = bot.risk_manager.get_balance()
-
-                total_risk_pct = bot._calc_total_risk_pct(balance)
-
-                add_size = V7StructureStrategy.calculate_add_size(
-                    balance=balance,
-                    risk_per_trade=Config.RISK_PER_TRADE,
-                    entry_price=entry_price,
-                    new_sl=new_sl,
-                    max_position_percent=Config.MAX_POSITION_PERCENT,
-                    max_total_risk=Config.MAX_TOTAL_RISK,
-                    current_total_risk_pct=total_risk_pct,
-                )
-            else:
-                add_size = pm.calculate_stage2_size(entry_price)
-
-            if add_size <= 0:
-                logger.warning(f"{pm.symbol} Stage 2 size=0, skip")
-                return
-
-            add_size = bot._validate_position_size(pm.symbol, add_size, entry_price, "Stage2")
-            if add_size is None:
-                return
-
-            if Config.V6_DRY_RUN:
-                logger.info(
-                    f"[DRY_RUN] {pm.symbol} Stage 2 add: +{add_size:.6f} @ ${entry_price:.2f}"
-                )
-                v7_sl = decision.get('new_sl') if decision and pm.strategy_name == 'v7_structure' else None
-                pm.add_stage2(entry_price, add_size, new_sl=v7_sl)
-                return
-
-            order_side = get_close_side(pm.side)
-            order_result = bot._futures_create_order(pm.symbol, order_side, add_size)
-
-            fill_price = bot._extract_fill_price(order_result, entry_price)
-            if fill_price != entry_price:
-                logger.info(
-                    f"{pm.symbol} Stage2 fill correction: signal${entry_price:.4f} -> actual${fill_price:.4f}"
-                )
-
-            v7_sl = decision.get('new_sl') if decision and pm.strategy_name == 'v7_structure' else None
-            pm.add_stage2(fill_price, add_size, new_sl=v7_sl)
-
-            bot._refresh_stop_loss(pm, pm.current_sl)
-
-            if Config.AUTO_BACKUP_ON_STAGE_CHANGE:
-                bot.persistence.backup_positions()
-
-            logger.info(
-                f"{pm.symbol} Stage 2 add done: +{add_size:.6f} @ ${fill_price:.2f} | "
-                f"total={pm.total_size:.6f} | SL=${pm.current_sl:.2f}"
-            )
-            TelegramNotifier.notify_action(
-                pm.symbol,
-                'V7加倉' if pm.strategy_name == 'v7_structure' else '1.5R移損',
-                fill_price,
-                f"Stage2 add +{add_size:.6f} total={pm.total_size:.6f} SL=${pm.current_sl:.2f}"
-            )
-
-        except Exception as e:
-            logger.error(f"{pm.symbol} Stage 2 add failed: {e}")
-
-    def handle_stage3(self, pm: PositionManager, current_price: float, df_1h, decision: dict = None):
-        """Handle Stage 3 add."""
-        bot = self.bot
-        try:
-            entry_price = current_price
-
-            if pm.strategy_name == 'v7_structure':
-                from trader.strategies.legacy.v7_structure import V7StructureStrategy
-                new_sl = decision.get('new_sl') if decision else None
-                if new_sl is None:
-                    logger.error(f"{pm.symbol} V7 Stage 3: decision missing new_sl")
-                    return
-
-                if Config.V6_DRY_RUN:
-                    balance = 10000.0
-                else:
-                    balance = bot.risk_manager.get_balance()
-
-                total_risk_pct = bot._calc_total_risk_pct(balance)
-
-                add_size = V7StructureStrategy.calculate_add_size(
-                    balance=balance,
-                    risk_per_trade=Config.RISK_PER_TRADE,
-                    entry_price=entry_price,
-                    new_sl=new_sl,
-                    max_position_percent=Config.MAX_POSITION_PERCENT,
-                    max_total_risk=Config.MAX_TOTAL_RISK,
-                    current_total_risk_pct=total_risk_pct,
-                )
-                swing_stop = new_sl
-            else:
-                from trader.structure import StructureAnalysis
-
-                if df_1h is not None and not df_1h.empty:
-                    if pm.side == 'LONG':
-                        swing_price = StructureAnalysis.find_latest_confirmed_swing(
-                            df_1h, 'low', Config.SWING_LEFT_BARS, Config.SWING_RIGHT_BARS
-                        )
-                    else:
-                        swing_price = StructureAnalysis.find_latest_confirmed_swing(
-                            df_1h, 'high', Config.SWING_LEFT_BARS, Config.SWING_RIGHT_BARS
-                        )
-                else:
-                    swing_price = None
-
-                if swing_price is None:
-                    logger.warning(f"{pm.symbol} Stage 3: no swing point for SL, skip")
-                    return
-
-                atr_buffer = pm.atr * Config.SL_ATR_BUFFER if pm.atr else 0
-                if pm.side == 'LONG':
-                    swing_stop = swing_price - atr_buffer
-                else:
-                    swing_stop = swing_price + atr_buffer
-
-                add_size = pm.calculate_stage3_size(entry_price, swing_stop)
-            if add_size <= 0:
-                logger.warning(f"{pm.symbol} Stage 3 size=0, skip")
-                return
-
-            add_size = bot._validate_position_size(pm.symbol, add_size, entry_price, "Stage3")
-            if add_size is None:
-                return
-
-            if Config.V6_DRY_RUN:
-                logger.info(
-                    f"[DRY_RUN] {pm.symbol} Stage 3 add: +{add_size:.6f} @ ${entry_price:.2f} "
-                    f"| swing SL=${swing_stop:.2f}"
-                )
-                pm.add_stage3(entry_price, add_size, swing_stop)
-                return
-
-            order_side = get_close_side(pm.side)
-            order_result = bot._futures_create_order(pm.symbol, order_side, add_size)
-
-            fill_price = bot._extract_fill_price(order_result, entry_price)
-            if fill_price != entry_price:
-                logger.info(
-                    f"{pm.symbol} Stage3 fill correction: signal${entry_price:.4f} -> actual${fill_price:.4f}"
-                )
-
-            pm.add_stage3(fill_price, add_size, swing_stop)
-
-            bot._refresh_stop_loss(pm, pm.current_sl)
-
-            if Config.AUTO_BACKUP_ON_STAGE_CHANGE:
-                bot.persistence.backup_positions()
-
-            logger.info(
-                f"{pm.symbol} Stage 3 add done: +{add_size:.6f} @ ${fill_price:.2f} | "
-                f"total={pm.total_size:.6f} | SL=${pm.current_sl:.2f} (swing)"
-            )
-
-        except Exception as e:
-            logger.error(f"{pm.symbol} Stage 3 add failed: {e}")
-
-    def handle_v53_reduce(self, pm: PositionManager, pct: int, label: str, current_price: float):
-        """Handle V5.3 partial reduce."""
+    def handle_partial_close(self, pm: PositionManager, pct: int, label: str, current_price: float):
+        """Handle strategy-neutral partial close."""
         bot = self.bot
         try:
             reduce_size = pm.total_size * (pct / 100.0)
@@ -702,7 +491,7 @@ class PositionMonitor:
 
             reduce_size = float(bot.precision_handler.format_quantity(pm.symbol, reduce_size))
 
-            if Config.V6_DRY_RUN:
+            if Config.DRY_RUN:
                 partial_pnl = calculate_pnl(pm.side, reduce_size, current_price, pm.avg_entry)
                 pm.realized_partial_pnl += partial_pnl
                 logger.info(

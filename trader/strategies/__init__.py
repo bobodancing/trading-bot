@@ -1,10 +1,31 @@
-"""V6 Strategies — Strategy Pattern 模組"""
+"""Strategy plugin contracts for the reset runtime."""
 
-from trader.strategies.base import Action, DecisionDict, TradingStrategy, StrategyFactory, _apply_common_pre
-from trader.strategies.legacy import V6PyramidStrategy, V53SopStrategy, V7StructureStrategy
-from trader.strategies.v54_noscale import V54NoScaleStrategy    # triggers registration
+from trader.strategies.base import (
+    Action,
+    DecisionDict,
+    ExecutableOrderPlan,
+    MarketSnapshot,
+    PositionDecision,
+    RiskPlan,
+    SignalIntent,
+    StopHint,
+    StrategyContext,
+    StrategyPlugin,
+    StrategyRegistry,
+    StrategyRiskProfile,
+)
 
 __all__ = [
-    'Action', 'DecisionDict', 'TradingStrategy', 'StrategyFactory', '_apply_common_pre',
-    'V6PyramidStrategy', 'V53SopStrategy', 'V7StructureStrategy', 'V54NoScaleStrategy',
+    "Action",
+    "DecisionDict",
+    "ExecutableOrderPlan",
+    "MarketSnapshot",
+    "PositionDecision",
+    "RiskPlan",
+    "SignalIntent",
+    "StopHint",
+    "StrategyContext",
+    "StrategyPlugin",
+    "StrategyRegistry",
+    "StrategyRiskProfile",
 ]

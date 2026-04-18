@@ -1,4 +1,4 @@
-"""共用 fixtures for TradingBot integration tests"""
+"""?璇? fixtures for TradingBot integration tests"""
 
 import sys
 import pytest
@@ -13,9 +13,8 @@ from trader.bot import TradingBot
 from trader.positions import PositionManager
 from trader.risk.manager import PrecisionHandler
 
-
 def make_pm(**kwargs) -> PositionManager:
-    """建立最小可用的 PositionManager（測試用）"""
+    """?梁?????????? PositionManager???恍銵???"""
     defaults = dict(
         symbol='BTC/USDT',
         side='LONG',
@@ -28,7 +27,7 @@ def make_pm(**kwargs) -> PositionManager:
     pm.entry_time = datetime.now(timezone.utc)
     pm.highest_price = 51000.0
     pm.lowest_price = 49000.0
-    pm.initial_r = 20.0      # 防止 / 0
+    pm.initial_r = 20.0      # ??怨翰 / 0
     pm.market_regime = 'TRENDING'
     return pm
 
@@ -36,11 +35,11 @@ def make_pm(**kwargs) -> PositionManager:
 @pytest.fixture
 def mock_bot(tmp_path):
     """
-    TradingBot instance，所有外部 I/O 已 mock：
-      - _init_exchange → MagicMock（阻斷 ccxt 網路連線）
-      - PrecisionHandler._load_exchange_info → no-op（阻斷 Binance exchangeInfo HTTP）
-      - _restore_positions → no-op（防止載入真實 positions.json）
-    PositionPersistence 和 PerformanceDB 使用 tmp_path（測完自動清除）
+    TradingBot instance????????I/O ??mock??
+      - _init_exchange ??MagicMock?????ccxt ?祈璆?????
+      - PrecisionHandler._load_exchange_info ??no-op?????Binance exchangeInfo HTTP??
+      - _restore_positions ??no-op????撩??鈭???positions.json??
+    PositionPersistence ??PerformanceDB ?輯撒? tmp_path???急??????甇?
     """
     mock_exchange = MagicMock()
     mock_exchange.load_markets.return_value = {}
@@ -53,24 +52,24 @@ def mock_bot(tmp_path):
          patch('trader.bot.Config.DB_PATH', str(tmp_path / 'perf.db')):
         bot = TradingBot()
 
-    # 覆蓋 perf_db 寫入（避免 SQLite 問題）
+    # ??? perf_db ???????SQLite ?????
     bot.perf_db.record_trade = MagicMock()
 
     yield bot
 
 
-# ──────────────────────────────────────────────
-# StatefulMockEngine — Integration Test 用
-# ──────────────────────────────────────────────
+# ????????????????????????????????????????????????????????????????????????????????????????????
+# StatefulMockEngine ??Integration Test ??
+# ????????????????????????????????????????????????????????????????????????????????????????????
 
 class StatefulMockEngine:
     """
-    有狀態的 mock execution engine，追蹤：
-    - balance（開倉扣 notional，平倉加回 notional ± PnL）
-    - positions（{symbol: {side, size, entry_price}}）
-    - open_stop_orders（{order_id: {symbol, side, size, stop_price}}）
+    ?????? mock execution engine???剝甇?
+    - balance?????? notional????????notional 蝪?PnL??
+    - positions??symbol: {side, size, entry_price}}??
+    - open_stop_orders??order_id: {symbol, side, size, stop_price}}??
 
-    與真實 OrderExecutionEngine 介面完全一致。
+    ?????OrderExecutionEngine ?????????瘞??
     """
 
     def __init__(self, initial_balance: float = 10000.0):
@@ -78,7 +77,7 @@ class StatefulMockEngine:
         self.positions: dict = {}       # {symbol: {side, size, entry_price}}
         self.open_stops: dict = {}      # {order_id: {symbol, side, size, stop_price}}
         self.order_counter = 0
-        self.trade_log: list = []       # 記錄所有操作
+        self.trade_log: list = []       # ??????????
         self._fault: 'FaultInjector | None' = None
 
     def attach_fault_injector(self, fi: 'FaultInjector'):
@@ -89,7 +88,7 @@ class StatefulMockEngine:
         return f"mock_order_{self.order_counter}"
 
     def _check_fault(self, method_name: str):
-        """每個 API call 進入時先過 fault injector"""
+        """????API call ????????fault injector"""
         if self._fault:
             self._fault.check(method_name)
 
@@ -98,7 +97,7 @@ class StatefulMockEngine:
         return True
 
     def create_order(self, symbol: str, side: str, quantity: float) -> dict:
-        """開倉。side='BUY'→LONG, 'SELL'→SHORT"""
+        """??????ide='BUY'??ONG, 'SELL'??HORT"""
         self._check_fault('create_order')
 
         order_id = self._next_order_id()
@@ -108,13 +107,13 @@ class StatefulMockEngine:
         })
         return {
             'orderId': order_id,
-            'avgPrice': '0',  # bot 用 _extract_fill_price，fallback 到信號價
+            'avgPrice': '0',  # bot ??_extract_fill_price??allback ??祉????
             'status': 'FILLED',
             'executedQty': str(quantity),
         }
 
     def close_position(self, symbol: str, side: str, quantity: float) -> dict:
-        """平倉"""
+        """???"""
         self._check_fault('close_position')
         order_id = self._next_order_id()
         self.trade_log.append({
@@ -130,7 +129,7 @@ class StatefulMockEngine:
 
     def place_hard_stop_loss(self, symbol: str, side: str, size: float,
                               stop_price: float) -> str:
-        """設置硬止損"""
+        """?桀??剛?蟡翰??"""
         self._check_fault('place_hard_stop_loss')
         order_id = self._next_order_id()
         self.open_stops[order_id] = {
@@ -144,7 +143,7 @@ class StatefulMockEngine:
         return order_id
 
     def cancel_stop_loss_order(self, symbol: str, order_id: str | None) -> bool:
-        """取消止損"""
+        """????撓?"""
         self._check_fault('cancel_stop_loss_order')
         if order_id and order_id in self.open_stops:
             del self.open_stops[order_id]
@@ -154,7 +153,7 @@ class StatefulMockEngine:
         return True
 
     def update_hard_stop_loss(self, pm, new_stop: float):
-        """更新 trailing stop（PositionManager 呼叫）"""
+        """?皝? trailing stop??ositionManager ?瞉???"""
         self.cancel_stop_loss_order(pm.symbol, pm.stop_order_id)
         pm.stop_order_id = self.place_hard_stop_loss(
             pm.symbol, pm.side, pm.total_size, new_stop
@@ -163,28 +162,28 @@ class StatefulMockEngine:
 
 class FaultInjector:
     """
-    故障注入器。可在指定的 method call 上觸發 Exception。
+    ???????????????? method call ??摮??Exception??
 
-    用法：
+    ?????
         fi = FaultInjector()
         fi.set_fault('close_position', Exception("API 5xx"), times=1)
         engine.attach_fault_injector(fi)
-        # 下一次 close_position 會丟 Exception，之後恢復正常
+        # ?????close_position ??? Exception???????箸?餈斗?
     """
 
     def __init__(self):
         self._faults: dict = {}  # {method_name: {'error': Exception, 'remaining': int}}
 
     def set_fault(self, method_name: str, error: Exception, times: int = 1):
-        """設定某 method 在接下來 N 次呼叫時丟出 error"""
+        """?桀????method ?????? N ???????? error"""
         self._faults[method_name] = {'error': error, 'remaining': times}
 
     def clear(self):
-        """清除所有故障設定"""
+        """??????????頨急?"""
         self._faults.clear()
 
     def check(self, method_name: str):
-        """每次 API call 前呼叫，有故障則 raise"""
+        """??瘣?API call ???????????? raise"""
         fault = self._faults.get(method_name)
         if fault and fault['remaining'] > 0:
             fault['remaining'] -= 1
@@ -196,13 +195,13 @@ class FaultInjector:
 @pytest.fixture
 def integration_bot(tmp_path):
     """
-    Integration test 用的 TradingBot：
-    - StatefulMockEngine（有狀態的 execution engine）
-    - FaultInjector（可注入故障）
-    - V6_DRY_RUN = False（走完整 _execute_trade / _handle_close 路徑）
-    - perf_db 使用 tmp_path（測完自動清除）
+    Integration test ??? TradingBot??
+    - StatefulMockEngine???????? execution engine??
+    - FaultInjector??????????
+    - DRY_RUN = False??蝎交?? _execute_trade / _handle_close ????
+    - perf_db ?輯撒? tmp_path???急??????甇?
 
-    回傳 (bot, engine, fault_injector) tuple。
+    ??? (bot, engine, fault_injector) tuple??
     """
     from trader.config import Config
 
@@ -224,48 +223,48 @@ def integration_bot(tmp_path):
          patch('trader.bot.Config.DB_PATH', db_path):
         bot = TradingBot()
 
-    # 注入 StatefulMockEngine
+    # ?? StatefulMockEngine
     bot.execution_engine = engine
 
-    # fetch_ticker → 可由 test 設定 side_effect
+    # fetch_ticker ????? test ?桀?? side_effect
     bot.exchange.fetch_ticker = MagicMock(return_value={
         'last': 50000.0, 'bid': 49999.0, 'ask': 50001.0,
     })
 
-    # data_provider.fetch_ohlcv → MagicMock（由各 test 自行設回傳值）
+    # data_provider.fetch_ohlcv ??MagicMock?????test ????桀?????瞏?
     bot.data_provider = MagicMock()
     bot.data_provider.fetch_ohlcv = MagicMock(return_value=pd.DataFrame())
 
-    # risk_manager.get_balance → 固定值（阻斷 Binance API）
+    # risk_manager.get_balance ???蝞??瞏??擗? Binance API??
     bot.risk_manager.get_balance = MagicMock(return_value=10000.0)
 
-    # risk_manager.get_positions → 預設回空 list（sync 用）
+    # risk_manager.get_positions ????頨??敺?list??ync ???
     bot.risk_manager.get_positions = MagicMock(return_value=[])
 
-    # precision_handler → 直接回傳原值（不做精度調整）
+    # precision_handler ???皝???????瞏??????瞍脤頦???
     bot.precision_handler.round_amount_up = MagicMock(side_effect=lambda sym, amt, price: amt)
     bot.precision_handler.round_amount = MagicMock(side_effect=lambda sym, amt: amt)
     bot.precision_handler.check_limits = MagicMock(return_value=True)
 
-    # persistence → 使用真實 PositionPersistence（寫 tmp_path）
-    # 不 mock，確保 _save_positions / _restore_positions 走真實路徑
+    # persistence ???輯撒???蟡?PositionPersistence??蟡?tmp_path??
+    # ??mock???⊿?_save_positions / _restore_positions ????正璆?
 
-    # 儲存原始 Config 值
+    # ?????? Config ??
     _orig = {
-        'V6_DRY_RUN': Config.V6_DRY_RUN,
+        'DRY_RUN': Config.DRY_RUN,
         'USE_SCANNER_SYMBOLS': Config.USE_SCANNER_SYMBOLS,
         'SYMBOLS': Config.SYMBOLS,
         'TELEGRAM_ENABLED': Config.TELEGRAM_ENABLED,
     }
 
-    # Config 設定
-    Config.V6_DRY_RUN = False
+    # Config ?桀??
+    Config.DRY_RUN = False
     Config.USE_SCANNER_SYMBOLS = False
     Config.SYMBOLS = ['BTC/USDT']
     Config.TELEGRAM_ENABLED = False
 
     yield bot, engine, fi
 
-    # teardown：還原所有 Config 至原始值
+    # teardown????????Config ???????
     for k, v in _orig.items():
         setattr(Config, k, v)

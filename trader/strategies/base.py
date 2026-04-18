@@ -1,182 +1,234 @@
-"""
-V7 P2: Strategy Pattern 基礎模組
+"""Strategy runtime contracts.
 
-包含：
-- Action enum（通用 action 類型）
-- DecisionDict TypedDict
-- _apply_common_pre() 共用前處理（V6 + V53 共享）
-- TradingStrategy 抽象基類（含 get_state / load_state）
-- StrategyFactory（Registry 模式）
+The strategy reset keeps alpha logic behind typed plugin boundaries. Plugins
+can describe trade intent and position management, but sizing, portfolio caps,
+and execution remain centralized in the bot runtime.
 """
 
 from __future__ import annotations
 
-import logging
+import importlib
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
-from typing import TYPE_CHECKING, Dict, Optional, Type, TypedDict
+from typing import Any, Mapping, Optional
 
 import pandas as pd
 
-if TYPE_CHECKING:
-    from trader.positions import PositionManager
-
-logger = logging.getLogger(__name__)
-
 
 class Action(str, Enum):
-    """通用 action 類型（策略回傳值）"""
-    HOLD          = "HOLD"           # 繼續持有（原 ACTIVE）
-    CLOSE         = "CLOSE"          # 全平
-    PARTIAL_CLOSE = "PARTIAL_CLOSE"  # 部分平倉（原 V53_REDUCE_*）
-    ADD           = "ADD"            # 加倉（原 STAGE2/3_TRIGGER）
-    UPDATE_SL     = "UPDATE_SL"      # 純更新止損
+    HOLD = "HOLD"
+    CLOSE = "CLOSE"
+    PARTIAL_CLOSE = "PARTIAL_CLOSE"
+    UPDATE_SL = "UPDATE_SL"
 
 
-class DecisionDict(TypedDict):
-    action: str              # Action enum value
-    reason: str              # exit/action reason code（供 performance DB 記錄）
-    new_sl: Optional[float]  # 若有移損，填新止損價；否則 None
-    close_pct: Optional[float]  # PARTIAL_CLOSE 時的比例（0.3 = 30%）
-    add_stage: Optional[int]    # ADD 時的階段（2 or 3）
+DecisionDict = dict[str, Any]
 
 
-def _apply_common_pre(pm: 'PositionManager', current_price: float, df_1h) -> Optional[dict]:
-    """
-    共同前處理（V6 + V53 共用）：
-    1. 更新 highest_price / lowest_price
-    2. 更新 ATR
-    3. 遞增 monitor_count
-    4. 止損觸發檢查
-    5. 快速止損（Early Stop R）檢查
+@dataclass(frozen=True)
+class StopHint:
+    price: float
+    reason: str = "strategy_stop"
+    metadata: dict[str, Any] = field(default_factory=dict)
 
-    Returns:
-        None → 無早期退出，繼續策略邏輯
-        dict → 需立即退出，直接回傳此 DecisionDict
-    """
-    from trader.config import Config as Cfg
 
-    # 更新極值
-    pm.highest_price = max(pm.highest_price, current_price)
-    pm.lowest_price = min(pm.lowest_price, current_price)
+@dataclass(frozen=True)
+class SignalIntent:
+    strategy_id: str
+    symbol: str
+    side: str
+    timeframe: str
+    candle_ts: datetime
+    entry_type: str
+    stop_hint: Optional[StopHint]
+    confidence: Optional[float] = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+    entry_price: Optional[float] = None
 
-    # 更新 ATR
-    if df_1h is not None and len(df_1h) > 0 and 'atr' in df_1h.columns:
-        pm.atr = df_1h['atr'].iloc[-1]
+    def __post_init__(self) -> None:
+        side = self.side.upper()
+        if side not in {"LONG", "SHORT"}:
+            raise ValueError(f"invalid side: {self.side!r}")
+        object.__setattr__(self, "side", side)
 
-    pm.monitor_count += 1
 
-    # === 止損觸發 ===
-    if pm.side == 'LONG' and current_price <= pm.current_sl:
-        logger.warning(
-            f"[{pm.strategy_name}] {pm.symbol} "
-            f"SL hit @ ${current_price:.2f}"
-        )
-        pm.exit_reason = 'sl_hit'
-        return {"action": Action.CLOSE, "reason": "NONE", "new_sl": None, "close_pct": None, "add_stage": None}
+@dataclass(frozen=True)
+class PositionDecision:
+    action: Action = Action.HOLD
+    reason: str = "NONE"
+    new_sl: Optional[float] = None
+    close_pct: Optional[float] = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
-    if pm.side == 'SHORT' and current_price >= pm.current_sl:
-        logger.warning(
-            f"[{pm.strategy_name}] {pm.symbol} "
-            f"SL hit @ ${current_price:.2f}"
-        )
-        pm.exit_reason = 'sl_hit'
-        return {"action": Action.CLOSE, "reason": "NONE", "new_sl": None, "close_pct": None, "add_stage": None}
+    def as_dict(self) -> DecisionDict:
+        return {
+            "action": self.action,
+            "reason": self.reason,
+            "new_sl": self.new_sl,
+            "close_pct": self.close_pct,
+            "metadata": dict(self.metadata),
+        }
 
-    # === 快速止損 -EARLY_STOP_R_THRESHOLD（僅 V6，V53 由 SL + structure_break 處理）===
-    if pm.is_v6_pyramid and pm.risk_dist > 0 and pm.initial_r > 0:
-        if pm.side == 'LONG':
-            _r = (current_price - pm.avg_entry) / pm.risk_dist
+
+@dataclass(frozen=True)
+class RiskPlan:
+    entry_price: float
+    stop_loss: float
+    position_size: float
+    max_loss_usdt: float
+    risk_pct: float
+    hard_stop_required: bool
+    reject_reason: Optional[str] = None
+
+    @property
+    def allowed(self) -> bool:
+        return self.reject_reason is None and self.position_size > 0
+
+
+@dataclass(frozen=True)
+class StrategyRiskProfile:
+    sizing_mode: str = "fixed_risk_pct"
+    risk_pct: Optional[float] = None
+
+    @classmethod
+    def fixed_risk_pct(cls, risk_pct: Optional[float] = None) -> "StrategyRiskProfile":
+        return cls(sizing_mode="fixed_risk_pct", risk_pct=risk_pct)
+
+
+@dataclass(frozen=True)
+class ExecutableOrderPlan:
+    intent: SignalIntent
+    risk_plan: RiskPlan
+    strategy_version: str
+    router_reason: str = "route:direct"
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class MarketSnapshot:
+    frames: dict[str, dict[str, pd.DataFrame]]
+    generated_at: datetime
+
+    def get(self, symbol: str, timeframe: str) -> pd.DataFrame:
+        return self.frames.get(symbol, {}).get(timeframe, pd.DataFrame())
+
+    def latest_close(self, symbol: str, timeframe: str) -> Optional[float]:
+        frame = self.get(symbol, timeframe)
+        if frame.empty or "close" not in frame.columns:
+            return None
+        return float(frame["close"].iloc[-1])
+
+    def latest_timestamp(self, symbol: str, timeframe: str) -> Optional[datetime]:
+        frame = self.get(symbol, timeframe)
+        if frame.empty:
+            return None
+        if isinstance(frame.index, pd.DatetimeIndex):
+            ts = frame.index[-1]
+        elif "timestamp" in frame.columns:
+            ts = pd.to_datetime(frame["timestamp"].iloc[-1], utc=True, errors="coerce")
         else:
-            _r = (pm.avg_entry - current_price) / pm.risk_dist
-        if _r <= -Cfg.EARLY_STOP_R_THRESHOLD:
-            logger.warning(
-                f"[{pm.strategy_name}] {pm.symbol} "
-                f"Early stop: {_r:.2f}R <= -{Cfg.EARLY_STOP_R_THRESHOLD}R"
-            )
-            pm.exit_reason = 'early_stop_r'
-            return {"action": Action.CLOSE, "reason": "FAST_STOP_067R", "new_sl": None, "close_pct": None, "add_stage": None}
-
-    return None
+            return None
+        if pd.isna(ts):
+            return None
+        return ts.to_pydatetime()
 
 
-class TradingStrategy(ABC):
-    """交易策略抽象基類"""
+@dataclass
+class StrategyContext:
+    snapshot: MarketSnapshot
+    symbols: list[str]
+    active_positions: Mapping[str, Any]
+    config: Any
+    now: datetime
+
+
+class StrategyPlugin(ABC):
+    id: str = ""
+    version: str = "0.1.0"
+    tags: set[str] = set()
+    required_timeframes: dict[str, int] = {"1h": 100}
+    required_indicators: set[str] = set()
+    params_schema: dict[str, Any] = {}
+    allowed_symbols: set[str] = set()
+    max_concurrent_positions: Optional[int] = 1
+    risk_profile: StrategyRiskProfile = StrategyRiskProfile.fixed_risk_pct()
+
+    def __init__(self, params: Optional[dict[str, Any]] = None):
+        self.params = params or {}
 
     @abstractmethod
-    def get_decision(
-        self,
-        pm: 'PositionManager',
-        current_price: float,
-        df_1h: pd.DataFrame,
-        df_4h: pd.DataFrame = None,
-        **kwargs,
-    ) -> DecisionDict:
-        """
-        根據當前市場狀態，回傳持倉決策。
+    def generate_candidates(self, context: StrategyContext) -> list[SignalIntent]:
+        """Return candidate entries. Plugins must not size or execute."""
 
-        Args:
-            pm: PositionManager 實例（含倉位狀態）
-            current_price: 當前最新價格
-            df_1h: 1H OHLCV DataFrame（含 indicators）
-            df_4h: 4H OHLCV DataFrame（可選，V6 路徑用於 EMA20 force exit）
+    def update_position(self, context: StrategyContext, position: Any) -> PositionDecision:
+        return PositionDecision()
 
-        Returns:
-            DecisionDict: {action, reason, new_sl, close_pct, add_stage}
-        """
-        pass
-
-    def get_state(self) -> dict:
-        """回傳策略內部 state（for persistence）"""
+    def get_state(self) -> dict[str, Any]:
         return {}
 
-    def load_state(self, state: dict):
-        """從 dict 還原策略 state"""
-        pass
+    def load_state(self, state: dict[str, Any]) -> None:
+        return None
 
 
-class StrategyFactory:
-    """策略工廠（Registry 模式）：依名稱建立對應的 TradingStrategy 實例"""
+class StrategyRegistry:
+    def __init__(self):
+        self._plugins: dict[str, StrategyPlugin] = {}
 
-    _registry: Dict[str, Type[TradingStrategy]] = {}
+    @property
+    def plugins(self) -> dict[str, StrategyPlugin]:
+        return dict(self._plugins)
+
+    def register(self, plugin: StrategyPlugin) -> None:
+        if not plugin.id:
+            raise ValueError("strategy plugin id is required")
+        if plugin.id in self._plugins:
+            raise ValueError(f"duplicate strategy id: {plugin.id}")
+        self._plugins[plugin.id] = plugin
+
+    def get(self, strategy_id: str) -> Optional[StrategyPlugin]:
+        return self._plugins.get(strategy_id)
+
+    def require(self, strategy_id: str) -> StrategyPlugin:
+        plugin = self.get(strategy_id)
+        if plugin is None:
+            raise KeyError(f"strategy not registered: {strategy_id}")
+        return plugin
 
     @classmethod
-    def register(cls, name: str, strategy_cls: Type[TradingStrategy]):
-        cls._registry[name] = strategy_cls
+    def from_config(
+        cls,
+        catalog: Mapping[str, Mapping[str, Any]] | None,
+        enabled: list[str] | tuple[str, ...] | set[str] | None,
+    ) -> "StrategyRegistry":
+        registry = cls()
+        catalog = catalog or {}
+        enabled_set = set(enabled or [])
+        if not enabled_set:
+            return registry
 
-    @classmethod
-    def create(cls, name: str) -> TradingStrategy:
-        if name not in cls._registry:
-            raise ValueError(f"Unknown strategy: {name!r}. Available: {list(cls._registry.keys())}")
-        return cls._registry[name]()
+        for strategy_key in enabled_set:
+            entry = catalog.get(strategy_key)
+            if entry is None:
+                raise ValueError(f"enabled strategy missing from catalog: {strategy_key}")
+            if not bool(entry.get("enabled", False)):
+                continue
+            module_name = entry.get("module")
+            class_name = entry.get("class")
+            if not module_name or not class_name:
+                raise ValueError(f"strategy catalog entry incomplete: {strategy_key}")
+            module = importlib.import_module(str(module_name))
+            plugin_cls = getattr(module, str(class_name))
+            plugin = plugin_cls(params=dict(entry.get("params") or {}))
+            if plugin.id != strategy_key:
+                raise ValueError(
+                    f"strategy id mismatch for {strategy_key}: plugin exposes {plugin.id}"
+                )
+            registry.register(plugin)
+        return registry
 
-    @classmethod
-    def create_strategy(cls, name: str) -> TradingStrategy:
-        """Backward-compat alias for create(); also accepts legacy names."""
-        _legacy = {
-            "v6": "v6_pyramid",
-            "V6": "v6_pyramid",
-            "V6_PYRAMID": "v6_pyramid",
-            "v53": "v53_sop",
-            "V53": "v53_sop",
-            "V5.3": "v53_sop",
-            "V53_SOP": "v53_sop",
-            "v7": "v7_structure",
-            "V7": "v7_structure",
-            "V7_STRUCTURE": "v7_structure",
-            "v54": "v54_noscale",
-            "V54": "v54_noscale",
-            "V54_NOSCALE": "v54_noscale",
-        }
-        resolved = _legacy.get(name, name)
-        if resolved not in cls._registry:
-            # Lazy import fallback for first call before registration
-            from trader.strategies.legacy.v6_pyramid import V6PyramidStrategy
-            from trader.strategies.legacy.v53_sop import V53SopStrategy
-            from trader.strategies.legacy.v7_structure import V7StructureStrategy
-            from trader.strategies.v54_noscale import V54NoScaleStrategy
-            cls.register("v6_pyramid", V6PyramidStrategy)
-            cls.register("v53_sop", V53SopStrategy)
-            cls.register("v7_structure", V7StructureStrategy)
-            cls.register("v54_noscale", V54NoScaleStrategy)
-        return cls.create(_legacy.get(name, name))
+
+def _apply_common_pre(*_args, **_kwargs) -> None:
+    """Removed legacy strategy helper retained only for import compatibility."""
+    return None

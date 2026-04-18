@@ -1,11 +1,9 @@
 """
-V6.0 主引擎 — 終極滾倉版
+V6.0 ?????????????????
 
-基於 V5.3 TradingBotV53 重構：
-- 2B 信號 → V7 結構加倉（V7StructureStrategy, 三段 swing-based 加倉）
-- EMA Pullback / Volume Breakout → V5.3 SOP（PositionManager, is_v6_pyramid=False）
-- [DEPRECATED] V6.0 滾倉仍保留供既有持倉平倉
-- positions.json 持久化
+??? V5.3 TradingBotV53 ?????
+- [DEPRECATED] V6.0 ????????????????????
+- positions.json ?????
 """
 
 import sys
@@ -19,32 +17,33 @@ from pathlib import Path
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
-# 確保從專案根目錄 import v6 package
+# ????????????? import v6 package
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import ccxt
 import pandas as pd
 
-# 基礎設施層
+# ?????????????
 from trader.infrastructure.api_client import BinanceFuturesClient
 from trader.infrastructure.notifier import TelegramNotifier
 from trader.infrastructure.telegram_handler import TelegramCommandHandler
 from trader.infrastructure.data_provider import MarketDataProvider
 from trader.infrastructure.performance_db import PerformanceDB
-# 技術指標層
+# ?????????
 from trader.indicators.technical import TechnicalAnalysis
-# 風險管理層
+# ??????????
 from trader.risk.manager import PrecisionHandler, RiskManager
 from trader.arbiter import RegimeArbiter
 from trader.routing import RegimeRouter
 from trader.regime import RegimeEngine
 from trader.strategies.v8_grid import V8AtrGrid, PoolManager
-# 訂單執行層
+# ????????
 from trader.execution.order_engine import OrderExecutionEngine
 from trader.config import Config
 from trader.positions import PositionManager
 from trader.persistence import PositionPersistence
-from trader.strategies.base import Action
+from trader.strategies import ExecutableOrderPlan
+from trader.strategy_runtime import StrategyRuntime
 from trader.grid_manager import GridManager
 from trader.btc_context import BTCContextManager, get_last_candle_time, get_last_closed_candle_time, format_candle_time
 from trader.position_monitor import PositionMonitor
@@ -74,42 +73,42 @@ class TradingBot:
         self.precision_handler = PrecisionHandler(self.exchange)
         self.futures_client = BinanceFuturesClient(Config.API_KEY, Config.API_SECRET, Config.SANDBOX_MODE)
         self.risk_manager = RiskManager(self.exchange, self.precision_handler)
-        # RiskManager 內部用 V5.3 Config 建的 futures_client 拿不到新 key，覆蓋掉
+        # RiskManager ?????V5.3 Config ???? futures_client ?????? key??????
         self.risk_manager.futures_client = self.futures_client
-        # 訂單執行引擎（Phase 3: 剝離下單邏輯）
+        # ???????????hase 3: ????????????
         self.execution_engine = OrderExecutionEngine(
             self.exchange, self.futures_client, self.precision_handler
         )
 
-        # V6.0: PositionManager 取代 TradeManager
+        # V6.0: PositionManager ????TradeManager
         self.active_trades: Dict[str, PositionManager] = {}
         self._scanner_symbol_meta: Dict[str, Dict[str, object]] = {}
 
-        # 冷卻和黑名單
+        # ?????????
         self.recently_exited: Dict[str, datetime] = {}
         self.order_failed_symbols: Dict[str, datetime] = {}
-        self.early_exit_cooldown: Dict[str, datetime] = {}  # 快速止損/超時退出 12h 冷卻
+        self.early_exit_cooldown: Dict[str, datetime] = {}  # ???????????????12h ???
 
-        # 帳戶初始餘額（用於 net_pnl_pct 計算）
+        # ???????????????net_pnl_pct ?????
         self.initial_balance: float = 0.0
 
-        # V6.0: 持久化層（路徑在 Config，指向專案根目錄）
+        # V6.0: ?????????????? Config??????????????
         pos_path = os.path.expanduser(Config.POSITIONS_JSON_PATH)
         if not os.path.isabs(pos_path):
             pos_path = str(Path(__file__).parent.parent / pos_path)
         Path(pos_path).parent.mkdir(parents=True, exist_ok=True)
         self.persistence = PositionPersistence(pos_path)
 
-        # 啟動時恢復 positions
+        # ????????positions
         self._restore_positions()
 
-        # Phase 0: 績效 DB
+        # Phase 0: ???? DB
         db_path = getattr(Config, 'DB_PATH', 'performance.db')
         self.perf_db = PerformanceDB(db_path=db_path)
 
         self._log_startup()
 
-        # Telegram 互動指令
+        # Telegram ???????
         self.telegram_handler = TelegramCommandHandler(self)
 
         # Grid / Regime system
@@ -130,6 +129,7 @@ class TradingBot:
         self.btc_context_manager = BTCContextManager(self)
         self.position_monitor = PositionMonitor(self)
         self.signal_scanner = SignalScanner(self)
+        self.strategy_runtime = StrategyRuntime(self)
 
     @staticmethod
     def _verify_config_parity():
@@ -160,7 +160,7 @@ class TradingBot:
         return True
 
     def _init_exchange(self):
-        """初始化交易所（沿用 V5.3）"""
+        """Initialize exchange client."""
         try:
             exchange_class = getattr(ccxt, Config.EXCHANGE)
             exchange_config = {
@@ -175,7 +175,7 @@ class TradingBot:
             if Config.SANDBOX_MODE:
                 if Config.TRADING_MODE == 'future':
                     exchange.set_sandbox_mode(True)
-                    # ccxt sandbox 會設成 testnet，覆蓋為 Demo Trading 端點
+                    # ccxt sandbox ?????testnet?????? Demo Trading ????
                     if 'api' in exchange.urls:
                         for key in exchange.urls['api']:
                             url_val = str(exchange.urls['api'].get(key, ''))
@@ -187,18 +187,18 @@ class TradingBot:
                                 )
                     exchange.options['sandboxMode'] = True
                     exchange.options['defaultType'] = 'future'
-                    logger.info("已連接 Binance Demo Trading")
+                    logger.info("?????? Binance Demo Trading")
                 else:
                     try:
                         exchange.set_sandbox_mode(True)
                     except Exception as e:
-                        logger.warning(f"沙盒模式啟用失敗: {e}")
+                        logger.warning(f"??????????????: {e}")
 
             try:
                 exchange.load_markets()
-                logger.info(f"已載入 {len(exchange.markets)} 個交易對")
+                logger.info(f"??????{len(exchange.markets)} ??????")
             except Exception as e:
-                logger.warning(f"載入市場資訊失敗: {e}")
+                logger.warning(f"?????????????: {e}")
 
             if Config.TRADING_MODE == 'future':
                 for symbol in Config.SYMBOLS:
@@ -210,28 +210,26 @@ class TradingBot:
             return exchange
 
         except Exception as e:
-            logger.error(f"交易所初始化失敗: {e}")
+            logger.error(f"?????????????? {e}")
             raise
 
     def _log_startup(self):
-        """啟動日誌"""
+        """Log reset-runtime startup context."""
         logger.info("=" * 60)
-        logger.info("TradingBot 已啟動")
+        logger.info("TradingBot started")
         logger.info("=" * 60)
-        logger.info(f"模式: {Config.TRADING_MODE} ({Config.TRADING_DIRECTION})")
-        logger.info(f"槓桿: {Config.LEVERAGE}x")
-        logger.info(f"風險: 每筆 {Config.RISK_PER_TRADE*100:.1f}%")
-        logger.info(f"滾倉: {'開啟' if Config.PYRAMID_ENABLED else '關閉'}")
-        if Config.PYRAMID_ENABLED:
-            logger.info(f"  資金上限: {Config.EQUITY_CAP_PERCENT*100:.0f}%")
-            logger.info(f"  三段比例: {Config.STAGE1_RATIO}/{Config.STAGE2_RATIO}/{Config.STAGE3_RATIO}")
-        logger.info(f"模擬模式: {'開啟' if Config.V6_DRY_RUN else '關閉'}")
-        logger.info(f"已恢復持倉: {len(self.active_trades)}")
-        logger.info(f"監控標的: {', '.join(Config.SYMBOLS)}")
+        logger.info(f"Mode: {Config.TRADING_MODE} ({Config.TRADING_DIRECTION})")
+        logger.info(f"Leverage: {Config.LEVERAGE}x")
+        logger.info(f"Risk per trade: {Config.RISK_PER_TRADE*100:.1f}%")
+        logger.info(f"Strategy runtime: {'enabled' if Config.STRATEGY_RUNTIME_ENABLED else 'disabled'}")
+        logger.info(f"Enabled strategies: {', '.join(Config.ENABLED_STRATEGIES) or 'none'}")
+        logger.info(f"Dry run: {'enabled' if Config.DRY_RUN else 'disabled'}")
+        logger.info(f"Active positions: {len(self.active_trades)}")
+        logger.info(f"Symbols: {', '.join(Config.SYMBOLS)}")
         logger.info("=" * 60)
 
     def _restore_positions(self):
-        """從 positions.json 恢復 positions"""
+        """??positions.json ????? positions"""
         data = self.persistence.load_positions()
         if not data:
             return
@@ -242,27 +240,27 @@ class TradingBot:
                 self.active_trades[symbol] = pm
                 value_usdt = pm.total_size * pm.avg_entry
                 logger.info(
-                    f"已恢復 {symbol}: {pm.side} 階段{pm.stage} "
-                    f"倉位=${value_usdt:.2f} 止損=${pm.current_sl:.2f}"
+                    f"Restored {symbol}: {pm.side} stage={pm.stage} "
+                    f"value=${value_usdt:.2f} sl=${pm.current_sl:.2f}"
                 )
             except Exception as e:
-                logger.error(f"恢復 {symbol} 失敗: {e}")
+                logger.error(f"????? {symbol} ????: {e}")
 
     def _save_positions(self):
-        """儲存所有 positions 到 JSON"""
+        """???????positions ??JSON"""
         data = {}
         for symbol, pm in self.active_trades.items():
             data[symbol] = pm.to_dict()
         self.persistence.save_positions(data)
 
-    # ==================== 數據獲取 ====================
+    # ==================== ?????? ====================
 
     def fetch_ohlcv(self, symbol: str, timeframe: str, limit: int = 100) -> pd.DataFrame:
-        """獲取 OHLCV 數據（委託 MarketDataProvider 統一處理重試與沙盒 fallback）"""
+        """Fetch OHLCV data."""
         return self.data_provider.fetch_ohlcv(symbol, timeframe, limit)
 
     def fetch_ticker(self, symbol: str) -> dict:
-        """獲取 ticker（含 Demo Trading fallback）"""
+        """Fetch ticker data."""
         try:
             return self.exchange.fetch_ticker(symbol)
         except Exception:
@@ -346,15 +344,15 @@ class TradingBot:
         return symbols, metadata, unsupported_count
 
     def load_scanner_results(self) -> List[str]:
-        """從 Scanner 載入動態標的（沿用 V5.3）"""
+        """??Scanner ??????????????V5.3??"""
         self._scanner_symbol_meta = {}
         try:
             scanner_path = os.path.expanduser(Config.SCANNER_JSON_PATH)
-            # 相對路徑 → 基於專案根目錄
+            # ??????? ?????????????
             if not os.path.isabs(scanner_path):
                 scanner_path = str(Path(__file__).parent.parent / scanner_path)
             if not os.path.exists(scanner_path):
-                logger.warning(f"Scanner JSON 不存在: {scanner_path}，使用預設 symbols")
+                logger.warning(f"Scanner JSON ????? {scanner_path}????????symbols")
                 return Config.SYMBOLS
 
             with open(scanner_path, 'r', encoding='utf-8') as f:
@@ -366,7 +364,7 @@ class TradingBot:
                     scan_time = datetime.fromisoformat(scan_time_str.replace('Z', '+00:00'))
                     age_minutes = (datetime.now(timezone.utc) - scan_time).total_seconds() / 60
                     if age_minutes > Config.SCANNER_MAX_AGE_MINUTES:
-                        logger.warning(f"Scanner 資料已過期 ({age_minutes:.0f} 分鐘 > {Config.SCANNER_MAX_AGE_MINUTES} 分鐘上限)，使用預設 symbols")
+                        logger.warning(f"Scanner ?????????({age_minutes:.0f} ??? > {Config.SCANNER_MAX_AGE_MINUTES} ??????)????????symbols")
                         return Config.SYMBOLS
                 except Exception:
                     pass
@@ -409,27 +407,27 @@ class TradingBot:
             logger.warning("Scanner JSON had no usable bot_symbols/hot_symbols, using default symbols")
             return Config.SYMBOLS
         except Exception as e:
-            logger.warning(f"Scanner JSON 載入失敗: {e}，使用預設 symbols")
+            logger.warning(f"Scanner JSON ???????: {e}????????symbols")
             return Config.SYMBOLS
 
-    # ==================== 訂單執行（委託 OrderExecutionEngine）====================
+    # ==================== ???????????OrderExecutionEngine??===================
 
     def _futures_set_leverage(self, symbol: str) -> bool:
-        """設置槓桿"""
+        """?????????????"""
         return self.execution_engine.set_leverage(symbol)
 
     def _futures_create_order(self, symbol: str, side: str, quantity: float) -> dict:
-        """下市價單"""
+        """??????"""
         return self.execution_engine.create_order(symbol, side, quantity)
 
     @staticmethod
     def _extract_fill_price(order_result: dict, fallback_price: float) -> float:
         """
-        從訂單回應取實際成交均價（avgPrice / average）。
-        失敗或回傳 0 時使用 fallback（信號價），確保不影響現有邏輯。
+        ??????????????????????vgPrice / average????
+        ?????????0 ?????fallback???????????????????????????
 
-        BinanceFuturesClient 路徑：result['avgPrice']（字串）
-        CCXT 路徑：result['average']（float）
+        BinanceFuturesClient ??????esult['avgPrice']???????
+        CCXT ??????esult['average']??loat??
         """
         try:
             avg = order_result.get('avgPrice') or order_result.get('average')
@@ -442,22 +440,22 @@ class TradingBot:
         return fallback_price
 
     def _futures_close_position(self, symbol: str, side: str, quantity: float) -> dict:
-        """平倉"""
+        """?????"""
         return self.execution_engine.close_position(symbol, side, quantity)
 
     def _place_hard_stop_loss(self, symbol: str, side: str, size: float, stop_price: float) -> Optional[str]:
-        """設置硬止損單，回傳 order ID"""
+        """?????????????????????order ID"""
         return self.execution_engine.place_hard_stop_loss(symbol, side, size, stop_price)
 
     def _cancel_stop_loss_order(self, symbol: str, order_id: Optional[str]) -> bool:
-        """取消止損單"""
+        """?????????"""
         return self.execution_engine.cancel_stop_loss_order(symbol, order_id)
 
     def _update_hard_stop_loss(self, pm: PositionManager, new_stop: float):
-        """更新硬止損單"""
+        """??????????"""
         return self._refresh_stop_loss(pm, new_stop)
 
-    # ==================== 信號掃描 ====================
+    # ==================== ??????? ====================
 
     def scan_for_signals(self):
         self.signal_scanner.scan_for_signals()
@@ -636,7 +634,7 @@ class TradingBot:
         return total_risk
 
     def _calc_total_risk_pct(self, balance: float) -> float:
-        """計算所有活躍持倉的總風險佔比"""
+        """???????????????????????????"""
         if balance <= 0:
             return 0.0
         return self._calc_total_open_risk_amount() / balance
@@ -650,7 +648,7 @@ class TradingBot:
         """Round amount and check limits. Returns size or None if below minimum."""
         size = self.precision_handler.round_amount_up(symbol, raw_size, entry_price)
         if not self.precision_handler.check_limits(symbol, size, entry_price):
-            logger.warning(f"{symbol}{(' ' + label) if label else ''} 低於最小值")
+            logger.warning(f"{symbol}{(' ' + label) if label else ''} invalid position size")
             return None
         return size
 
@@ -663,7 +661,7 @@ class TradingBot:
         return build_log_base(event, trade_id, symbol, side)
 
     def _check_total_risk(self, active_positions: List[PositionManager]) -> bool:
-        """總風險檢查（改用 PositionManager）"""
+        """????????????????? PositionManager??"""
         if not active_positions:
             return True
 
@@ -679,7 +677,7 @@ class TradingBot:
                 continue
             total_risk += pm.total_size * risk_per_unit
 
-        if Config.V6_DRY_RUN:
+        if Config.DRY_RUN:
             balance = 10000.0
         else:
             balance = self.risk_manager.get_balance()
@@ -687,269 +685,136 @@ class TradingBot:
             return False
         return (total_risk / balance) <= Config.MAX_TOTAL_RISK
 
-    # ==================== 開倉執行 ====================
+    # ==================== ???????====================
 
-    def _execute_trade(self, symbol: str, signal_details: Dict, signal_type: str,
-                       tier_multiplier: float, df_signal: pd.DataFrame):
-        """執行開倉"""
+    def _execute_order_plan(self, order_plan: ExecutableOrderPlan):
+        """Execute a central-risk-approved strategy order plan."""
+        intent = order_plan.intent
+        risk_plan = order_plan.risk_plan
+        symbol = intent.symbol
+        side = intent.side
         try:
             if symbol in self.active_trades:
+                logger.info("%s: skip execution, position already active", symbol)
                 return
 
-            if getattr(Config, 'REGIME_ROUTER_ENABLED', False):
-                strategy_name = signal_details.get('_router_strategy_name')
-                if strategy_name is None:
-                    logger.warning(
-                        f"{symbol}: reject entry - router enabled but no selected strategy "
-                        f"for signal_type={signal_type}"
-                    )
-                    return
-            else:
-                # Hard guard: unmapped signal types are not allowed to fall back.
-                strategy_name = Config.SIGNAL_STRATEGY_MAP.get(signal_type)
-                if strategy_name is None:
-                    logger.warning(
-                        f"{symbol}: reject entry - signal_type={signal_type} "
-                        "is not mapped in SIGNAL_STRATEGY_MAP"
-                    )
-                    return
+            entry_price = risk_plan.entry_price
+            position_size = risk_plan.position_size
+            stop_loss = risk_plan.stop_loss
+            initial_r = risk_plan.max_loss_usdt
 
-            if Config.V6_DRY_RUN:
-                balance = 10000.0  # Dry run: mock balance
-            else:
-                balance = self.risk_manager.get_balance()
-                if balance <= 0:
-                    logger.error(f"{symbol}: 餘額不足")
-                    return
-
-            side = signal_details['side']
-            entry_price = signal_details['entry_price']
-            atr = signal_details.get('atr', 0)
-            # V5.3 / V54: risk-based sizing
-            # 2B 訊號直接用 stop_loss；EMA/VOL 訊號用 extreme + ATR 計算
-            if side == 'LONG':
-                extreme = signal_details.get('lowest_point', signal_details.get('stop_level'))
-            else:
-                extreme = signal_details.get('highest_point', signal_details.get('stop_level'))
-
-            if extreme is not None:
-                stop_loss = self.risk_manager.calculate_stop_loss(extreme, atr, side, df_signal)
-            else:
-                stop_loss = signal_details.get('stop_loss', signal_details.get('stop_level', entry_price))
-            neckline = signal_details.get('neckline')
-
-            position_size = self.risk_manager.calculate_position_size(
-                symbol, balance, entry_price, stop_loss, tier_multiplier
-            )
-            if position_size <= 0:
-                return
-
-            # V5.3 equity cap：避免孤注一擲，但不再吃掉風控
-            v53_notional = position_size * entry_price
-            v53_cap_notional = balance * Config.V53_EQUITY_CAP_PERCENT
-            if v53_notional > v53_cap_notional:
-                capped_size = self.precision_handler.round_amount(symbol, v53_cap_notional / entry_price)
+            if Config.DRY_RUN:
                 logger.info(
-                    f"{symbol}: V5.3 notional 截頂 "
-                    f"${v53_notional:.2f} -> ${v53_cap_notional:.2f} "
-                    f"(v53_equity_cap={Config.V53_EQUITY_CAP_PERCENT*100:.0f}%)"
-                )
-                position_size = capped_size
-
-            # === Risk Guard: SL Distance Cap ===
-            sl_distance_pct = abs(entry_price - stop_loss) / entry_price
-            if sl_distance_pct > Config.MAX_SL_DISTANCE_PCT:
-                logger.info(
-                    f"{symbol}: 跳過（SL 距離 {sl_distance_pct:.1%} > 上限 "
-                    f"{Config.MAX_SL_DISTANCE_PCT:.0%}，entry={entry_price} sl={stop_loss}）"
-                )
-                return
-
-            # actual risk = capped size * SL distance（dry run 用 signal price）
-            initial_r = position_size * abs(entry_price - stop_loss)
-
-            total_risk_budget = balance * Config.MAX_TOTAL_RISK
-            current_open_risk = self._calc_total_open_risk_amount()
-            if current_open_risk + initial_r > total_risk_budget:
-                remaining_risk_budget = total_risk_budget - current_open_risk
-                if remaining_risk_budget <= 0:
-                    logger.info(
-                        f"{symbol}: skip entry, total risk budget exhausted "
-                        f"(open=${current_open_risk:.2f} budget=${total_risk_budget:.2f})"
-                    )
-                    return
-
-                sl_distance = abs(entry_price - stop_loss)
-                shrunk_size = self.precision_handler.round_amount(
+                    "[DRY_RUN] %s %s strategy=%s size=%.6f entry=%.4f sl=%.4f",
                     symbol,
-                    remaining_risk_budget / sl_distance if sl_distance > 0 else 0.0,
+                    side,
+                    intent.strategy_id,
+                    position_size,
+                    entry_price,
+                    stop_loss,
                 )
-                if (
-                    shrunk_size <= 0
-                    or not self.precision_handler.check_limits(symbol, shrunk_size, entry_price)
-                ):
-                    logger.info(
-                        f"{symbol}: skip entry, remaining risk budget ${remaining_risk_budget:.2f} "
-                        "cannot support a valid minimum order"
-                    )
-                    return
-
-                logger.info(
-                    f"{symbol}: shrink size for total risk budget "
-                    f"{position_size:.6f} -> {shrunk_size:.6f} "
-                    f"(open=${current_open_risk:.2f} candidate=${initial_r:.2f} "
-                    f"budget=${total_risk_budget:.2f})"
-                )
-                position_size = shrunk_size
-                initial_r = position_size * sl_distance
-
-            # === Dry run 模式 ===
-            if Config.V6_DRY_RUN:
-                logger.info(
-                    f"[模擬] {symbol} {side} | 策略={signal_type} | "
-                    f"倉位={position_size:.6f} @ ${entry_price:.2f} | "
-                    f"止損=${stop_loss:.2f} | neckline={'$' + f'{neckline:.2f}' if neckline else '無'} | "
-                    "滾倉=False"
-                )
-                # Dry run 也生成 trade_id 用於測試
-                dry_trade_id = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S') + '_' + symbol.replace('/', '')
-                _trade_log({
-                    **self._build_log_base('TRADE_OPEN', dry_trade_id, symbol, side),
-                    'strategy': signal_type,
-                    'tier': signal_details.get('signal_tier', '?'),
-                    'size': f'{position_size:.6f}',
-                    'entry': f'{entry_price:.2f}',
-                    'sl': f'{stop_loss:.2f}',
-                    'value': f'{position_size * entry_price:.2f}',
-                    'risk': f'{initial_r:.2f}',
-                    'pyramid': False,
-                    'vol_ratio': f'{signal_details.get("vol_ratio", 0):.2f}',
-                    'regime': signal_details.get('market_regime', 'UNKNOWN'),
-                    'btc_trend': signal_details.get('btc_trend', 'UNKNOWN'),
-                    'initial_r': f'{initial_r:.2f}',
-                })
                 return
 
-            # === 實際下單 ===
             order_side = self._get_close_side(side)
             if BinanceFuturesClient.is_enabled():
                 order_result = self._futures_create_order(symbol, order_side, position_size)
             else:
                 order_result = self.exchange.create_order(
-                    symbol=symbol, type='market', side=order_side.lower(), amount=position_size
+                    symbol=symbol,
+                    type="market",
+                    side=order_side.lower(),
+                    amount=position_size,
                 )
 
-            # 捕捉實際成交均價（market order 可能有 slippage）
             fill_price = self._extract_fill_price(order_result, entry_price)
             if fill_price != entry_price:
-                logger.info(
-                    f"{symbol} 成交均價修正: 信號${entry_price:.4f} → 實際${fill_price:.4f}"
-                )
+                logger.info("%s fill adjusted: signal=%.4f actual=%.4f", symbol, entry_price, fill_price)
             entry_price = fill_price
-            # 用實際成交價重算 actual risk
             initial_r = position_size * abs(entry_price - stop_loss)
 
-            logger.info(
-                f"{symbol} {side} 開倉成功: {position_size:.6f} @ ${entry_price:.2f} | "
-                f"止損=${stop_loss:.2f} 策略={signal_type} 等級={signal_details.get('signal_tier','?')} "
-                f"量能={signal_details.get('vol_ratio',0):.2f}x 滾倉=False | "
-                f"市場={signal_details.get('_market_reason','')} 趨勢={signal_details.get('_trend_desc','')} "
-                f"MTF={signal_details.get('_mtf_reason','')}"
-            )
-
-            # 建立 PositionManager（strategy_name 已在入口 hard guard 確認）
             pm = PositionManager(
                 symbol=symbol,
                 side=side,
                 entry_price=entry_price,
                 stop_loss=stop_loss,
                 position_size=position_size,
-                strategy_name=strategy_name,
-                neckline=neckline,
-                equity_base=balance,
+                strategy_id=intent.strategy_id,
+                strategy_version=order_plan.strategy_version,
+                risk_plan={
+                    "entry_price": entry_price,
+                    "stop_loss": stop_loss,
+                    "position_size": position_size,
+                    "max_loss_usdt": initial_r,
+                    "risk_pct": risk_plan.risk_pct,
+                    "hard_stop_required": risk_plan.hard_stop_required,
+                },
+                metadata={
+                    **dict(intent.metadata),
+                    **dict(order_plan.metadata),
+                    "entry_type": intent.entry_type,
+                    "timeframe": intent.timeframe,
+                    "candle_ts": intent.candle_ts.isoformat(),
+                    "router_reason": order_plan.router_reason,
+                },
                 initial_r=initial_r,
-                signal_tier=signal_details.get('signal_tier', 'B'),
-                signal_type=signal_type,
-                market_regime=signal_details.get('market_regime', 'UNKNOWN'),
+                signal_tier="CENTRAL",
+                signal_type=intent.strategy_id,
+                market_regime=(self._btc_regime_context or {}).get("regime", "UNKNOWN"),
             )
-            pm.atr = atr
-            pm.entry_adx = signal_details.get('entry_adx')
-            pm.fakeout_depth_atr = signal_details.get('fakeout_depth_atr')
-            pm.trend_adx = signal_details.get('trend_adx')
-            pm.mtf_aligned = signal_details.get('mtf_aligned')
-            pm.volume_grade = signal_details.get('volume_grade')
-            pm.tier_score = signal_details.get('tier_score')
 
-            # --- BTC Trend Alignment (data collection) ---
-            if "BTC" not in symbol:
-                btc_trend = signal_details.get('btc_trend', 'UNKNOWN')
-                if btc_trend in ("UNKNOWN", "RANGING"):
-                    pm.btc_trend_aligned = None
-                else:
-                    pm.btc_trend_aligned = (side == btc_trend)
-            else:
-                pm.btc_trend_aligned = None
-
-            # Structured trade log
             _trade_log({
-                **self._build_log_base('TRADE_OPEN', pm.trade_id, symbol, side),
-                'strategy': signal_type,
-                'tier': signal_details.get('signal_tier', '?'),
-                'size': f'{position_size:.6f}',
-                'entry': f'{entry_price:.2f}',
-                'sl': f'{stop_loss:.2f}',
-                'value': f'{position_size * entry_price:.2f}',
-                'risk': f'{initial_r:.2f}',
-                'pyramid': False,
-                'vol_ratio': f'{signal_details.get("vol_ratio", 0):.2f}',
-                'regime': signal_details.get('market_regime', 'UNKNOWN'),
-                'btc_trend': signal_details.get('btc_trend', 'UNKNOWN'),
-                'initial_r': f'{initial_r:.2f}',
+                **self._build_log_base("TRADE_OPEN", pm.trade_id, symbol, side),
+                "strategy_id": intent.strategy_id,
+                "strategy_version": order_plan.strategy_version,
+                "entry_type": intent.entry_type,
+                "size": f"{position_size:.6f}",
+                "entry": f"{entry_price:.2f}",
+                "sl": f"{stop_loss:.2f}",
+                "value": f"{position_size * entry_price:.2f}",
+                "risk": f"{initial_r:.2f}",
+                "router_reason": order_plan.router_reason,
             })
 
-            # 設置硬止損
             pm.stop_order_id = self._place_hard_stop_loss(symbol, side, position_size, stop_loss)
-
             self.active_trades[symbol] = pm
-
-            # 持久化
             self._save_positions()
 
-            # Telegram 通知
             TelegramNotifier.notify_signal(symbol, {
-                **signal_details,
-                'position_size': position_size,
-                'stop_loss': stop_loss,
-                'is_v6': strategy_name == 'v6_pyramid',
-                'strategy_name': strategy_name,
-                'neckline': neckline,
+                "side": side,
+                "entry_price": entry_price,
+                "position_size": position_size,
+                "stop_loss": stop_loss,
+                "strategy_id": intent.strategy_id,
+                "strategy_name": intent.strategy_id,
+                "signal_type": intent.strategy_id,
             })
 
         except Exception as e:
-            logger.error(f"{symbol} 開倉失敗: {e}")
+            logger.error("%s strategy execution failed: %s", symbol, e)
             self.order_failed_symbols[symbol] = datetime.now(timezone.utc)
 
-    # ==================== 持倉監控 ====================
-
+    def _legacy_entry_removed(self, *_args, **_kwargs):
+        """Removed legacy signal execution path."""
+        raise RuntimeError("legacy entry execution removed; use _execute_order_plan")
     def monitor_positions(self):
         self.position_monitor.monitor_positions()
 
     def _fetch_exchange_stop_map(self) -> Dict[str, float]:
         """
-        從交易所取得開放中的止損單。
+        ????????????????????????
 
-        先嘗試 algo orders（正式網），若不支援（Demo Trading 回 404）
-        再 fallback 到普通 openOrders 中的 STOP_MARKET 訂單。
+        ?????algo orders??????????????????????emo Trading ??404??
+        ??fallback ?????openOrders ???? STOP_MARKET ?????
 
         Returns:
-            {symbol_id: trigger_price}，例如 {'BTCUSDT': 87500.0}
-            查不到或 API 失敗回傳 {}
+            {symbol_id: trigger_price}?????{'BTCUSDT': 87500.0}
+            ?????? API ??????? {}
         """
         if not BinanceFuturesClient.is_enabled():
             return {}
         stop_map: Dict[str, float] = {}
         try:
-            # 嘗試 algo orders（正式網支援）
+            # ????algo orders???????????????
             response = self.risk_manager.futures_client.signed_request(
                 'GET', '/fapi/v1/algoOrder/openOrders'
             )
@@ -960,13 +825,13 @@ class TradingBot:
                     if sym and trigger:
                         stop_map[sym] = float(trigger)
                 return stop_map
-            # algo endpoint 不支援（Demo Trading 回 404）→ fallback 到普通訂單
-            logger.debug(f"[ADOPT] algo openOrders 不支援({response.status_code})，改查普通止損單")
+            # algo endpoint ??????Demo Trading ??404??? fallback ????????
+            logger.debug(f"[ADOPT] algo openOrders ?????{response.status_code})????????????")
         except Exception as e:
-            logger.warning(f"[ADOPT] 查 algo 止損單異常: {e}")
+            logger.warning(f"[ADOPT] ??algo ????????? {e}")
 
         try:
-            # Fallback：普通 openOrders 裡的 STOP_MARKET
+            # Fallback?????openOrders ???? STOP_MARKET
             response = self.risk_manager.futures_client.signed_request(
                 'GET', '/fapi/v1/openOrders'
             )
@@ -978,27 +843,27 @@ class TradingBot:
                         if sym and trigger:
                             stop_map[sym] = float(trigger)
         except Exception as e:
-            logger.warning(f"[ADOPT] 查普通止損單異常: {e}")
+            logger.warning(f"[ADOPT] ?????????????: {e}")
 
         return stop_map
 
     def _adopt_ghost_positions(self):
         """
-        啟動後一次性接管幽靈倉位（exchange 有、positions.json 未記錄）。
+        ???????????????????????xchange ????ositions.json ????????
 
-        接管邏輯：
-        1. 從交易所取 positions
-        2. 跳過已追蹤的 symbol
-        3. 查 algo 止損單 → 取得 stop_loss；若無，用入場價 × 2% 保守預設
-        4. 建 PositionManager（V5.3 保守模式，is_v6_pyramid=False）
-        5. 若無止損 → 補設硬止損
-        6. 存入 active_trades + _save_positions()
+        ???????????
+        1. ????????positions
+        2. ???????????? symbol
+        3. ??algo ??????????? stop_loss???????????? ? 2% ???????
+        4. ???? protective/manual PositionManager
+        5. ??????? ????????????????
+        6. ??? active_trades + _save_positions()
         """
-        if Config.V6_DRY_RUN:
+        if Config.DRY_RUN:
             return
 
         exchange_positions = self.risk_manager.get_positions()
-        if not exchange_positions:  # None 或 []
+        if not exchange_positions:  # None ??[]
             return
 
         stop_map = self._fetch_exchange_stop_map()
@@ -1031,14 +896,14 @@ class TradingBot:
             if not sym_id:
                 continue
 
-            # 轉 ccxt 格式：BTCUSDT → BTC/USDT
+            # ??ccxt ?????TCUSDT ??BTC/USDT
             ccxt_sym = sym_id[:-4] + '/' + sym_id[-4:] if sym_id.endswith('USDT') else sym_id
 
-            # 已追蹤 → 跳過
+            # ?????????????
             if ccxt_sym in self.active_trades:
                 continue
 
-            # 解析 side / size / entry
+            # ??? side / size / entry
             if ccxt_sym in ambiguous_symbols:
                 continue
             side = self._normalize_position_side(pos)
@@ -1049,10 +914,10 @@ class TradingBot:
                 pos.get('entryPrice', 0) or pos.get('info', {}).get('entryPrice', 0)
             )
             if entry_price <= 0:
-                logger.warning(f"[ADOPT] {ccxt_sym} entryPrice 無效，跳過")
+                logger.warning(f"[ADOPT] {ccxt_sym} entryPrice is invalid")
                 continue
 
-            # 取得或預算止損
+            # ???????????
             stop_loss = stop_map.get(sym_id)
             stop_source = 'exchange'
             if stop_loss is None:
@@ -1063,30 +928,30 @@ class TradingBot:
                 )
                 stop_source = f'fallback({fallback_pct * 100:.0f}%)'
 
-            # 建 PositionManager（V5.3 保守模式，不做 pyramid 加倉）
+            # ??PositionManager??5.3 ????????????pyramid ?????
             pm = PositionManager(
                 symbol=ccxt_sym,
                 side=side,
                 entry_price=entry_price,
                 stop_loss=stop_loss,
                 position_size=position_size,
-                strategy_name="v53_sop",
+                strategy_id="legacy_manual",
                 initial_r=position_size * abs(entry_price - stop_loss),
             )
             pm.entry_time = datetime.now(timezone.utc)
             pm.highest_price = entry_price
             pm.lowest_price = entry_price
 
-            # 若無止損單 → 補設
+            # ???????????????
             if stop_map.get(sym_id) is None:
                 try:
                     order_id = self.execution_engine.place_hard_stop_loss(
                         ccxt_sym, side, position_size, stop_loss
                     )
                     pm.stop_order_id = order_id
-                    logger.info(f"[ADOPT] {ccxt_sym} 補設硬止損 @ ${stop_loss:.4f}")
+                    logger.info(f"[ADOPT] {ccxt_sym} ??????????????@ ${stop_loss:.4f}")
                 except Exception as e:
-                    logger.warning(f"[ADOPT] {ccxt_sym} 補設止損失敗: {e}")
+                    logger.warning(f"[ADOPT] {ccxt_sym} ???????????????: {e}")
 
             self.active_trades[ccxt_sym] = pm
             adopted += 1
@@ -1098,19 +963,19 @@ class TradingBot:
 
         if adopted > 0:
             self._save_positions()
-            logger.warning(f"[ADOPT] 共接管 {adopted} 個幽靈倉位，已存入 positions.json")
+            logger.warning(f"[ADOPT] ?????{adopted} ??????????????? positions.json")
 
     def _sync_exchange_positions(self):
         """
-        交易所倉位 reconciliation（每次 monitor_positions 都執行）。
+        ????????? reconciliation?????monitor_positions ????????
 
-        四重防護：
-        1. API 錯誤防護：get_positions 回 None 時跳過（不誤殺）
-        2. 正向檢查：bot 有 / exchange 無 → hard_stop_hit
-        3. Size 校驗：兩邊都有但數量不一致 → 告警
-        4. 反向檢查：exchange 有 / bot 無 → 幽靈倉位告警
+        ???????????
+        1. API ????????????et_positions ??None ?????????????
+        2. ??????????????ot ??/ exchange ????hard_stop_hit
+        3. Size ??????????????????????????
+        4. ??????????????xchange ??/ bot ???????????????
         """
-        if Config.V6_DRY_RUN:
+        if Config.DRY_RUN:
             return
         try:
             exchange_positions = self.risk_manager.get_positions()
@@ -1154,21 +1019,21 @@ class TradingBot:
                     logger.warning(
                         f"[SIZE_MISMATCH] {symbol}: side={pm.side} "
                         f"bot={bot_amt:.6f} vs exchange={ex_amt:.6f} "
-                        f"(差異 {abs(ex_amt - bot_amt):.6f})"
+                        f"(???? {abs(ex_amt - bot_amt):.6f})"
                     )
 
             for (symbol_id, side), ex_amt in exchange_map.items():
                 if ex_amt > 0 and (symbol_id, side) not in internal_map:
                     logger.warning(
                         f"[GHOST_POSITION] {self._exchange_id_to_symbol(symbol_id)}: "
-                        f"{side} {ex_amt:.6f}，但 bot 未追蹤！請手動檢查。"
+                        f"{side} {ex_amt:.6f} exists on exchange but not in bot state"
                     )
 
             if hard_stop_detected:
                 self._save_positions()
 
         except Exception as e:
-            logger.warning(f"[SYNC] 交易所同步異常，跳過: {e}")
+            logger.warning(f"[SYNC] ?????????????????? {e}")
 
     def _handle_close(
         self,
@@ -1186,64 +1051,55 @@ class TradingBot:
             decision_reason=decision_reason,
         )
 
-    def _handle_stage2(self, pm: PositionManager, current_price: float, df_1h, decision: dict = None):
-        self.position_monitor.handle_stage2(pm, current_price, df_1h, decision=decision)
-
-    def _handle_stage3(self, pm: PositionManager, current_price: float, df_1h, decision: dict = None):
-        self.position_monitor.handle_stage3(pm, current_price, df_1h, decision=decision)
-
-    def _handle_v53_reduce(self, pm: PositionManager, pct: int, label: str, current_price: float):
-        self.position_monitor.handle_v53_reduce(pm, pct, label, current_price)
-
-    # ==================== 啟動診斷 ====================
+    # ==================== ??????????? ====================
 
     def startup_diagnostics(self) -> bool:
-        """啟動診斷"""
-        logger.info("執行啟動診斷...")
+        """???????????"""
+        logger.info("??????????????...")
 
         try:
-            if Config.V6_DRY_RUN:
+            if Config.DRY_RUN:
                 balance = 10000.0
-                logger.info(f"[模擬] 餘額: ${balance:.2f} USDT")
+                logger.info(f"[????] ???: ${balance:.2f} USDT")
             else:
                 balance = self.risk_manager.get_balance()
-                logger.info(f"API 正常 | 餘額: ${balance:.2f} USDT")
+                logger.info(f"API ????| ???: ${balance:.2f} USDT")
             self.initial_balance = balance
         except Exception as e:
-            logger.error(f"API 連線失敗: {e}")
+            logger.error(f"API ???????: {e}")
             return False
 
         test_symbol = Config.SYMBOLS[0] if Config.SYMBOLS else 'BTC/USDT'
         df = self.fetch_ohlcv(test_symbol, Config.TIMEFRAME_SIGNAL, limit=50)
         if df.empty:
-            logger.error(f"數據獲取失敗: {test_symbol}")
+            logger.error(f"??????????: {test_symbol}")
             return False
-        logger.info(f"數據正常 | {test_symbol}: {len(df)} 根K線")
+        logger.info(f"Data check passed for {test_symbol}: {len(df)} rows")
 
-        # V6.0: 4H 數據測試
+        # Check higher-timeframe data availability.
         df_4h = self.fetch_ohlcv(test_symbol, '4h', limit=20)
         if df_4h.empty:
-            logger.warning("4H 數據獲取失敗（非關鍵）")
+            logger.warning("4h data unavailable")
         else:
-            logger.info(f"4H 數據正常 | {len(df_4h)} 根K線")
+            logger.info(f"4h data check passed: {len(df_4h)} rows")
 
-        # V6.0: Config 驗證
+        # Validate config.
         try:
             Config.validate()
-            logger.info("Config 驗證通過")
+            logger.info("Config ??????")
         except ValueError as e:
-            logger.error(f"Config 驗證失敗: {e}")
+            logger.error(f"Config ???????: {e}")
             return False
 
-        logger.info("啟動診斷通過")
+        logger.info("??????????????")
         return True
 
-    # ==================== 主循環 ====================
+    # ==================== ??????====================
 
     def run(self):
-        """主運行循環"""
+        """?????????"""
         if not self.startup_diagnostics():
-            logger.error("啟動診斷失敗，停止運行")
+            logger.error("Startup diagnostics failed")
             return
 
         try:
@@ -1258,21 +1114,19 @@ class TradingBot:
         if Config.ENABLE_GRID_TRADING:
             is_hedge = self.futures_client.get_position_mode()
             if is_hedge is True:
-                logger.info("Hedge mode already enabled — grid trading ready")
+                logger.info("Hedge mode already enabled ??grid trading ready")
             elif is_hedge is False:
-                logger.info("Grid trading enabled — switching to hedge mode")
+                logger.info("Grid trading enabled ??switching to hedge mode")
                 if not self.futures_client.set_hedge_mode(True):
                     # Verify: re-query actual state
                     is_hedge = self.futures_client.get_position_mode()
                     if is_hedge is not True:
                         logger.error(
-                            "無法啟用 hedge mode — grid trading 已停用"
-                            "（有持倉時 Binance 不允許切換，需先平倉或手動在交易所啟用）"
+                            "Failed to switch account into hedge mode; disabling grid trading"
                         )
                         Config.ENABLE_GRID_TRADING = False
             else:
-                logger.warning("無法查詢 position mode — grid trading 已停用")
-                Config.ENABLE_GRID_TRADING = False
+                logger.warning("Unable to determine position mode; disabling grid trading")
             if Config.ENABLE_GRID_TRADING:
                 try:
                     self.execution_engine.hedge_mode = self.futures_client.get_position_side_dual()
@@ -1280,42 +1134,42 @@ class TradingBot:
                     logger.warning(f"Could not refresh hedge mode state after grid check: {e}")
                 self._restore_grid_runtime_state()
 
-        logger.info("機器人開始運行...\n")
+        logger.info("?????????????..\n")
 
-        # 接管交易所有但 positions.json 未記錄的倉位（幽靈倉位恢復）
+        # ?????????????? positions.json ????????????????????????
         self._adopt_ghost_positions()
 
         cycle = 0
         while True:
             try:
                 cycle += 1
-                logger.debug(f"[循環 #{cycle}]")
+                logger.debug(f"[???? #{cycle}]")
 
                 self.scan_for_signals()
                 self._monitor_grid_state()
-                self._sync_exchange_positions()  # 每 cycle 都執行，active_trades 為空時也偵測幽靈倉位
+                self._sync_exchange_positions()  # ??cycle ??????active_trades ??????????????????
                 self.monitor_positions()
                 self.telegram_handler.poll()
 
-                logger.debug(f"休息 {Config.CHECK_INTERVAL} 秒...\n")
+                logger.debug(f"??? {Config.CHECK_INTERVAL} ??..\n")
                 time.sleep(Config.CHECK_INTERVAL)
 
             except KeyboardInterrupt:
-                logger.info("使用者中斷，停止運行")
+                logger.info("???????????????????")
                 self._save_positions()
                 break
             except Exception as e:
-                logger.error(f"循環 #{cycle} 錯誤: {e}")
+                logger.error(f"???? #{cycle} ????: {e}")
                 time.sleep(Config.CHECK_INTERVAL)
 
 
 TradingBotV6 = TradingBot
 
-# ==================== 入口 ====================
+# ==================== ??? ====================
 if __name__ == "__main__":
     import argparse
 
-    # SIGTERM → KeyboardInterrupt（systemd stop 時 graceful flush positions）
+    # SIGTERM ??KeyboardInterrupt??ystemd stop ??graceful flush positions??
     signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))
 
     parser = argparse.ArgumentParser(description='Trading Bot')
@@ -1323,12 +1177,12 @@ if __name__ == "__main__":
     parser.add_argument('--debug', action='store_true', help='Debug mode')
     args = parser.parse_args()
 
-    # Runtime 目錄（.log/ 子目錄）
+    # Runtime ?????log/ ??????
     project_root = Path(__file__).resolve().parent.parent
     log_dir = project_root / '.log'
     log_dir.mkdir(exist_ok=True)
 
-    # 設定 logging
+    # ???????? logging
     log_file = str(log_dir / 'bot.log')
     log_level = logging.DEBUG if args.debug else logging.INFO
 
@@ -1343,7 +1197,7 @@ if __name__ == "__main__":
         ],
     )
 
-    # [TRADE] 日誌分流到 .log/trades.log
+    # [TRADE] ????????.log/trades.log
     class _TradeFilter(logging.Filter):
         def filter(self, record):
             msg = record.getMessage()
@@ -1357,12 +1211,12 @@ if __name__ == "__main__":
     _trade_handler.setLevel(logging.INFO)
     logging.getLogger().addHandler(_trade_handler)
 
-    # WARNING/ERROR 轉發到 Telegram（節流：同訊息 5 分鐘內不重複發送）
+    # WARNING/ERROR ?????Telegram???????????5 ??????????????
     class _TelegramLogHandler(logging.Handler):
-        # 不轉發到 Telegram 的訊息（含以下字串即略過）
+        # ?????? Telegram ??????????????????????
         _IGNORE_PATTERNS = [
             "Scanner JSON had no usable bot_symbols/hot_symbols",
-            "Scanner JSON 中 hot_symbols 為空",
+            "Scanner JSON ??hot_symbols ????",
         ]
 
         def __init__(self):
@@ -1374,33 +1228,33 @@ if __name__ == "__main__":
                 msg = self.format(record)
                 if any(p in msg for p in self._IGNORE_PATTERNS):
                     return
-                # 節流：取前 80 字元作 key，5 分鐘內同 key 不重複
+                # ???????? 80 ?????key?? ?????? key ?????
                 key = msg[:80]
                 now = time.time()
                 if now - self._last_sent.get(key, 0) < 300:
                     return
                 self._last_sent[key] = now
-                # 清理過期 key（避免記憶體洩漏）
+                # ?????? key???????????????
                 if len(self._last_sent) > 100:
                     cutoff = now - 300
                     self._last_sent = {k: v for k, v in self._last_sent.items() if v > cutoff}
                 TelegramNotifier.notify_warning(msg)
             except Exception:
-                pass  # 通知失敗不影響主程式
+                pass  # ?????????????????
 
     _tg_handler = _TelegramLogHandler()
     _tg_handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s'))
     logging.getLogger().addHandler(_tg_handler)
 
     try:
-        # bot_config.json 相對於專案根目錄（bot.py 的上層），不依賴 CWD
+        # bot_config.json ??????????????ot.py ??????????????CWD
         config_path = str(Path(__file__).parent.parent / "bot_config.json")
         Config.load_from_json(config_path)
         if args.dry_run:
-            Config.V6_DRY_RUN = True  # type: ignore[assignment]
+            Config.DRY_RUN = True  # type: ignore[assignment]
 
         bot = TradingBot()
         bot.run()
     except Exception as e:
-        logger.error(f"機器人啟動失敗: {e}")
+        logger.error(f"???????????? {e}")
         raise

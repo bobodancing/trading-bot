@@ -403,29 +403,6 @@ class SignalTierSystem:
     """信號分級系統"""
 
     @staticmethod
-    def _ema_soft_mtf_structure_aligned(
-        signal_details: Dict,
-        mtf_snapshot: Optional[Dict]
-    ) -> bool:
-        """Allow EMA pullback to soften MTF gating when 4H structure still matches."""
-        if not getattr(Config, 'EMA_PULLBACK_SOFT_MTF_ENABLED', True):
-            return False
-        if signal_details.get('signal_type') != 'EMA_PULLBACK':
-            return False
-        if not mtf_snapshot:
-            return False
-
-        mtf_fast = mtf_snapshot.get('mtf_ema_fast')
-        mtf_slow = mtf_snapshot.get('mtf_ema_slow')
-        side = signal_details.get('side')
-        if mtf_fast is None or mtf_slow is None or side not in ('LONG', 'SHORT'):
-            return False
-
-        if side == 'LONG':
-            return mtf_fast > mtf_slow
-        return mtf_fast < mtf_slow
-
-    @staticmethod
     def get_tier_diagnostics(
         signal_details: Dict,
         mtf_aligned: bool,
@@ -461,9 +438,6 @@ class SignalTierSystem:
             diagnostics['tier_component_mtf'] = 2
             diagnostics['mtf_gate_mode'] = 'hard_aligned'
             score = 2
-        elif SignalTierSystem._ema_soft_mtf_structure_aligned(signal_details, mtf_snapshot):
-            diagnostics['mtf_gate_mode'] = 'ema_soft_structure'
-            score = 0
         else:
             return diagnostics
 

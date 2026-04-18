@@ -11,6 +11,14 @@ if TYPE_CHECKING:
 REGIME_ORDER = ("TRENDING", "RANGING", "SQUEEZE")
 
 
+def _strategy_label(result) -> str:
+    enabled = getattr(result.config, "enabled_strategies", None) or []
+    if enabled:
+        return ",".join(enabled)
+    summary_strategy = getattr(result, "summary", {}).get("strategy")
+    return summary_strategy or "none"
+
+
 class ReportGenerator:
     def generate(self, result: "BacktestResult", output_dir: Path):
         output_dir = Path(output_dir)
@@ -62,7 +70,7 @@ class ReportGenerator:
             name="Portfolio Value", line=dict(color="#00d4aa", width=2)
         ))
         fig.update_layout(
-            title=f"Equity Curve [{result.config.strategy}] ({result.config.start} ~ {result.config.end})",
+            title=f"Equity Curve [{_strategy_label(result)}] ({result.config.start} ~ {result.config.end})",
             xaxis_title="Time", yaxis_title="USDT",
             template="plotly_dark",
         )

@@ -1,5 +1,5 @@
 """
-Grid trading manager — extracted from bot.py (Phase 3).
+Grid trading manager ??extracted from bot.py (Phase 3).
 
 Handles V8 ATR Grid lifecycle: activation, tick, force-close, state persistence.
 """
@@ -155,7 +155,7 @@ class GridManager:
     def is_exchange_flat(self) -> bool:
         """Check if exchange has zero BTC grid exposure."""
         bot = self.bot
-        if Config.V6_DRY_RUN:
+        if Config.DRY_RUN:
             return True
         exchange_positions = bot.risk_manager.get_positions()
         if exchange_positions is None:
@@ -171,7 +171,7 @@ class GridManager:
         """Execute grid action (open/close)."""
         bot = self.bot
 
-        if Config.V6_DRY_RUN:
+        if Config.DRY_RUN:
             logger.info(f"[DRY_RUN] Grid {action.type} {action.side} L{action.level} "
                         f"size={action.size:.4f} @ {current_price:.0f}")
             return

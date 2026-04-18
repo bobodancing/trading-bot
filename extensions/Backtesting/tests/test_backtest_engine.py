@@ -305,13 +305,12 @@ def test_backtest_engine_records_regime_probe_when_grid_disabled(monkeypatch):
     assert summary["btc_source_distribution"].get("regime_probe", 0) > 0
 
 
-def test_effective_overrides_add_backtest_signal_allowlist_and_v54_map():
+def test_effective_overrides_enable_strategy_runtime_catalog():
     config = BacktestConfig(
         symbols=["BTC/USDT"],
         start="2026-01-01",
         end="2026-01-30",
-        strategy="v54",
-        allowed_signal_types=["EMA_PULLBACK"],
+        enabled_strategies=["fixture_long"],
         dry_count_only=True,
         precompute_indicators=True,
     )
@@ -319,16 +318,11 @@ def test_effective_overrides_add_backtest_signal_allowlist_and_v54_map():
 
     overrides = engine._effective_config_overrides(config)
 
-    assert overrides["BACKTEST_ALLOWED_SIGNAL_TYPES"] == ["EMA_PULLBACK"]
+    assert overrides["STRATEGY_RUNTIME_ENABLED"] is True
+    assert overrides["ENABLED_STRATEGIES"] == ["fixture_long"]
+    assert overrides["STRATEGY_CATALOG"]["fixture_long"]["enabled"] is True
     assert overrides["BACKTEST_DRY_COUNT_ONLY"] is True
     assert overrides["BACKTEST_USE_PRECOMPUTED_INDICATORS"] is True
-    assert overrides["ENABLE_EMA_PULLBACK"] is True
-    assert overrides["ENABLE_VOLUME_BREAKOUT"] is False
-    assert overrides["SIGNAL_STRATEGY_MAP"] == {
-        "2B": "v54_noscale",
-        "EMA_PULLBACK": "v54_noscale",
-        "VOLUME_BREAKOUT": "v54_noscale",
-    }
 
 
 def test_backtest_loop_records_scanner_exception(monkeypatch):

@@ -1,7 +1,6 @@
-"""
-Telegram 指令處理器
+"""Telegram command polling handler.
 
-Polling 模式接收 Telegram 指令，回覆倉位/狀態/餘額資訊。
+The handler is optional and must never interrupt the trading loop.
 """
 
 import html
@@ -20,19 +19,16 @@ logger = logging.getLogger(__name__)
 
 
 class TelegramCommandHandler:
-    """Telegram Bot 指令處理（Polling 模式）"""
+    """Polling Telegram command handler."""
 
     def __init__(self, bot):
-        """
-        Args:
-            bot: TradingBot instance（存取 active_trades / risk_manager）
-        """
+        """Initialize with a TradingBot-like object."""
         self.bot = bot
         self.last_update_id = 0
         self.base_url = f"https://api.telegram.org/bot{Config.TELEGRAM_BOT_TOKEN}"
 
     def poll(self):
-        """檢查新訊息並處理指令。主 loop 每 cycle 呼叫一次。"""
+        """Poll Telegram once."""
         if not Config.TELEGRAM_ENABLED:
             return
 
@@ -40,11 +36,11 @@ class TelegramCommandHandler:
             updates = self._get_updates()
             for update in updates:
                 self._handle_update(update)
-        except Exception as e:
-            logger.debug(f"Telegram poll 錯誤: {e}")
+        except Exception as exc:
+            logger.debug("Telegram poll failed: %s", exc)
 
     def _get_updates(self) -> list:
-        """取得新訊息（long polling timeout=0，非阻塞）"""
+        """Fetch pending updates without blocking."""
         url = f"{self.base_url}/getUpdates"
         params = {
             'offset': self.last_update_id + 1,
@@ -59,7 +55,7 @@ class TelegramCommandHandler:
         return data.get('result', [])
 
     def _handle_update(self, update: dict):
-        """處理單一 update"""
+        """Handle one Telegram update."""
         update_id = update.get('update_id', 0)
         if update_id > self.last_update_id:
             self.last_update_id = update_id
@@ -68,7 +64,7 @@ class TelegramCommandHandler:
         chat_id = str(message.get('chat', {}).get('id', ''))
         text = message.get('text', '').strip()
 
-        # 安全：只回應自己的 chat_id
+        # Ignore messages from any chat except the configured control chat.
         if chat_id != str(Config.TELEGRAM_CHAT_ID):
             return
 
@@ -76,7 +72,7 @@ class TelegramCommandHandler:
             return
 
         cmd = text.split()[0].lower()
-        # 去掉 @botname 後綴（群組中會帶 /positions@boboTrading_bot）
+        # Support commands sent as /positions@botname.
         cmd = cmd.split('@')[0]
 
         handlers = {
@@ -91,12 +87,12 @@ class TelegramCommandHandler:
             try:
                 reply = handler()
                 self._send_reply(chat_id, reply)
-            except Exception as e:
-                logger.error(f"Telegram 指令 {cmd} 執行失敗: {e}")
-                self._send_reply(chat_id, f"<b>Error:</b> {html.escape(str(e))}")
+            except Exception as exc:
+                logger.error("Telegram command %s failed: %s", cmd, exc)
+                self._send_reply(chat_id, f"<b>Error:</b> {html.escape(str(exc))}")
 
     def _send_reply(self, chat_id: str, text: str):
-        """發送回覆"""
+        """Send an HTML-formatted reply."""
         url = f"{self.base_url}/sendMessage"
         payload = {
             'chat_id': chat_id,
@@ -106,54 +102,56 @@ class TelegramCommandHandler:
         try:
             resp = requests.post(url, data=payload, timeout=10)
             if not resp.ok:
-                logger.error(f"Telegram 回覆失敗: {resp.status_code}")
-        except Exception as e:
-            logger.error(f"Telegram 回覆失敗: {e}")
+                logger.error("Telegram send failed: %s", resp.status_code)
+        except Exception as exc:
+            logger.error("Telegram send failed: %s", exc)
 
-    # ==================== 指令實作 ====================
+    def _strategy_label(self, pm) -> str:
+        strategy_id = getattr(pm, 'strategy_id', None)
+        if not isinstance(strategy_id, str) or not strategy_id:
+            strategy_id = getattr(pm, 'strategy_name', None)
+        if not isinstance(strategy_id, str) or not strategy_id:
+            strategy_id = None
+        return format_strategy_label(strategy_id)
 
     def _cmd_positions(self) -> str:
-        """列出目前所有開倉部位"""
+        """Render open positions."""
         trades = self.bot.active_trades
         if not trades:
-            return "<b>目前無開倉部位</b>"
+            return "<b>No open positions</b>"
 
-        lines = [f"<b>開倉部位 ({len(trades)})</b>", "──────────────────"]
+        lines = [f"<b>Open Positions ({len(trades)})</b>", "------------------------------"]
 
         for symbol, pm in trades.items():
             now = datetime.now(timezone.utc)
             hold_hours = (now - pm.entry_time).total_seconds() / 3600
-            strategy = format_strategy_label(
-                getattr(pm, 'strategy_name', None),
-                getattr(pm, 'is_v6_pyramid', None),
-            )
+            strategy = self._strategy_label(pm)
 
-            # 未實現 PnL 估算（用 highest/lowest 近似，無即時價格）
+            # Approximate MFE from the local position manager highs/lows.
             if pm.side == 'LONG':
                 pnl_pct = (pm.highest_price - pm.avg_entry) / pm.avg_entry * 100
             else:
                 pnl_pct = (pm.avg_entry - pm.lowest_price) / pm.avg_entry * 100
-            pnl_emoji = '+' if pnl_pct >= 0 else ''
+            pnl_prefix = '+' if pnl_pct >= 0 else ''
 
             lines.append(
                 f"\n<b>{html.escape(symbol)}</b> {pm.side} ({strategy})\n"
-                f"  入場: ${pm.avg_entry:.4f}\n"
-                f"  止損: ${pm.current_sl:.4f}\n"
-                f"  倉位: {pm.total_size:.6f}\n"
-                f"  階段: Stage {pm.stage}\n"
+                f"  Entry: ${pm.avg_entry:.4f}\n"
+                f"  Stop: ${pm.current_sl:.4f}\n"
+                f"  Size: {pm.total_size:.6f}\n"
+                f"  Stage: {pm.stage}\n"
                 f"  Tier: {pm.signal_tier}\n"
-                f"  持倉: {hold_hours:.1f}h\n"
-                f"  MFE: {pnl_emoji}{pnl_pct:.2f}%"
+                f"  Hold: {hold_hours:.1f}h\n"
+                f"  MFE: {pnl_prefix}{pnl_pct:.2f}%"
             )
 
         return "\n".join(lines)
 
     def _cmd_status(self) -> str:
-        """Bot 運行狀態"""
+        """Render bot status."""
         trades = self.bot.active_trades
         active_count = len(trades)
 
-        # 啟動時間
         start_time = getattr(self.bot, '_start_time', None)
         if start_time:
             uptime_hours = (datetime.now(timezone.utc) - start_time).total_seconds() / 3600
@@ -161,25 +159,16 @@ class TelegramCommandHandler:
         else:
             uptime_str = "N/A"
 
-        # 新舊策略共存時，Telegram 以 strategy_name 為準避免誤報。
-        counts = Counter(
-            format_strategy_label(
-                getattr(pm, 'strategy_name', None),
-                getattr(pm, 'is_v6_pyramid', None),
-            )
-            for pm in trades.values()
-        )
+        counts = Counter(self._strategy_label(pm) for pm in trades.values())
         label_order = [
-            "V54 NoScale",
-            "V7 Structure",
-            "V53 SOP",
-            "V6 Pyramid",
+            "Manual/Protective",
             "V8 ATR Grid",
         ]
         parts = [f"{label}: {counts[label]}" for label in label_order if counts.get(label)]
         extra_labels = sorted(label for label in counts.keys() if label not in label_order)
         parts.extend(f"{label}: {counts[label]}" for label in extra_labels)
         distribution = " | ".join(parts) if parts else "None"
+
         arbiter_enabled = getattr(Config, 'REGIME_ARBITER_ENABLED', False) is True
         macro_enabled = getattr(Config, 'MACRO_OVERLAY_ENABLED', False) is True
         threshold = getattr(Config, 'ARBITER_NEUTRAL_THRESHOLD', None)
@@ -198,22 +187,22 @@ class TelegramCommandHandler:
 
         lines = [
             "<b>Bot Status</b>",
-            "──────────────────",
-            f"運行時間: {uptime_str}",
-            f"活躍倉位: {active_count}",
-            f"策略分佈: {distribution}",
+            "------------------------------",
+            f"Uptime: {uptime_str}",
+            f"Active positions: {active_count}",
+            f"Strategy mix: {distribution}",
             f"Arbiter: {'ON' if arbiter_enabled else 'OFF'} | Neutral<{threshold_text} | snapshot={snapshot_text}",
             f"Macro Overlay: {'ON' if macro_enabled else 'OFF'}",
-            f"監控幣種: {len(Config.SYMBOLS)}",
-            f"DRY RUN: {'Yes' if Config.V6_DRY_RUN else 'No'}",
+            f"Symbols: {len(Config.SYMBOLS)}",
+            f"DRY RUN: {'Yes' if Config.DRY_RUN else 'No'}",
         ]
 
         return "\n".join(lines)
 
     def _cmd_balance(self) -> str:
-        """帳戶餘額"""
+        """Render account balance."""
         try:
-            if Config.V6_DRY_RUN:
+            if Config.DRY_RUN:
                 balance = 10000.0
             else:
                 balance = self.bot.risk_manager.get_balance()
@@ -225,25 +214,24 @@ class TelegramCommandHandler:
         if initial and initial > 0:
             pnl = balance - initial
             pnl_pct = pnl / initial * 100
-            emoji = '+' if pnl >= 0 else ''
-            pnl_line = f"\n本次 PnL: {emoji}${pnl:.2f} ({emoji}{pnl_pct:.2f}%)"
+            pnl_prefix = '+' if pnl >= 0 else ''
+            pnl_line = f"\nPnL: {pnl_prefix}${pnl:.2f} ({pnl_prefix}{pnl_pct:.2f}%)"
 
         lines = [
-            "<b>帳戶餘額</b>",
-            "──────────────────",
-            f"可用餘額: ${balance:.2f} USDT",
-            f"{pnl_line}" if pnl_line else "",
+            "<b>Balance</b>",
+            "------------------------------",
+            f"Balance: ${balance:.2f} USDT",
+            pnl_line if pnl_line else "",
         ]
 
         return "\n".join(line for line in lines if line)
 
     def _cmd_help(self) -> str:
-        """指令說明"""
+        """Return Telegram command help."""
         return (
-            "<b>可用指令</b>\n"
-            "──────────────────\n"
-            "/positions — 目前開倉部位\n"
-            "/status — Bot 運行狀態\n"
-            "/balance — 帳戶餘額\n"
-            "/help — 顯示本說明"
+            "<b>Commands</b>\n"
+            "/positions - show open positions\n"
+            "/status - show bot status\n"
+            "/balance - show account balance\n"
+            "/help - show this help"
         )
