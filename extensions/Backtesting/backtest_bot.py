@@ -46,6 +46,7 @@ def create_backtest_bot(
     config_overrides: dict = None,
     *,
     allowed_plugin_ids=None,
+    fill_slippage_bps: float = 0.0,
 ) -> object:
     """
     Create a TradingBot wired to backtest data and mocked exchange I/O.
@@ -68,6 +69,8 @@ def create_backtest_bot(
     - Config.DRY_RUN is forced false so execution and close paths create local
       PositionManager records and trade close payloads.
     - bot.risk_manager.get_balance is mocked to avoid account API calls.
+    - bot._extract_fill_price uses the approved RiskPlan entry instead of the
+      1H replay cursor price; optional backtest slippage is disabled by default.
     """
     TradingBotClass = get_bot_class()
     Config = get_config_class()
@@ -117,6 +120,12 @@ def create_backtest_bot(
 
     # Exchange state is already simulated by MockOrderEngine.
     bot._sync_exchange_positions = MagicMock()
+
+    # Backtest fills should match the central-risk-approved entry price. The
+    # mock exchange order price follows the 1H replay cursor, which can be a
+    # different timestamp than a plugin's signal timeframe close.
+    bot._extract_fill_price = _backtest_fill_extractor(fill_slippage_bps)
+    bot._backtest_fill_slippage_bps = float(fill_slippage_bps or 0.0)
 
     # Backtest-only cache: BTC regime/trend candles update far slower than the
     # 1H scan loop. Reusing same-candle context keeps replay tractable without
@@ -182,3 +191,24 @@ def create_backtest_bot(
     install_backtest_plugin_id_filter(bot, allowed_plugin_ids)
 
     return bot
+
+
+def _backtest_fill_extractor(fill_slippage_bps: float = 0.0):
+    """Return a backtest-only fill extractor anchored to approved entry."""
+    slippage = max(float(fill_slippage_bps or 0.0), 0.0) / 10000.0
+
+    def _extract_fill_price(order_result: dict, fallback_price: float) -> float:
+        fill = float(fallback_price)
+        if slippage <= 0.0:
+            return fill
+
+        side = ""
+        if isinstance(order_result, dict):
+            side = str(order_result.get("side") or "").upper()
+        if side in {"BUY", "LONG"}:
+            return fill * (1.0 + slippage)
+        if side in {"SELL", "SHORT"}:
+            return fill * (1.0 - slippage)
+        return fill
+
+    return _extract_fill_price

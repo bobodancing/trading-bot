@@ -58,6 +58,7 @@ class MockOrderEngine:
         return {
             "orderId": str(uuid.uuid4()),
             "avgPrice": price,
+            "side": side.upper(),
             "status": "FILLED",
             "executedQty": str(quantity),
         }
@@ -68,6 +69,7 @@ class MockOrderEngine:
         return {
             "orderId": str(uuid.uuid4()),
             "avgPrice": price,
+            "side": side.upper(),
             "status": "FILLED",
             "executedQty": str(quantity),
         }

@@ -56,3 +56,27 @@ def test_fetch_ticker_uses_tse():
     ticker = bot.fetch_ticker("BTC/USDT")
     assert "last" in ticker
     assert ticker["last"] > 0
+
+
+def test_backtest_fill_uses_approved_entry_not_tse_current_price():
+    tse = make_tse_with_data()
+    mock_engine = MockOrderEngine(tse, initial_balance=10000.0)
+    bot = create_backtest_bot(tse, mock_engine)
+    order_result = mock_engine.create_order("BTC/USDT", "BUY", 0.1)
+
+    fill = bot._extract_fill_price(order_result, 100.0)
+
+    assert order_result["avgPrice"] != pytest.approx(100.0)
+    assert fill == pytest.approx(100.0)
+
+
+def test_backtest_fill_can_apply_unfavorable_slippage():
+    tse = make_tse_with_data()
+    mock_engine = MockOrderEngine(tse, initial_balance=10000.0)
+    bot = create_backtest_bot(tse, mock_engine, fill_slippage_bps=5.0)
+
+    long_fill = bot._extract_fill_price({"side": "BUY", "avgPrice": 90.0}, 100.0)
+    short_fill = bot._extract_fill_price({"side": "SELL", "avgPrice": 110.0}, 100.0)
+
+    assert long_fill == pytest.approx(100.05)
+    assert short_fill == pytest.approx(99.95)
