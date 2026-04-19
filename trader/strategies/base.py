@@ -196,6 +196,53 @@ class StrategyRegistry:
             raise KeyError(f"strategy not registered: {strategy_id}")
         return plugin
 
+    @staticmethod
+    def _validate_params(strategy_id: str, plugin_cls: type, params: Mapping[str, Any]) -> None:
+        schema = dict(getattr(plugin_cls, "params_schema", {}) or {})
+        unknown = sorted(key for key in params if key not in schema)
+        if unknown:
+            raise ValueError(
+                f"strategy {strategy_id} has unknown param(s): {', '.join(unknown)}"
+            )
+
+        validators = {
+            "str": lambda value: isinstance(value, str),
+            "bool": lambda value: isinstance(value, bool),
+            "int": lambda value: isinstance(value, int) and not isinstance(value, bool),
+            "float": lambda value: (
+                isinstance(value, (int, float)) and not isinstance(value, bool)
+            ),
+        }
+        for key, value in params.items():
+            expected = schema.get(key)
+            expected_name = expected.__name__ if isinstance(expected, type) else str(expected)
+            validator = validators.get(expected_name)
+            if validator is None:
+                raise ValueError(
+                    f"strategy {strategy_id} param {key} has unsupported schema type: "
+                    f"{expected_name}"
+                )
+            if not validator(value):
+                raise ValueError(
+                    f"strategy {strategy_id} param {key} must be {expected_name}, "
+                    f"got {type(value).__name__}"
+                )
+
+    @staticmethod
+    def _validate_required_indicators(strategy_id: str, plugin: StrategyPlugin) -> None:
+        from trader.indicators.registry import IndicatorRegistry
+
+        required = getattr(plugin, "required_indicators", set()) or set()
+        if isinstance(required, (str, bytes)):
+            raise ValueError(f"strategy {strategy_id} required_indicators must be a set/list")
+        required_names = {str(item) for item in required}
+        unknown = sorted(required_names - IndicatorRegistry.supported_indicators())
+        if unknown:
+            raise ValueError(
+                f"strategy {strategy_id} requires unsupported indicator(s): "
+                f"{', '.join(unknown)}"
+            )
+
     @classmethod
     def from_config(
         cls,
@@ -220,11 +267,14 @@ class StrategyRegistry:
                 raise ValueError(f"strategy catalog entry incomplete: {strategy_key}")
             module = importlib.import_module(str(module_name))
             plugin_cls = getattr(module, str(class_name))
-            plugin = plugin_cls(params=dict(entry.get("params") or {}))
+            params = dict(entry.get("params") or {})
+            cls._validate_params(strategy_key, plugin_cls, params)
+            plugin = plugin_cls(params=params)
             if plugin.id != strategy_key:
                 raise ValueError(
                     f"strategy id mismatch for {strategy_key}: plugin exposes {plugin.id}"
                 )
+            cls._validate_required_indicators(strategy_key, plugin)
             registry.register(plugin)
         return registry
 

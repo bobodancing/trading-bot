@@ -139,6 +139,56 @@ def test_strategy_registry_loads_enabled_plugin():
     assert plugin.params["symbol"] == "BTC/USDT"
 
 
+def test_strategy_registry_rejects_unknown_plugin_param():
+    with pytest.raises(ValueError, match="unknown param"):
+        StrategyRegistry.from_config(
+            {
+                "fixture_long": {
+                    "enabled": True,
+                    "module": "trader.strategies.plugins.fixture",
+                    "class": "FixtureLongStrategy",
+                    "params": {"symbol": "BTC/USDT", "typo_stop": 0.02},
+                }
+            },
+            ["fixture_long"],
+        )
+
+
+def test_strategy_registry_rejects_wrong_plugin_param_type():
+    with pytest.raises(ValueError, match="param emit_once must be bool"):
+        StrategyRegistry.from_config(
+            {
+                "fixture_long": {
+                    "enabled": True,
+                    "module": "trader.strategies.plugins.fixture",
+                    "class": "FixtureLongStrategy",
+                    "params": {"emit_once": "true"},
+                }
+            },
+            ["fixture_long"],
+        )
+
+
+def test_strategy_registry_rejects_unknown_required_indicator(monkeypatch):
+    monkeypatch.setattr(
+        "trader.strategies.plugins.fixture.FixtureLongStrategy.required_indicators",
+        {"atr", "not_a_real_indicator"},
+    )
+
+    with pytest.raises(ValueError, match="unsupported indicator"):
+        StrategyRegistry.from_config(
+            {
+                "fixture_long": {
+                    "enabled": True,
+                    "module": "trader.strategies.plugins.fixture",
+                    "class": "FixtureLongStrategy",
+                    "params": {},
+                }
+            },
+            ["fixture_long"],
+        )
+
+
 def test_strategy_registry_fail_closed_when_empty():
     registry = StrategyRegistry.from_config({}, [])
     assert registry.plugins == {}

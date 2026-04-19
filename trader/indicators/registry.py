@@ -21,6 +21,10 @@ class IndicatorRegistry:
     }
 
     @classmethod
+    def supported_indicators(cls) -> set[str]:
+        return set(cls.DEFAULT_INDICATORS)
+
+    @classmethod
     def apply(cls, df: pd.DataFrame, required: set[str] | None = None) -> pd.DataFrame:
         if df is None or df.empty:
             return df
