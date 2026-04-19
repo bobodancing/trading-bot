@@ -14,6 +14,7 @@ from trader.strategies import (
     StrategyRegistry,
     StrategyRiskProfile,
 )
+from trader.strategies.plugins._catalog import get_strategy_catalog
 from trader.strategies.plugins.fixture import FixtureLongStrategy
 from trader.strategy_runtime import StrategyRuntime
 
@@ -192,6 +193,14 @@ def test_strategy_registry_rejects_unknown_required_indicator(monkeypatch):
 def test_strategy_registry_fail_closed_when_empty():
     registry = StrategyRegistry.from_config({}, [])
     assert registry.plugins == {}
+
+
+def test_plugin_catalog_copy_enables_selected_entries_without_mutating_source():
+    first = get_strategy_catalog(["fixture_long"])
+    second = get_strategy_catalog()
+
+    assert first["fixture_long"]["enabled"] is True
+    assert second["fixture_long"]["enabled"] is False
 
 
 def test_fixture_strategy_generates_deterministic_intent():

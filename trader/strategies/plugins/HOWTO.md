@@ -21,9 +21,9 @@ If a normal plugin requires edits to `trader/bot.py`,
 `trader/strategy_runtime.py`, `extensions/Backtesting/backtest_engine.py`, or
 runtime `Config` defaults, treat that as infrastructure debt and stop for review.
 
-Catalog note: the catalog still lives in `Config.STRATEGY_CATALOG` until the
-planned Phase 3.5 move to `trader/strategies/plugins/_catalog.py`. Do not add
-the first new research plugin before that move lands.
+Catalog note: add catalog entries to `trader/strategies/plugins/_catalog.py`.
+Catalog presence is not promotion; runtime activation still requires
+`STRATEGY_RUNTIME_ENABLED=True` and an explicit `ENABLED_STRATEGIES` list.
 
 ## Plugin Contract
 

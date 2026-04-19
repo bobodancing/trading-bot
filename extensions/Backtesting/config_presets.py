@@ -65,7 +65,6 @@ ALLOWED_BACKTEST_OVERRIDES = {
     # Strategy-plugin reset runtime.
     "STRATEGY_RUNTIME_ENABLED",
     "ENABLED_STRATEGIES",
-    "STRATEGY_CATALOG",
     "DEFAULT_STRATEGY_RISK_PROFILE",
     # Dormant grid lane, useful for explicit diagnostics only.
     "ENABLE_GRID_TRADING",
@@ -88,7 +87,6 @@ _PLUGIN_RUNTIME_DEFAULT_KEYS = (
     "TIER_C_POSITION_MULT",
     "STRATEGY_RUNTIME_ENABLED",
     "ENABLED_STRATEGIES",
-    "STRATEGY_CATALOG",
 )
 
 

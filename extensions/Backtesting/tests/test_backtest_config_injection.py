@@ -39,14 +39,6 @@ def _fixture_runtime_overrides():
         "REGIME_ROUTER_ENABLED": False,
         "STRATEGY_RUNTIME_ENABLED": True,
         "ENABLED_STRATEGIES": ["fixture_long"],
-        "STRATEGY_CATALOG": {
-            "fixture_long": {
-                "enabled": True,
-                "module": "trader.strategies.plugins.fixture",
-                "class": "FixtureLongStrategy",
-                "params": {"symbol": "BTC/USDT", "stop_pct": 0.02},
-            }
-        },
     }
 
 
@@ -108,6 +100,7 @@ def test_plugin_runtime_defaults_preset_matches_config_defaults():
 
     assert preset["REGIME_ARBITER_ENABLED"] is True
     assert preset["MACRO_OVERLAY_ENABLED"] is False
+    assert "STRATEGY_CATALOG" not in preset
     if "BTC_TREND_FILTER_ENABLED" in preset:
         assert preset["BTC_TREND_FILTER_ENABLED"] is True
 

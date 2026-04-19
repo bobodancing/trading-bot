@@ -40,7 +40,6 @@ secrets.json -> Config.load_secrets()
 ```text
 STRATEGY_RUNTIME_ENABLED = false
 ENABLED_STRATEGIES = []
-STRATEGY_CATALOG = research/plugin registry
 REGIME_ARBITER_ENABLED = true
 REGIME_ROUTER_ENABLED = false
 STRATEGY_ROUTER_POLICY = "fail_closed"
@@ -80,7 +79,7 @@ Plugins may evolve independently, but plugins must not:
 
 ## Current Strategy Surface
 
-`trader/strategies/plugins/` contains research plugins. Catalog presence is not runtime promotion.
+`trader/strategies/plugins/` contains research plugins. The plugin catalog lives in `trader/strategies/plugins/_catalog.py`; catalog presence is not runtime promotion.
 
 Current known plugin entries:
 

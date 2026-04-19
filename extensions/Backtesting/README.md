@@ -45,7 +45,7 @@ BacktestConfig(
 )
 ```
 
-`enabled_strategies` toggles entries from `Config.STRATEGY_CATALOG` for this run only.
+`enabled_strategies` selects plugin ids from `trader/strategies/plugins/_catalog.py` for this run only.
 
 `allowed_plugin_ids` is a backtest-only allowlist over emitted strategy plugin ids. It does not change production scanner/runtime defaults.
 

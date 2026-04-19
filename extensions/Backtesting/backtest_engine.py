@@ -484,15 +484,8 @@ class BacktestEngine:
 
         overrides = dict(cfg.config_overrides or {})
         enabled = list(cfg.enabled_strategies or [])
-        catalog = dict(getattr(Config, "STRATEGY_CATALOG", {}))
-        for strategy_id in enabled:
-            entry = dict(catalog.get(strategy_id) or {})
-            if entry:
-                entry["enabled"] = True
-                catalog[strategy_id] = entry
         overrides["STRATEGY_RUNTIME_ENABLED"] = bool(enabled)
         overrides["ENABLED_STRATEGIES"] = enabled
-        overrides["STRATEGY_CATALOG"] = catalog
 
         return validate_backtest_overrides(overrides, config_cls=Config)
 

@@ -27,6 +27,7 @@ from trader.strategies import (
     StrategyRegistry,
     StrategyRiskProfile,
 )
+from trader.strategies.plugins._catalog import get_strategy_catalog
 from trader.utils import drop_unfinished_candle
 
 logger = logging.getLogger(__name__)
@@ -67,9 +68,10 @@ class StrategyRuntime:
         self.refresh_registry()
 
     def refresh_registry(self) -> None:
+        enabled = getattr(Config, "ENABLED_STRATEGIES", [])
         self.registry = StrategyRegistry.from_config(
-            getattr(Config, "STRATEGY_CATALOG", {}),
-            getattr(Config, "ENABLED_STRATEGIES", []),
+            get_strategy_catalog(enabled),
+            enabled,
         )
 
     def enabled_plugins(self) -> list[StrategyPlugin]:

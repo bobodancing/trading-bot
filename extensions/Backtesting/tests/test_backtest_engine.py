@@ -305,7 +305,7 @@ def test_backtest_engine_records_regime_probe_when_grid_disabled(monkeypatch):
     assert summary["btc_source_distribution"].get("regime_probe", 0) > 0
 
 
-def test_effective_overrides_enable_strategy_runtime_catalog():
+def test_effective_overrides_enable_strategy_runtime_without_catalog_override():
     config = BacktestConfig(
         symbols=["BTC/USDT"],
         start="2026-01-01",
@@ -320,7 +320,7 @@ def test_effective_overrides_enable_strategy_runtime_catalog():
 
     assert overrides["STRATEGY_RUNTIME_ENABLED"] is True
     assert overrides["ENABLED_STRATEGIES"] == ["fixture_long"]
-    assert overrides["STRATEGY_CATALOG"]["fixture_long"]["enabled"] is True
+    assert "STRATEGY_CATALOG" not in overrides
     assert "BACKTEST_DRY_COUNT_ONLY" not in overrides
     assert "BACKTEST_USE_PRECOMPUTED_INDICATORS" not in overrides
 

@@ -149,28 +149,6 @@ class Config:
     ENABLED_STRATEGIES: list = []
     DEFAULT_STRATEGY_RISK_PROFILE = "central_default"
 
-    # Plugins stay disabled until explicitly toggled in the catalog entry.
-    STRATEGY_CATALOG: dict = {
-        "fixture_long": {
-            "enabled": False,
-            "module": "trader.strategies.plugins.fixture",
-            "class": "FixtureLongStrategy",
-            "params": {},
-        },
-        "fixture_exit": {
-            "enabled": False,
-            "module": "trader.strategies.plugins.fixture",
-            "class": "FixtureExitStrategy",
-            "params": {},
-        },
-        "macd_zero_line_btc_1d": {
-            "enabled": False,
-            "module": "trader.strategies.plugins.macd_zero_line",
-            "class": "MacdZeroLineLongStrategy",
-            "params": {"symbol": "BTC/USDT", "timeframe": "1d"},
-        },
-    }
-
     # ==================== Persistence / Debug ====================
 
     POSITIONS_JSON_PATH = str(Path(__file__).resolve().parent.parent / '.log' / 'positions.json')
@@ -185,10 +163,6 @@ class Config:
         if not isinstance(cls.ENABLED_STRATEGIES, list):
             raise ValueError(
                 f"ENABLED_STRATEGIES must be a list, got {type(cls.ENABLED_STRATEGIES).__name__}"
-            )
-        if not isinstance(cls.STRATEGY_CATALOG, dict):
-            raise ValueError(
-                f"STRATEGY_CATALOG must be a dict, got {type(cls.STRATEGY_CATALOG).__name__}"
             )
         if cls.STRATEGY_ROUTER_POLICY != "fail_closed":
             raise ValueError(

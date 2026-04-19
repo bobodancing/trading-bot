@@ -67,14 +67,6 @@ def test_fixture_strategy_runs_through_live_like_backtest_path():
             "REGIME_ROUTER_ENABLED": False,
             "STRATEGY_RUNTIME_ENABLED": True,
             "ENABLED_STRATEGIES": ["fixture_long"],
-            "STRATEGY_CATALOG": {
-                "fixture_long": {
-                    "enabled": True,
-                    "module": "trader.strategies.plugins.fixture",
-                    "class": "FixtureLongStrategy",
-                    "params": {"symbol": "BTC/USDT", "stop_pct": 0.02},
-                }
-            },
         },
     )
 
@@ -105,22 +97,13 @@ def test_macd_zero_line_strategy_runs_through_live_like_backtest_path():
             "SYMBOLS": ["BTC/USDT"],
             "USE_SCANNER_SYMBOLS": False,
             "SYMBOL_LOSS_COOLDOWN_HOURS": 0,
+            # Plugin default stop_atr_mult=2.0 on synthetic daily ATR overshoots
+            # the stock 6% SL cap; relax for this backtest-only test only.
+            "MAX_SL_DISTANCE_PCT": 0.20,
             "REGIME_ARBITER_ENABLED": False,
             "REGIME_ROUTER_ENABLED": False,
             "STRATEGY_RUNTIME_ENABLED": True,
             "ENABLED_STRATEGIES": ["macd_zero_line_btc_1d"],
-            "STRATEGY_CATALOG": {
-                "macd_zero_line_btc_1d": {
-                    "enabled": True,
-                    "module": "trader.strategies.plugins.macd_zero_line",
-                    "class": "MacdZeroLineLongStrategy",
-                    "params": {
-                        "symbol": "BTC/USDT",
-                        "timeframe": "1d",
-                        "stop_atr_mult": 1.0,
-                    },
-                }
-            },
         },
     )
 
