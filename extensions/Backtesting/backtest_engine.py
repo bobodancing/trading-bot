@@ -191,6 +191,8 @@ def _record_strategy_trace(active_trades: dict, pm_registry: dict) -> None:
             pm_registry[tid] = {
                 "strategy_id": getattr(pm, "strategy_id", "unknown"),
                 "strategy_version": getattr(pm, "strategy_version", "unknown"),
+                "entry_current_sl": getattr(pm, "current_sl", None),
+                "entry_initial_sl": getattr(pm, "initial_sl", None),
             }
 
 
@@ -560,6 +562,8 @@ class BacktestEngine:
                 )
                 d["strategy_id"] = strategy_id
                 d["strategy_version"] = strategy_version
+                d["entry_current_sl"] = d.get("entry_current_sl") or trace.get("entry_current_sl")
+                d["entry_initial_sl"] = d.get("entry_initial_sl") or trace.get("entry_initial_sl")
                 d["exit_strategy"] = d.get("strategy_name") or strategy_id
                 if tid and tid in regime_registry:
                     d.update(regime_registry[tid])

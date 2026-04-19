@@ -8,6 +8,7 @@ promote runtime Config defaults.
 from __future__ import annotations
 
 import json
+import csv
 from pathlib import Path
 from typing import Iterable
 
@@ -85,13 +86,55 @@ def _collect_backtest_run_errors(
     return errors
 
 
+def _collect_trade_invariant_failures(
+    output_dir: Path,
+    candidate_ids: Iterable[str],
+    windows: Iterable[str],
+) -> list[dict]:
+    failures = []
+    for candidate_id in _candidate_ids(candidate_ids):
+        for window in windows:
+            trades_path = output_dir / candidate_id / window / "trades.csv"
+            if not trades_path.exists():
+                continue
+            with trades_path.open(newline="", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                required = {"side", "entry_price", "entry_initial_sl"}
+                if not required.issubset(set(reader.fieldnames or [])):
+                    continue
+                for row_num, row in enumerate(reader, start=2):
+                    side = str(row.get("side") or "").upper()
+                    try:
+                        entry_price = float(row.get("entry_price") or 0.0)
+                        entry_sl = float(row.get("entry_initial_sl") or 0.0)
+                    except ValueError:
+                        continue
+                    failed = (
+                        side == "LONG" and entry_sl >= entry_price
+                    ) or (
+                        side == "SHORT" and entry_sl <= entry_price
+                    )
+                    if failed:
+                        failures.append({
+                            "candidate_id": candidate_id,
+                            "window": window,
+                            "row": row_num,
+                            "symbol": row.get("symbol"),
+                            "side": side,
+                            "entry_price": entry_price,
+                            "entry_initial_sl": entry_sl,
+                        })
+    return failures
+
+
 def _validity_warning_lines(
     incomplete_cells: list[dict],
     run_errors: list[dict],
+    trade_invariant_failures: list[dict],
     *,
     allow_incomplete: bool,
 ) -> list[str]:
-    if not incomplete_cells and not run_errors:
+    if not incomplete_cells and not run_errors and not trade_invariant_failures:
         return []
 
     lines = [
@@ -118,6 +161,19 @@ def _validity_warning_lines(
                 f"{error.get('exc_type')}: {error.get('message')}"
             )
 
+    if trade_invariant_failures:
+        lines.append(f"- Trade invariant failures: {len(trade_invariant_failures)}.")
+        for failure in trade_invariant_failures[:10]:
+            lines.append(
+                "  - "
+                f"`{failure.get('candidate_id')}/{failure.get('window')}` "
+                f"row {failure.get('row')} {failure.get('symbol')} {failure.get('side')} "
+                f"entry={failure.get('entry_price'):.8g} "
+                f"entry_initial_sl={failure.get('entry_initial_sl'):.8g}"
+            )
+        if len(trade_invariant_failures) > 10:
+            lines.append(f"  - ... {len(trade_invariant_failures) - 10} more")
+
     lines.append("")
     return lines
 
@@ -135,10 +191,24 @@ def _candidate_summary_rows(output_dir: Path, candidate_ids: Iterable[str], wind
                 continue
             completed += 1
             trades += int(summary.get("total_trades", 0) or 0)
-            net_pnl += float(summary.get("net_pnl", summary.get("total_pnl", 0.0)) or 0.0)
+            net_pnl += _net_pnl(output_dir / candidate_id / window, summary)
             max_dd = max(max_dd, float(summary.get("max_drawdown_pct", 0.0) or 0.0))
         rows.append(f"| `{candidate_id}` | {completed} | {trades} | {net_pnl:.4f} | {max_dd:.4f} |")
     return rows
+
+
+def _net_pnl(cell_dir: Path, summary: dict) -> float:
+    if "net_pnl" in summary:
+        return float(summary.get("net_pnl") or 0.0)
+    if "total_pnl" in summary:
+        return float(summary.get("total_pnl") or 0.0)
+
+    trades_path = cell_dir / "trades.csv"
+    if not trades_path.exists():
+        return 0.0
+    with trades_path.open(newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        return sum(float(row.get("pnl_usdt") or 0.0) for row in reader)
 
 
 def write_candidate_review_report(
@@ -155,7 +225,16 @@ def write_candidate_review_report(
     candidate_ids = _candidate_ids(candidate_ids)
     incomplete_cells = _validate_matrix_completeness(output_dir, candidate_ids, window_names)
     run_errors = _collect_backtest_run_errors(output_dir, candidate_ids, window_names)
-    verdict = "NEEDS_SECOND_PASS" if incomplete_cells or run_errors else "KEEP_RESEARCH_ONLY"
+    trade_invariant_failures = _collect_trade_invariant_failures(
+        output_dir,
+        candidate_ids,
+        window_names,
+    )
+    verdict = (
+        "NEEDS_SECOND_PASS"
+        if incomplete_cells or run_errors or trade_invariant_failures
+        else "KEEP_RESEARCH_ONLY"
+    )
 
     report_path = repo_root / "reports" / "strategy_plugin_candidate_review.md"
     report_path.parent.mkdir(parents=True, exist_ok=True)
@@ -171,6 +250,7 @@ def write_candidate_review_report(
         *_validity_warning_lines(
             incomplete_cells,
             run_errors,
+            trade_invariant_failures,
             allow_incomplete=allow_incomplete,
         ),
         "## Candidate summary",

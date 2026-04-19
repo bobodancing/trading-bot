@@ -70,7 +70,7 @@ def test_summary_json_has_required_keys(tmp_path):
         assert key in s
 
 
-def _write_review_cell(output_dir: Path, candidate_id: str, window: str, *, errors=None):
+def _write_review_cell(output_dir: Path, candidate_id: str, window: str, *, errors=None, pnl=0.0):
     import json
 
     cell = output_dir / candidate_id / window
@@ -85,7 +85,10 @@ def _write_review_cell(output_dir: Path, candidate_id: str, window: str, *, erro
         "backtest_run_error_count": len(errors or []),
     }
     (cell / "summary.json").write_text(json.dumps(summary), encoding="utf-8")
-    (cell / "trades.csv").write_text("symbol,entry_time,signal_type,pnl_usdt,realized_r\n", encoding="utf-8")
+    (cell / "trades.csv").write_text(
+        f"symbol,entry_time,signal_type,pnl_usdt,realized_r\nBTC/USDT,2026-01-01,fixture_long,{pnl},1.0\n",
+        encoding="utf-8",
+    )
     (cell / "signal_audit_summary.json").write_text("{}", encoding="utf-8")
     (cell / "signal_entries.csv").write_text("symbol,signal_type,signal_tier\n", encoding="utf-8")
     (cell / "lane_race_audit.csv").write_text(
@@ -133,3 +136,36 @@ def test_backtest_run_errors_force_needs_second_pass(tmp_path):
     assert verdict == "NEEDS_SECOND_PASS"
     assert "Backtest run errors: 1" in report
     assert "scanner boom" in report
+
+
+def test_candidate_review_net_pnl_falls_back_to_trades_csv(tmp_path):
+    (tmp_path / "reports").mkdir()
+    output_dir = tmp_path / "results"
+    for window in DEFAULT_WINDOWS:
+        _write_review_cell(output_dir, "fixture_long", window, pnl=12.5)
+
+    write_candidate_review_report(tmp_path, output_dir, ["fixture_long"])
+
+    report = (tmp_path / "reports" / "strategy_plugin_candidate_review.md").read_text(encoding="utf-8")
+    assert "| `fixture_long` | 3 | 0 | 37.5000 | 0.0000 |" in report
+
+
+def test_candidate_review_invalid_entry_stop_forces_needs_second_pass(tmp_path):
+    (tmp_path / "reports").mkdir()
+    output_dir = tmp_path / "results"
+    for window in DEFAULT_WINDOWS:
+        _write_review_cell(output_dir, "fixture_long", window)
+
+    bad_cell = output_dir / "fixture_long" / "TRENDING_UP"
+    (bad_cell / "trades.csv").write_text(
+        "symbol,side,entry_price,entry_initial_sl,pnl_usdt\n"
+        "BTC/USDT,LONG,100.0,101.0,0.0\n",
+        encoding="utf-8",
+    )
+
+    verdict = write_candidate_review_report(tmp_path, output_dir, ["fixture_long"])
+
+    report = (tmp_path / "reports" / "strategy_plugin_candidate_review.md").read_text(encoding="utf-8")
+    assert verdict == "NEEDS_SECOND_PASS"
+    assert "Trade invariant failures: 1" in report
+    assert "entry_initial_sl=101" in report
