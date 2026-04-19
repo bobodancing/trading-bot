@@ -1,4 +1,4 @@
-"""?????????"""
+"""StrategyRuntime backtest engine with mocked execution."""
 import os
 import sys
 import logging
@@ -55,18 +55,19 @@ logger = logging.getLogger(__name__)
 DEFAULT_WINDOW_DAYS = 180
 
 
-# ???? Simulation time patch ????????????????????????????????????????????????????????????????????????????????????????????????????????
-# bot.py / positions.py ??datetime.now(timezone.utc) ????????? entry_time??
-# ????????????eal now() ?豯????啣? <1s??????
-#   (1) ????豯折???? ???謍????trade ????? symbol ?豯折?????
-#   (2) entry_time ??exit_time ??holding_hours ??0 ??TIME_EXIT ?豯折?????
-# ?鞈?僱???onkey-patch trader.bot.datetime / trader.positions.datetime??? now() ?????穿???????
+# Simulation time patch:
+# bot.py / positions.py call datetime.now(timezone.utc) for entry/exit time.
+# If real wall-clock time is used during a fast replay, several issues appear:
+#   (1) multiple trades can receive nearly identical timestamps;
+#   (2) entry_time, exit_time, and holding_hours collapse toward zero;
+#   (3) time-based exits can behave differently from the replay cursor.
+# Patch trader datetime modules so now() follows the current replay bar.
 
-_sim_ts_container: list = [None]   # [pd.Timestamp | None]??oop ??bar ???
+_sim_ts_container: list = [None]   # [pd.Timestamp | None], current replay bar
 
 
 class _BacktestDatetime(_real_datetime_module.datetime):
-    """datetime ?????ow() ????????????????????????"""
+    """datetime subclass whose now() follows the replay cursor."""
 
     @classmethod
     def now(cls, tz=None):
@@ -264,9 +265,9 @@ class BacktestResult:
                 if values[i - 1] > 0
             ]
             if daily_rets and statistics.stdev(daily_rets) > 0:
-                sharpe = (statistics.mean(daily_rets) / statistics.stdev(daily_rets)) * (8760 ** 0.5)  # hourly ??annualized
+                sharpe = (statistics.mean(daily_rets) / statistics.stdev(daily_rets)) * (8760 ** 0.5)  # hourly annualized
 
-        # trades_per_week: ??????????/ 7
+        # trades_per_week: closed trades divided by elapsed weeks.
         from datetime import datetime
         start_dt = datetime.fromisoformat(self.config.start)
         end_dt = datetime.fromisoformat(self.config.end)
@@ -285,8 +286,8 @@ class BacktestResult:
         }
 
 
-# ???? Backtest context manager ????????????????????????????????????????????????????????????????????????????????????????????????
-# Config override + datetime patch + cleanup????遴?????run ?????撓?????
+# Backtest context manager:
+# apply Config overrides, patch replay time, and restore state after each run.
 
 def _derive_regime_probe_trend(context: dict) -> Optional[str]:
     """Mirror regime routing into a comparable trend label for audit only."""
@@ -378,8 +379,9 @@ def _record_regime_probe(bot, timestamp, *, grid_enabled: bool) -> None:
 @contextmanager
 def _backtest_context(config_overrides: dict | None, *, use_precomputed_indicators: bool = False):
     """
-    Context manager: ?豯?? Config ????+ datetime monkey-patch??
-    ??????????????????????????run_single() ?????撓?????
+    Apply per-run Config overrides and replay-time monkey patches.
+
+    All Config attributes and patched datetime modules are restored on exit.
     """
     Config = get_config_class()
     datetime_modules = get_datetime_patch_modules()
@@ -401,7 +403,7 @@ def _backtest_context(config_overrides: dict | None, *, use_precomputed_indicato
             setattr(Config, k, v)
     Config.validate()
 
-    # ????????
+    # Capture state that must be restored after the run.
     _orig_symbols = Config.SYMBOLS
     _orig_use_scanner = Config.USE_SCANNER_SYMBOLS
     _orig_dry_run = Config.DRY_RUN
@@ -412,7 +414,7 @@ def _backtest_context(config_overrides: dict | None, *, use_precomputed_indicato
     }
     _orig_calculate_indicators = TechnicalAnalysis.calculate_indicators
 
-    # ??? datetime patch???????????datetime.now() ??module??
+    # Patch modules that imported datetime directly.
     for module in datetime_modules:
         if hasattr(module, "datetime"):
             module.datetime = _BacktestDatetime
@@ -448,7 +450,7 @@ class BacktestEngine:
         self.loader = BacktestDataLoader()
 
     def _load_data(self, cfg: BacktestConfig) -> dict:
-        """???????symbol ??1H + 4H + 1D ??? + funding rate"""
+        """Load 1H, 4H, 1D, and funding data for each symbol."""
         from datetime import datetime, timedelta
         from funding_loader import FundingLoader
         trend_start = (
@@ -496,16 +498,15 @@ class BacktestEngine:
 
     def run_single(self, verbose: bool = False) -> BacktestResult:
         """
-        Side-effect-free single backtest?????BacktestResult??
-        ???∵策??????????????????? AutoTrader ???????????
+        Run one side-effect-contained backtest and return a BacktestResult.
 
         Args:
-            verbose: True ??????????????LI ?????alse ??????AutoTrader ???
+            verbose: True for CLI progress output, False for programmatic use.
         """
         cfg = self.config
 
         if verbose:
-            print(f"\n[Backtest] ??? {len(cfg.symbols)} ????????..")
+            print(f"\n[Backtest] Running {len(cfg.symbols)} symbol(s)...")
 
         effective_overrides = self._effective_config_overrides(cfg)
 
@@ -589,7 +590,7 @@ class BacktestEngine:
 
             all_ts = tse.get_1h_timestamps(cfg.symbols)
             if verbose:
-                print(f"[Backtest] ??{len(all_ts)} ??1H bars??armup={cfg.warmup_bars}")
+                print(f"[Backtest] {len(all_ts)} 1H bars, warmup={cfg.warmup_bars}")
 
             equity_curve: List[Tuple] = []
             iter_ts = tqdm(all_ts, desc="Backtesting") if verbose else all_ts
@@ -610,7 +611,7 @@ class BacktestEngine:
                     equity_curve.append((ts, cfg.initial_balance))
                     continue
 
-                # a) ??單?????? ???謢???賹???
+                # a) Close positions whose mocked hard stops were triggered.
                 triggered = mock_engine.check_stop_triggers()
                 for sym in triggered:
                     if sym in bot.active_trades:
@@ -621,7 +622,7 @@ class BacktestEngine:
                             decision_reason="BACKTEST_STOP_TRIGGER",
                         )
 
-                # b) ?????+ ???????
+                # b) Scan for plugin entries.
                 try:
                     bot.scan_for_signals()
                 except Exception as e:
@@ -639,7 +640,7 @@ class BacktestEngine:
                 except Exception as e:
                     _record_run_error("monitor_positions", ts, e)
 
-                # d) funding rate ?????0:00, 08:00, 16:00 UTC??
+                # d) Apply funding at 00:00, 08:00, and 16:00 UTC.
                 if ts.hour in (0, 8, 16) and ts.minute == 0:
                     for sym, pm in bot.active_trades.items():
                         if getattr(pm, "is_closed", False):
@@ -651,7 +652,7 @@ class BacktestEngine:
                             total_size = getattr(pm, "total_size", 0.0) or 0.0
                             mock_engine.deduct_funding(sym, pm.side, total_size, avg_entry, rate)
 
-                # c) ?????? equity
+                # c) Update portfolio equity.
                 closed_pnl = sum(t.get("pnl_usdt", 0) for t in captured_trades)
                 unrealized = 0.0
                 for sym, pm in bot.active_trades.items():
@@ -670,7 +671,7 @@ class BacktestEngine:
                 )
                 equity_curve.append((ts, portfolio_value))
 
-            # ?謢???賹????????????
+            # Force-close any remaining open positions at the end of the run.
             for sym, pm in list(bot.active_trades.items()):
                 if not getattr(pm, "is_closed", False):
                     try:
@@ -692,7 +693,7 @@ class BacktestEngine:
             )
 
     def run(self) -> BacktestResult:
-        """?????啣? CLI ?????un_single(verbose=True)"""
+        """CLI wrapper around run_single(verbose=True)."""
         return self.run_single(verbose=True)
 
 

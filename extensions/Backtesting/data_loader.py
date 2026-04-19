@@ -1,4 +1,4 @@
-"""歷史 K 線下載 + Parquet 本地快取"""
+"""Historical OHLCV loader with local Parquet cache for backtests."""
 
 import os
 import ccxt
@@ -11,7 +11,7 @@ CACHE_DIR = Path(os.environ.get("BACKTEST_CACHE_DIR", str(Path(__file__).parent 
 
 
 class BacktestDataLoader:
-    """下載 Binance 歷史 K 線，自動 Parquet 快取"""
+    """Download Binance OHLCV candles and cache them as Parquet."""
 
     def __init__(self):
         self.exchange = ccxt.binance({'enableRateLimit': True})
@@ -25,7 +25,8 @@ class BacktestDataLoader:
         end: str,
     ) -> pd.DataFrame:
         """
-        主入口：先查快取，沒有才下載。
+        Load OHLCV data for a symbol/timeframe/date range.
+
         Args:
             symbol: 'BTC/USDT'
             timeframe: '1h', '4h', '1d'
@@ -51,7 +52,7 @@ class BacktestDataLoader:
         start: str,
         end: str,
     ) -> pd.DataFrame:
-        """分批下載（每批 1500 根），rate limit 友善"""
+        """Download OHLCV candles in batches while respecting rate limits."""
         start_ts = self._to_ms(start)
         end_ts = self._to_ms(end)
 
@@ -79,20 +80,20 @@ class BacktestDataLoader:
             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms', utc=True)
             df.set_index('timestamp', inplace=True)
 
-            # 只保留 end 以前的數據
+            # Trim the final batch to the requested end timestamp.
             df = df[df.index <= pd.Timestamp(end, tz='UTC')]
             all_dfs.append(df)
 
-            # 下一批從最後一根的下一根開始
+            # Advance by one millisecond to avoid duplicate last candles.
             last_ts = int(df.index[-1].timestamp() * 1000)
             if last_ts <= since:
-                break  # 沒有新數據了
+                break
             since = last_ts + 1
 
             if batch % 5 == 0:
                 print(f"  batch {batch}: {len(df)} rows, up to {df.index[-1]}")
 
-            time.sleep(0.5)  # rate limit 保護
+            time.sleep(0.5)  # rate limit buffer
 
         if not all_dfs:
             return pd.DataFrame()
@@ -103,7 +104,7 @@ class BacktestDataLoader:
         return result
 
     def _cache_path(self, symbol: str, tf: str, start: str, end: str) -> Path:
-        """快取命名: cache/BTCUSDT_1h_20260101_20260227.parquet"""
+        """Return cache path like cache/BTCUSDT_1h_20260101_20260227.parquet."""
         sym_clean = symbol.replace('/', '')
         start_clean = start.replace('-', '')[:8]
         end_clean = end.replace('-', '')[:8]
@@ -111,7 +112,7 @@ class BacktestDataLoader:
 
     @staticmethod
     def _to_ms(date_str: str) -> int:
-        """ISO date string → milliseconds timestamp"""
+        """Convert an ISO date string to a millisecond timestamp."""
         dt = datetime.fromisoformat(date_str)
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)

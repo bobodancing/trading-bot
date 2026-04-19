@@ -1,7 +1,4 @@
-"""
-BacktestBot factory ????conftest.py patch 璅∪?撱箇? TradingBot runtime嚗?
-瘜典? MockDataProvider + MockOrderEngine??
-"""
+"""Factory for a mocked, live-like TradingBot used by backtests."""
 import os
 import sys
 import tempfile
@@ -31,7 +28,7 @@ def _resolve_bot_root() -> Path:
     return local_repo
 
 
-# ???? ??? trading_bot ??import path ????
+# Make trader imports work from this standalone Backtesting workspace.
 TRADING_BOT_ROOT = _resolve_bot_root()
 sys.path.insert(0, str(TRADING_BOT_ROOT))
 
@@ -43,7 +40,6 @@ from config_presets import validate_backtest_overrides
 from plugin_id_filter import install_backtest_plugin_id_filter
 
 
-
 def create_backtest_bot(
     tse: TimeSeriesEngine,
     mock_engine: MockOrderEngine,
@@ -52,30 +48,31 @@ def create_backtest_bot(
     allowed_plugin_ids=None,
 ) -> object:
     """
-    撱箇?摰?? mock ??TradingBot runtime嚗???澆?皜研??
+    Create a TradingBot wired to backtest data and mocked exchange I/O.
 
-    patch 皜??嚗?
-    - _init_exchange ??MagicMock嚗????ccxt 蝬脰楝嚗?
-    - PrecisionHandler._load_exchange_info ??no-op嚗????Binance HTTP嚗?
-    - _restore_positions ??no-op嚗??頛????祕 positions.json嚗?
-    - Config.POSITIONS_JSON_PATH ??tempfile
-    - Config.DB_PATH ??tempfile
+    Patched during construction:
+    - _init_exchange returns a MagicMock instead of a real ccxt exchange.
+    - PrecisionHandler._load_exchange_info is skipped to avoid Binance HTTP.
+    - _restore_positions is skipped so tests do not read real positions.
+    - Config.POSITIONS_JSON_PATH points at a temp file.
+    - Config.DB_PATH points at a temp file.
 
-    瘜典?嚗?
-    - bot.data_provider ??MockDataProvider(tse)
-    - bot.execution_engine ??mock_engine
-    - bot.exchange.fetch_ticker ????? tse.get_current_price()
-    - bot.perf_db.record_trade ??MagicMock嚗???急??芾?閮?side_effect嚗?
-    - bot.persistence ??MagicMock
-    - bot._sync_exchange_positions ??MagicMock
-    - Config.USE_SCANNER_SYMBOLS ??False
-    - Config.DRY_RUN ??False (allows _execute_trade + _handle_close full paths)
-    - bot.risk_manager.get_balance ??MagicMock(return_value=10000.0) (blocks API)
+    Backtest wiring after construction:
+    - bot.data_provider is MockDataProvider(tse).
+    - bot.execution_engine is mock_engine.
+    - bot.exchange.fetch_ticker reads from the TimeSeriesEngine.
+    - bot.perf_db.record_trade is a MagicMock until BacktestEngine replaces it.
+    - bot.persistence is a MagicMock.
+    - bot._sync_exchange_positions is a MagicMock.
+    - Config.USE_SCANNER_SYMBOLS is forced false.
+    - Config.DRY_RUN is forced false so execution and close paths create local
+      PositionManager records and trade close payloads.
+    - bot.risk_manager.get_balance is mocked to avoid account API calls.
     """
     TradingBotClass = get_bot_class()
     Config = get_config_class()
 
-    # 憟?? config overrides
+    # Apply validated per-run Config overrides.
     config_overrides = validate_backtest_overrides(config_overrides, config_cls=Config)
     if config_overrides:
         for k, v in config_overrides.items():
@@ -97,11 +94,11 @@ def create_backtest_bot(
          patch("trader.bot.Config.DB_PATH", db_path):
         bot = TradingBotClass()
 
-    # 瘜典? mock ??辣
+    # Replace live data/execution components with deterministic backtest fakes.
     bot.data_provider = MockDataProvider(tse)
     bot.execution_engine = mock_engine
 
-    # fetch_ticker ??TSE ?嗅??寞?嚗?????
+    # Keep ticker reads aligned with the current replay cursor.
     bot.exchange.fetch_ticker = MagicMock(
         side_effect=lambda sym: {
             "last": tse.get_current_price(sym),
@@ -110,16 +107,15 @@ def create_backtest_bot(
         }
     )
 
-    # Telegram: TelegramNotifier 雿輻?????寞?嚗?elegramNotifier.notify_signal()嚗??
-    # 銝???? self.notifier??onfig.TELEGRAM_ENABLED ??身 False嚗????HTTP 隢????
+    # Telegram is disabled below so notifier calls do not send HTTP requests.
 
-    # perf_db.record_trade 靽????MagicMock嚗?acktestEngine 閮?side_effect ?園?鈭斗?嚗?
+    # BacktestEngine replaces this with a collector side effect.
     bot.perf_db.record_trade = MagicMock()
 
-    # ??? persistence
+    # Prevent backtests from writing runtime persistence.
     bot.persistence = MagicMock()
 
-    # ??? exchange sync
+    # Exchange state is already simulated by MockOrderEngine.
     bot._sync_exchange_positions = MagicMock()
 
     # Backtest-only cache: BTC regime/trend candles update far slower than the
@@ -167,7 +163,7 @@ def create_backtest_bot(
 
     bot.btc_context_manager.get_daily_btc_trend_context = _cached_daily_context
 
-    # ??葫?箏???Config.SYMBOLS嚗??霈? scanner JSON
+    # Backtests use explicit Config.SYMBOLS rather than scanner JSON.
     Config.USE_SCANNER_SYMBOLS = False
 
     # Backtest replay must never send real Telegram messages; user-provided

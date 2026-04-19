@@ -1,4 +1,4 @@
-"""回測報表生成 — CSV + JSON + Plotly HTML"""
+"""Backtest report generator for CSV, JSON, and Plotly HTML artifacts."""
 import json
 import pandas as pd
 from pathlib import Path
@@ -30,7 +30,7 @@ class ReportGenerator:
         self._write_equity_html(result, output_dir)
         self._write_signal_audit(result, output_dir)
         self._print_regime_composition(regime_composition)
-        print(f"[Report] 輸出至 {output_dir}")
+        print(f"[Report] Output written to {output_dir}")
 
     def _write_trades_csv(self, result, output_dir: Path):
         TRADE_COLUMNS = [
@@ -62,8 +62,8 @@ class ReportGenerator:
         try:
             import plotly.graph_objects as go
         except ImportError:
-            print("[Report] plotly 未安裝，跳過 equity_curve.html")
-            # 建立空檔避免測試 FileNotFoundError
+            print("[Report] plotly not installed; skipping equity_curve.html")
+            # Create a placeholder so tests and downstream tooling can open it.
             (output_dir / "equity_curve.html").write_text("<p>plotly not installed</p>")
             return
 
