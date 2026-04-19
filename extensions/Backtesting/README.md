@@ -19,7 +19,7 @@ Runtime defaults live in `trader/config.py`. Backtesting must not introduce a se
 - `backtest_engine.py` - `BacktestConfig`, `_backtest_context`, and replay loop.
 - `backtest_bot.py` - mocked live-like `TradingBot` factory.
 - `config_presets.py` - backtest override whitelist and plugin-runtime presets.
-- `signal_type_filter.py` - backtest-only strategy/signal id allowlist.
+- `plugin_id_filter.py` - backtest-only plugin id allowlist.
 - `plugin_candidate_review.py` - promotion-gated candidate report helper.
 - `report_generator.py` - per-run CSV / JSON / HTML artifact writer.
 - `signal_audit.py` - signal, reject, lane, regime, and BTC trend audit collection.
@@ -38,7 +38,7 @@ BacktestConfig(
     fee_rate=0.0004,
     warmup_bars=100,
     enabled_strategies=["macd_zero_line_btc_1d"],
-    allowed_signal_types=["macd_zero_line_btc_1d"],
+    allowed_plugin_ids=["macd_zero_line_btc_1d"],
     dry_count_only=False,
     precompute_indicators=True,
     config_overrides={},
@@ -47,7 +47,7 @@ BacktestConfig(
 
 `enabled_strategies` toggles entries from `Config.STRATEGY_CATALOG` for this run only.
 
-`allowed_signal_types` is a backtest-only allowlist over emitted strategy/signal ids. It does not change production scanner/runtime defaults.
+`allowed_plugin_ids` is a backtest-only allowlist over emitted strategy plugin ids. It does not change production scanner/runtime defaults.
 
 `dry_count_only=True` keeps candidate/audit flow but blocks order-plan execution so no positions are opened.
 
@@ -88,7 +88,7 @@ cfg = BacktestConfig(
     start="2026-01-01",
     end="2026-03-01",
     enabled_strategies=["macd_zero_line_btc_1d"],
-    allowed_signal_types=["macd_zero_line_btc_1d"],
+    allowed_plugin_ids=["macd_zero_line_btc_1d"],
     precompute_indicators=True,
     config_overrides=explicit_symbol_universe(plugin_runtime_defaults()),
 )

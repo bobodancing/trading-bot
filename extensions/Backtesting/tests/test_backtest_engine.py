@@ -339,7 +339,7 @@ def test_dry_count_only_records_candidate_without_opening_trade(monkeypatch):
         end="2026-01-30",
         warmup_bars=20,
         enabled_strategies=["fixture_long"],
-        allowed_signal_types=["fixture_long"],
+        allowed_plugin_ids=["fixture_long"],
         dry_count_only=True,
         config_overrides={
             "SYMBOL_LOSS_COOLDOWN_HOURS": 0,
@@ -369,7 +369,7 @@ def test_backtest_trade_records_strategy_trace(monkeypatch):
         end="2026-01-30",
         warmup_bars=20,
         enabled_strategies=["fixture_long"],
-        allowed_signal_types=["fixture_long"],
+        allowed_plugin_ids=["fixture_long"],
         config_overrides={
             "SYMBOL_LOSS_COOLDOWN_HOURS": 0,
             "REGIME_ARBITER_ENABLED": False,

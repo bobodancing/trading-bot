@@ -50,7 +50,7 @@ def _fixture_runtime_overrides():
     }
 
 
-def _fixture_bot(*, allowed_signal_types):
+def _fixture_bot(*, allowed_plugin_ids):
     data = {
         "BTC/USDT": {
             "1h": _ohlcv(),
@@ -64,7 +64,7 @@ def _fixture_bot(*, allowed_signal_types):
         tse,
         MockOrderEngine(tse, initial_balance=10000.0),
         _fixture_runtime_overrides(),
-        allowed_signal_types=allowed_signal_types,
+        allowed_plugin_ids=allowed_plugin_ids,
     )
     bot._signal_audit = SignalAuditCollector()
     return bot
@@ -122,19 +122,19 @@ def test_diagnostic_arbiter_off_only_disables_arbiter_from_baseline():
             assert diagnostic[key] == value
 
 
-def test_backtest_allowed_signal_types_blocks_unlisted_signal():
-    bot = _fixture_bot(allowed_signal_types=["fixture_exit"])
+def test_backtest_allowed_plugin_ids_blocks_unlisted_plugin():
+    bot = _fixture_bot(allowed_plugin_ids=["fixture_exit"])
 
     bot.scan_for_signals()
 
     assert "BTC/USDT" not in bot.active_trades
     summary = bot._signal_audit.summary()
     assert summary["lane_suppressed_by"] == {"allowlist": 1}
-    assert summary["rejects_by_reason"] == {"backtest_signal_type_allowlist": 1}
+    assert summary["rejects_by_reason"] == {"backtest_plugin_id_allowlist": 1}
 
 
-def test_backtest_allowed_signal_types_allows_listed_signal():
-    bot = _fixture_bot(allowed_signal_types=["fixture_long"])
+def test_backtest_allowed_plugin_ids_allows_listed_plugin():
+    bot = _fixture_bot(allowed_plugin_ids=["fixture_long"])
 
     bot.scan_for_signals()
 

@@ -158,5 +158,5 @@ def strategy_id_allowlist(strategy_ids: Iterable[str]) -> dict[str, list[str]]:
     """Return BacktestConfig kwargs for a backtest-only strategy-id allowlist."""
     allowed = [str(item) for item in strategy_ids]
     if not allowed:
-        raise ValueError("allowed_signal_types must contain at least one strategy id")
-    return {"allowed_signal_types": list(dict.fromkeys(allowed))}
+        raise ValueError("allowed_plugin_ids must contain at least one strategy id")
+    return {"allowed_plugin_ids": list(dict.fromkeys(allowed))}

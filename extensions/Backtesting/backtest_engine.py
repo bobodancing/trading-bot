@@ -203,7 +203,7 @@ class BacktestConfig:
     warmup_bars: int = 100
     strategy: Optional[str] = None
     enabled_strategies: List[str] = field(default_factory=list)
-    allowed_signal_types: Optional[List[str]] = None
+    allowed_plugin_ids: Optional[List[str]] = None
     dry_count_only: bool = False
     precompute_indicators: bool = False
     config_overrides: dict = field(default_factory=dict)
@@ -533,7 +533,7 @@ class BacktestEngine:
                 tse,
                 mock_engine,
                 effective_overrides,
-                allowed_signal_types=cfg.allowed_signal_types,
+                allowed_plugin_ids=cfg.allowed_plugin_ids,
             )
 
             # Inject signal audit collector
@@ -708,10 +708,10 @@ if __name__ == "__main__":
     parser.add_argument("--balance", type=float, default=10000.0)
     parser.add_argument("--strategies", nargs="+", default=[], help="Enabled strategy plugin ids")
     parser.add_argument(
-        "--allowed-signal-types",
+        "--allowed-plugin-ids",
         nargs="+",
         default=None,
-        help="Backtest-only allowlist for emitted signal/strategy ids",
+        help="Backtest-only allowlist for emitted strategy plugin ids",
     )
     parser.add_argument("--output", default="results", help="Output directory")
     parser.add_argument(
@@ -733,7 +733,7 @@ if __name__ == "__main__":
         end=end,
         initial_balance=args.balance,
         enabled_strategies=args.strategies,
-        allowed_signal_types=args.allowed_signal_types,
+        allowed_plugin_ids=args.allowed_plugin_ids,
         dry_count_only=args.dry_count_only,
         precompute_indicators=args.precompute_indicators,
     )

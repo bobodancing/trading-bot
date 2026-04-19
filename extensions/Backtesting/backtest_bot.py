@@ -40,7 +40,7 @@ from time_series_engine import TimeSeriesEngine
 from mock_components import MockDataProvider, MockOrderEngine
 from bot_compat import get_bot_class, get_config_class
 from config_presets import validate_backtest_overrides
-from signal_type_filter import install_backtest_signal_type_filter
+from plugin_id_filter import install_backtest_plugin_id_filter
 
 
 
@@ -49,7 +49,7 @@ def create_backtest_bot(
     mock_engine: MockOrderEngine,
     config_overrides: dict = None,
     *,
-    allowed_signal_types=None,
+    allowed_plugin_ids=None,
 ) -> object:
     """
     撱箇?摰?? mock ??TradingBot runtime嚗???澆?皜研??
@@ -183,6 +183,6 @@ def create_backtest_bot(
     # full code paths (create PositionManager, call perf_db.record_trade).
     Config.DRY_RUN = False
 
-    install_backtest_signal_type_filter(bot, allowed_signal_types)
+    install_backtest_plugin_id_filter(bot, allowed_plugin_ids)
 
     return bot

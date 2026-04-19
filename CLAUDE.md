@@ -118,7 +118,7 @@ Useful files:
 - `extensions/Backtesting/backtest_engine.py` - engine and `_backtest_context`.
 - `extensions/Backtesting/backtest_bot.py` - mocked live-like bot factory.
 - `extensions/Backtesting/config_presets.py` - override whitelist and plugin-runtime presets.
-- `extensions/Backtesting/signal_type_filter.py` - backtest-only strategy/signal id allowlist.
+- `extensions/Backtesting/plugin_id_filter.py` - backtest-only plugin id allowlist.
 - `extensions/Backtesting/plugin_candidate_review.py` - plugin candidate report helpers.
 
 ## Folder Map
