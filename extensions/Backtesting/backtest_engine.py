@@ -180,14 +180,17 @@ def resolve_backtest_window(
     return start_date.isoformat(), end_date.isoformat()
 
 
-def _record_strategy_ids(active_trades: dict, pm_registry: dict) -> None:
+def _record_strategy_trace(active_trades: dict, pm_registry: dict) -> None:
     """
-    Record strategy ids for report attribution without mutating positions.
+    Record strategy attribution for report output without mutating positions.
     """
     for pm in active_trades.values():
         tid = pm.trade_id
         if tid not in pm_registry:
-            pm_registry[tid] = getattr(pm, "strategy_id", "unknown")
+            pm_registry[tid] = {
+                "strategy_id": getattr(pm, "strategy_id", "unknown"),
+                "strategy_version": getattr(pm, "strategy_version", "unknown"),
+            }
 
 
 @dataclass
@@ -546,7 +549,24 @@ class BacktestEngine:
 
             def _collect_trade(d):
                 tid = d.get("trade_id")
-                d["exit_strategy"] = d.get("strategy_name") or pm_registry.get(tid, "unknown") if tid else "unknown"
+                trace = pm_registry.get(tid, {}) if tid else {}
+                if isinstance(trace, str):
+                    trace = {"strategy_id": trace}
+                strategy_id = (
+                    d.get("strategy_id")
+                    or trace.get("strategy_id")
+                    or d.get("strategy_name")
+                    or d.get("signal_type")
+                    or "unknown"
+                )
+                strategy_version = (
+                    d.get("strategy_version")
+                    or trace.get("strategy_version")
+                    or "unknown"
+                )
+                d["strategy_id"] = strategy_id
+                d["strategy_version"] = strategy_version
+                d["exit_strategy"] = d.get("strategy_name") or strategy_id
                 if tid and tid in regime_registry:
                     d.update(regime_registry[tid])
                 captured_trades.append(d)
@@ -578,6 +598,8 @@ class BacktestEngine:
                 tse.set_time(ts)
                 _sim_ts_container[0] = ts
 
+                _record_strategy_trace(bot.active_trades, pm_registry)
+
                 _record_regime_probe(
                     bot,
                     ts,
@@ -605,8 +627,7 @@ class BacktestEngine:
                 except Exception as e:
                     _record_run_error("scan_for_signals", ts, e)
 
-                for pm in bot.active_trades.values():
-                    pm_registry.setdefault(pm.trade_id, getattr(pm, "strategy_id", "unknown"))
+                _record_strategy_trace(bot.active_trades, pm_registry)
                 _assign_entry_regime(
                     bot.active_trades,
                     regime_registry,

@@ -18,6 +18,7 @@ def make_fake_result():
     trades = [
         {"pnl_usdt": 100.0, "pnl_pct": 1.0, "exit_reason": "STRUCTURE_TRAIL",
          "stage_reached": 2, "symbol": "BTC/USDT", "side": "LONG",
+         "strategy_id": "fixture_long", "strategy_version": "1.0.0",
          "entry_price": 40000.0, "exit_price": 40100.0,
          "entry_time": str(idx[0]), "exit_time": str(idx[5]),
          "holding_hours": 5.0, "realized_r": 1.5,
@@ -48,8 +49,13 @@ def test_trades_csv_has_correct_columns(tmp_path):
     gen.generate(result, output_dir=tmp_path)
     import pandas as pd
     df = pd.read_csv(tmp_path / "trades.csv")
-    for col in ["symbol", "side", "pnl_usdt", "exit_reason", "stage_reached"]:
+    for col in [
+        "symbol", "side", "strategy_id", "strategy_version",
+        "pnl_usdt", "exit_reason", "stage_reached",
+    ]:
         assert col in df.columns
+    assert df.iloc[0]["strategy_id"] == "fixture_long"
+    assert df.iloc[0]["strategy_version"] == "1.0.0"
 
 
 def test_summary_json_has_required_keys(tmp_path):

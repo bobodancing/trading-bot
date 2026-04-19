@@ -34,13 +34,19 @@ class ReportGenerator:
 
     def _write_trades_csv(self, result, output_dir: Path):
         TRADE_COLUMNS = [
-            "symbol", "side", "exit_strategy", "pnl_usdt", "pnl_pct",
+            "symbol", "side", "strategy_id", "strategy_version",
+            "exit_strategy", "pnl_usdt", "pnl_pct",
             "exit_reason", "stage_reached",
             "entry_price", "exit_price", "entry_time", "exit_time",
             "holding_hours", "realized_r", "mfe_pct", "mae_pct",
         ]
         if result.trades:
             df = pd.DataFrame(result.trades)
+            for col in TRADE_COLUMNS:
+                if col not in df.columns:
+                    df[col] = None
+            extra_cols = [col for col in df.columns if col not in TRADE_COLUMNS]
+            df = df[TRADE_COLUMNS + extra_cols]
         else:
             df = pd.DataFrame(columns=TRADE_COLUMNS)
         df.to_csv(output_dir / "trades.csv", index=False)
