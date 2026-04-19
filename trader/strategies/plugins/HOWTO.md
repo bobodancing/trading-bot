@@ -226,17 +226,20 @@ python -m pytest trader/tests extensions/Backtesting/tests -q
 
 ## First New Cartridge
 
-The first new research plugin after the infrastructure pass is expected to be:
+The first new research plugin after the infrastructure pass is:
 
 ```text
 ema_cross_7_19_long_only
 ```
 
-Before coding it, lock:
+Locked spec:
 
-- timeframe
-- symbol scope
-- stop rule
-- params
+- timeframe: `4h`
+- symbols: `BTC/USDT`, `ETH/USDT`
+- side: long only
+- entry: EMA(7) crosses above EMA(19) on the newest confirmed candle
+- stop: ATR(14) stop at `entry - 1.5 * ATR`
+- required indicators: `ema`, `atr`
+- required timeframes: `{"4h": 100}`
 
-Do not improvise those choices in code.
+Do not widen its stop just to pass risk caps; central Config rejects are signal.

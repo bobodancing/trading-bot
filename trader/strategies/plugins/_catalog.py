@@ -30,6 +30,12 @@ STRATEGY_CATALOG: dict[str, dict[str, Any]] = {
         "class": "MacdZeroLineLongStrategy",
         "params": {"symbol": "BTC/USDT", "timeframe": "1d"},
     },
+    "ema_cross_7_19_long_only": {
+        "enabled": False,
+        "module": "trader.strategies.plugins.ema_cross_7_19",
+        "class": "EmaCross719LongOnlyStrategy",
+        "params": {"timeframe": "4h", "atr_mult": 1.5},
+    },
 }
 
 

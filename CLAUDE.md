@@ -85,6 +85,7 @@ Current known plugin entries:
 
 - `fixture_long` / `fixture_exit` - deterministic test fixtures.
 - `macd_zero_line_btc_1d` - pilot research plugin, not production-approved by default.
+- `ema_cross_7_19_long_only` - first post-infra research cartridge, 4h BTC/ETH long-only.
 
 New candidate strategies from Ruei's research list should become strategy plugins before backtest:
 
