@@ -9,6 +9,7 @@ if str(BACKTEST_ROOT) not in sys.path:
 
 from backtest_bot import create_backtest_bot
 from mock_components import MockOrderEngine
+from signal_audit import SignalAuditCollector
 from time_series_engine import TimeSeriesEngine
 
 
@@ -94,6 +95,42 @@ def test_fixture_strategy_runs_through_live_like_backtest_path():
     pm = bot.active_trades["BTC/USDT"]
     assert pm.strategy_id == "fixture_long"
     assert pm.current_sl < pm.avg_entry
+
+
+def test_backtest_post_fill_stop_violation_rejects_without_position():
+    data = {
+        "BTC/USDT": {
+            "1h": _ohlcv(),
+            "4h": _ohlcv(40),
+            "1d": _ohlcv(20),
+        }
+    }
+    tse = TimeSeriesEngine(data)
+    tse.set_time(data["BTC/USDT"]["1h"].index[-1])
+    engine = MockOrderEngine(tse, initial_balance=10000.0)
+    bot = create_backtest_bot(
+        tse,
+        engine,
+        {
+            "SYMBOLS": ["BTC/USDT"],
+            "USE_SCANNER_SYMBOLS": False,
+            "SYMBOL_LOSS_COOLDOWN_HOURS": 0,
+            "REGIME_ARBITER_ENABLED": False,
+            "REGIME_ROUTER_ENABLED": False,
+            "STRATEGY_RUNTIME_ENABLED": True,
+            "ENABLED_STRATEGIES": ["fixture_long"],
+        },
+    )
+    bot._signal_audit = SignalAuditCollector()
+    bot._extract_fill_price = lambda _order_result, fallback_price: float(fallback_price) * 0.90
+
+    bot.scan_for_signals()
+
+    assert "BTC/USDT" not in bot.active_trades
+    assert engine.open_orders == {}
+    summary = bot._signal_audit.summary()
+    assert summary["rejects_by_reason"] == {"post_fill_stop_violation": 1}
+    assert summary["rejects_by_stage"] == {"execution": 1}
 
 
 def test_macd_zero_line_strategy_runs_through_live_like_backtest_path():

@@ -126,6 +126,7 @@ def create_backtest_bot(
     # different timestamp than a plugin's signal timeframe close.
     bot._extract_fill_price = _backtest_fill_extractor(fill_slippage_bps)
     bot._backtest_fill_slippage_bps = float(fill_slippage_bps or 0.0)
+    bot._is_backtest = True
 
     # Backtest-only cache: BTC regime/trend candles update far slower than the
     # 1H scan loop. Reusing same-candle context keeps replay tractable without

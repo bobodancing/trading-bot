@@ -659,6 +659,77 @@ class TradingBot:
 
     # ==================== ???????====================
 
+    def _abort_post_fill_stop_violation(
+        self,
+        order_plan: ExecutableOrderPlan,
+        fill_price: float,
+        stop_loss: float,
+        reason: str,
+    ) -> None:
+        intent = order_plan.intent
+        symbol = intent.symbol
+        side = intent.side
+        position_size = order_plan.risk_plan.position_size
+        now = datetime.now(timezone.utc)
+        if hasattr(self, "order_failed_symbols"):
+            self.order_failed_symbols[symbol] = now
+
+        collector = getattr(self, "_signal_audit", None)
+        if collector is not None:
+            collector.record_reject(
+                timestamp=now.isoformat(),
+                symbol=symbol,
+                stage="execution",
+                reject_reason="post_fill_stop_violation",
+                signal_type=intent.strategy_id,
+                signal_side=side,
+                detail=reason,
+            )
+        logger.error(
+            "%s post-fill stop violation strategy=%s side=%s fill=%.4f sl=%.4f reason=%s",
+            symbol,
+            intent.strategy_id,
+            side,
+            fill_price,
+            stop_loss,
+            reason,
+        )
+
+        log_fields = {
+            **self._build_log_base("POST_FILL_STOP_VIOLATION", "post_fill_abort", symbol, side),
+            "strategy_id": intent.strategy_id,
+            "strategy_version": order_plan.strategy_version,
+            "fill_price": f"{fill_price:.4f}",
+            "stop_loss": f"{stop_loss:.4f}",
+            "size": f"{position_size:.6f}",
+            "reason": reason,
+        }
+
+        if getattr(self, "_is_backtest", False):
+            _trade_log({
+                **log_fields,
+                "flatten_action": "skipped_backtest",
+            })
+            return
+
+        try:
+            reverse_result = self._futures_close_position(symbol, side, position_size)
+            reverse_fill = self._extract_fill_price(reverse_result, fill_price)
+            realized_pnl = self._calculate_pnl(side, position_size, reverse_fill, fill_price)
+            _trade_log({
+                **log_fields,
+                "flatten_action": "reverse_market_order",
+                "reverse_fill": f"{reverse_fill:.4f}",
+                "realized_pnl": f"{realized_pnl:+.4f}",
+            })
+        except Exception as exc:
+            logger.error("%s post-fill violation flatten failed: %s", symbol, exc)
+            _trade_log({
+                **log_fields,
+                "flatten_action": "reverse_market_order_failed",
+                "error": str(exc),
+            })
+
     def _execute_order_plan(self, order_plan: ExecutableOrderPlan):
         """Execute a central-risk-approved strategy order plan."""
         intent = order_plan.intent
@@ -702,6 +773,22 @@ class TradingBot:
             if fill_price != entry_price:
                 logger.info("%s fill adjusted: signal=%.4f actual=%.4f", symbol, entry_price, fill_price)
             entry_price = fill_price
+            if side == "LONG" and stop_loss >= entry_price:
+                self._abort_post_fill_stop_violation(
+                    order_plan,
+                    entry_price,
+                    stop_loss,
+                    "long_fill_below_stop",
+                )
+                return
+            if side == "SHORT" and stop_loss <= entry_price:
+                self._abort_post_fill_stop_violation(
+                    order_plan,
+                    entry_price,
+                    stop_loss,
+                    "short_fill_above_stop",
+                )
+                return
             initial_r = position_size * abs(entry_price - stop_loss)
 
             pm = PositionManager(
