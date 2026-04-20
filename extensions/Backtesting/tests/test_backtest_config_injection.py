@@ -9,7 +9,13 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from backtest_bot import create_backtest_bot
 from backtest_engine import _backtest_context
 from bot_compat import get_config_class
-from config_presets import ALLOWED_BACKTEST_OVERRIDES, diagnostic_arbiter_off, plugin_runtime_defaults
+from config_presets import (
+    ALLOWED_BACKTEST_OVERRIDES,
+    apply_strategy_params_override,
+    diagnostic_arbiter_off,
+    plugin_runtime_defaults,
+)
+from trader.strategies.plugins._catalog import get_strategy_catalog
 from mock_components import MockOrderEngine
 from signal_audit import SignalAuditCollector
 from time_series_engine import TimeSeriesEngine
@@ -135,3 +141,23 @@ def test_backtest_allowed_plugin_ids_allows_listed_plugin():
     summary = bot._signal_audit.summary()
     assert summary["lane_candidates_by_signal_type"] == {"fixture_long": 1}
     assert summary["lane_selected_by_signal_type"] == {"fixture_long": 1}
+
+
+def test_strategy_params_override_applies_to_catalog_copy_only():
+    catalog = get_strategy_catalog(["fixture_long"])
+
+    scoped = apply_strategy_params_override(
+        catalog,
+        {"fixture_long": {"stop_pct": 0.02}},
+    )
+
+    assert scoped["fixture_long"]["params"]["stop_pct"] == 0.02
+    assert "stop_pct" not in catalog["fixture_long"]["params"]
+    assert "stop_pct" not in get_strategy_catalog(["fixture_long"])["fixture_long"]["params"]
+
+
+def test_strategy_params_override_rejects_unknown_param():
+    catalog = get_strategy_catalog(["fixture_long"])
+
+    with pytest.raises(ValueError, match="unknown param"):
+        apply_strategy_params_override(catalog, {"fixture_long": {"not_real": 1}})

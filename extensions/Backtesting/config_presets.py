@@ -8,7 +8,9 @@ source of runtime defaults.
 from __future__ import annotations
 
 import copy
-from typing import Iterable, Mapping, Any
+import importlib
+from collections.abc import Iterable, Mapping
+from typing import Any
 
 from bot_compat import get_config_class
 
@@ -122,6 +124,54 @@ def validate_backtest_overrides(
         raise ValueError(f"Backtest Config override target does not exist: {', '.join(missing)}")
 
     return checked
+
+
+def apply_strategy_params_override(
+    catalog: Mapping[str, Mapping[str, Any]],
+    strategy_params_override: Mapping[str, Mapping[str, Any]] | None,
+) -> dict[str, dict[str, Any]]:
+    """
+    Apply backtest-only plugin params to a catalog copy.
+
+    This is intentionally separate from Config overrides: plugin params live in
+    the research catalog, and second-pass backtests may only modify the per-run
+    catalog copy returned by get_strategy_catalog().
+    """
+    scoped_catalog = copy.deepcopy(dict(catalog or {}))
+    if strategy_params_override is not None and not isinstance(strategy_params_override, Mapping):
+        raise ValueError("strategy_params_override must be a mapping")
+
+    overrides = {}
+    for strategy_id, params in (strategy_params_override or {}).items():
+        if not isinstance(params, Mapping):
+            raise ValueError(f"strategy_params_override for {strategy_id} must be a mapping")
+        overrides[str(strategy_id)] = dict(params)
+    if not overrides:
+        return scoped_catalog
+
+    for strategy_id, params in overrides.items():
+        if strategy_id not in scoped_catalog:
+            raise ValueError(f"Unknown strategy_params_override plugin id: {strategy_id}")
+        entry = scoped_catalog[strategy_id]
+        merged_params = dict(entry.get("params") or {})
+        merged_params.update(params)
+        _validate_strategy_params(strategy_id, entry, merged_params)
+        entry["params"] = merged_params
+
+    return scoped_catalog
+
+
+def _validate_strategy_params(strategy_id: str, entry: Mapping[str, Any], params: Mapping[str, Any]) -> None:
+    module_name = entry.get("module")
+    class_name = entry.get("class")
+    if not module_name or not class_name:
+        raise ValueError(f"strategy catalog entry incomplete: {strategy_id}")
+
+    module = importlib.import_module(str(module_name))
+    plugin_cls = getattr(module, str(class_name))
+    from trader.strategies import StrategyRegistry
+
+    StrategyRegistry._validate_params(strategy_id, plugin_cls, params)
 
 
 def _existing_defaults(keys: Iterable[str]) -> dict[str, Any]:

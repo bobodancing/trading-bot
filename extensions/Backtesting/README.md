@@ -21,6 +21,8 @@ Runtime defaults live in `trader/config.py`. Backtesting must not introduce a se
 - `config_presets.py` - backtest override whitelist and plugin-runtime presets.
 - `plugin_id_filter.py` - backtest-only plugin id allowlist.
 - `plugin_candidate_review.py` - promotion-gated candidate report helper.
+- `plugin_parameter_sweep.py` - research-only second-pass sweep report helper.
+- `scripts/run_parameter_sweep.py` - single-candidate small-grid sweep runner.
 - `report_generator.py` - per-run CSV / JSON / HTML artifact writer.
 - `signal_audit.py` - signal, reject, lane, regime, and BTC trend audit collection.
 - `data_loader.py` / `funding_loader.py` / `time_series_engine.py` - replay data plumbing.
@@ -42,6 +44,7 @@ BacktestConfig(
     dry_count_only=False,
     precompute_indicators=True,
     config_overrides={},
+    strategy_params_override={},
 )
 ```
 
@@ -50,6 +53,8 @@ BacktestConfig(
 `allowed_plugin_ids` is a backtest-only allowlist over emitted strategy plugin ids. It does not change production scanner/runtime defaults.
 
 `dry_count_only=True` keeps candidate/audit flow but blocks order-plan execution so no positions are opened.
+
+`strategy_params_override` is a backtest-only per-run overlay on the plugin catalog copy. It does not edit `trader/strategies/plugins/_catalog.py`.
 
 ## Config Overrides
 
@@ -120,6 +125,25 @@ Verdicts are intentionally narrow:
 - `NEEDS_SECOND_PASS`
 
 Promotion still requires Ruei approval and a runtime config patch in a separate step.
+
+## Parameter Sweep
+
+Use `scripts/run_parameter_sweep.py` for second-pass research only:
+
+```bash
+python -m extensions.Backtesting.scripts.run_parameter_sweep \
+  --candidate ema_cross_7_19_long_only \
+  --sweep-id ema719_atr_mult_v1 \
+  --param atr_mult=1.0,1.5,2.0
+```
+
+Sweep reports are written separately from the locked baseline:
+
+```text
+reports/strategy_plugin_parameter_sweep_<sweep_id>.md
+```
+
+Sweeps are not optimizers and are not promotion-eligible.
 
 ## Test Commands
 

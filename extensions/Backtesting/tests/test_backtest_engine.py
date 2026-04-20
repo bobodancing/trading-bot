@@ -386,6 +386,36 @@ def test_backtest_trade_records_strategy_trace(monkeypatch):
     assert trade["exit_strategy"] == "fixture_long"
 
 
+def test_backtest_strategy_params_override_changes_per_run_plugin_params(monkeypatch):
+    from data_loader import BacktestDataLoader
+    from funding_loader import FundingLoader
+
+    df = make_fake_df(200)
+    monkeypatch.setattr(BacktestDataLoader, "get_data", lambda self, *a, **kw: df)
+    monkeypatch.setattr(FundingLoader, "get_funding_rates", lambda self, *a, **kw: pd.Series(dtype=float))
+
+    config = BacktestConfig(
+        symbols=["BTC/USDT"],
+        start="2026-01-01",
+        end="2026-01-30",
+        warmup_bars=20,
+        enabled_strategies=["fixture_long"],
+        allowed_plugin_ids=["fixture_long"],
+        strategy_params_override={"fixture_long": {"stop_pct": 0.02}},
+        config_overrides={
+            "SYMBOL_LOSS_COOLDOWN_HOURS": 0,
+            "REGIME_ARBITER_ENABLED": False,
+            "REGIME_ROUTER_ENABLED": False,
+        },
+    )
+
+    result = BacktestEngine(config).run_single(verbose=False)
+
+    assert len(result.trades) == 1
+    trade = result.trades[0]
+    assert float(trade["entry_initial_sl"]) == pytest.approx(float(trade["entry_price"]) * 0.98)
+
+
 def test_backtest_loop_records_scanner_exception(monkeypatch):
     import backtest_engine as engine_mod
     from data_loader import BacktestDataLoader

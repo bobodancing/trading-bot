@@ -47,7 +47,7 @@ from time_series_engine import TimeSeriesEngine
 from mock_components import MockOrderEngine
 from backtest_bot import create_backtest_bot
 from bot_compat import get_config_class, get_datetime_patch_modules
-from config_presets import validate_backtest_overrides
+from config_presets import apply_strategy_params_override, validate_backtest_overrides
 from signal_audit import SignalAuditCollector
 
 logger = logging.getLogger(__name__)
@@ -210,6 +210,7 @@ class BacktestConfig:
     dry_count_only: bool = False
     precompute_indicators: bool = False
     config_overrides: dict = field(default_factory=dict)
+    strategy_params_override: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -379,7 +380,12 @@ def _record_regime_probe(bot, timestamp, *, grid_enabled: bool) -> None:
 
 
 @contextmanager
-def _backtest_context(config_overrides: dict | None, *, use_precomputed_indicators: bool = False):
+def _backtest_context(
+    config_overrides: dict | None,
+    *,
+    use_precomputed_indicators: bool = False,
+    strategy_params_override: dict | None = None,
+):
     """
     Apply per-run Config overrides and replay-time monkey patches.
 
@@ -388,6 +394,7 @@ def _backtest_context(config_overrides: dict | None, *, use_precomputed_indicato
     Config = get_config_class()
     datetime_modules = get_datetime_patch_modules()
     import copy
+    import trader.strategy_runtime as strategy_runtime_module
     from trader.indicators.technical import TechnicalAnalysis
 
     _orig_config_attrs = {
@@ -415,11 +422,17 @@ def _backtest_context(config_overrides: dict | None, *, use_precomputed_indicato
         if hasattr(module, "datetime")
     }
     _orig_calculate_indicators = TechnicalAnalysis.calculate_indicators
+    _orig_get_strategy_catalog = strategy_runtime_module.get_strategy_catalog
+
+    def _backtest_get_strategy_catalog(enabled=None):
+        catalog = _orig_get_strategy_catalog(enabled)
+        return apply_strategy_params_override(catalog, strategy_params_override)
 
     # Patch modules that imported datetime directly.
     for module in datetime_modules:
         if hasattr(module, "datetime"):
             module.datetime = _BacktestDatetime
+    strategy_runtime_module.get_strategy_catalog = _backtest_get_strategy_catalog
     _sim_ts_container[0] = None
 
     if use_precomputed_indicators:
@@ -442,6 +455,7 @@ def _backtest_context(config_overrides: dict | None, *, use_precomputed_indicato
         for module in datetime_modules:
             if module.__name__ in _orig_datetimes:
                 module.datetime = _orig_datetimes[module.__name__]
+        strategy_runtime_module.get_strategy_catalog = _orig_get_strategy_catalog
         TechnicalAnalysis.calculate_indicators = _orig_calculate_indicators
         _sim_ts_container[0] = None
 
@@ -508,6 +522,7 @@ class BacktestEngine:
         with _backtest_context(
             effective_overrides,
             use_precomputed_indicators=cfg.precompute_indicators,
+            strategy_params_override=cfg.strategy_params_override,
         ) as Config:
             data = self._load_data(cfg)
             if cfg.precompute_indicators:
