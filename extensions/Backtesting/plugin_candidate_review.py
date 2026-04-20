@@ -32,12 +32,24 @@ PROMOTION_VERDICTS = {
     "NEEDS_SECOND_PASS",
 }
 
+MISSING_VALUE = "\u2014"
+
 
 def _json_load(path: Path) -> dict:
     if not path.exists():
         return {}
     with path.open(encoding="utf-8") as f:
         return json.load(f)
+
+
+def _json_load_or_none(path: Path) -> dict | None:
+    if not path.exists():
+        return None
+    try:
+        with path.open(encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError, json.JSONDecodeError):
+        return None
 
 
 def _candidate_ids(candidate_ids: Iterable[str]) -> list[str]:
@@ -197,6 +209,34 @@ def _candidate_summary_rows(output_dir: Path, candidate_ids: Iterable[str], wind
     return rows
 
 
+def _candidate_per_window_rows(output_dir: Path, candidate_ids: Iterable[str], windows: Iterable[str]) -> list[str]:
+    rows = [
+        "| candidate_id | window | trades | net_pnl | max_dd_pct | run_errors | entry_stop_violations |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    for candidate_id in _candidate_ids(candidate_ids):
+        for window in windows:
+            cell_dir = output_dir / candidate_id / window
+            summary = _json_load_or_none(cell_dir / "summary.json")
+            if not summary:
+                rows.append(
+                    f"| `{candidate_id}` | {window} (missing) | "
+                    f"{MISSING_VALUE} | {MISSING_VALUE} | {MISSING_VALUE} | {MISSING_VALUE} | {MISSING_VALUE} |"
+                )
+                continue
+
+            trades = int(summary.get("total_trades", 0) or 0)
+            net_pnl = _net_pnl(cell_dir, summary)
+            max_dd = float(summary.get("max_drawdown_pct", 0.0) or 0.0)
+            run_errors = int(summary.get("backtest_run_error_count", 0) or 0)
+            entry_stop_violations = _entry_stop_violations(cell_dir / "trades.csv")
+            rows.append(
+                f"| `{candidate_id}` | {window} | {trades} | {net_pnl:.4f} | "
+                f"{max_dd:.4f} | {run_errors} | {entry_stop_violations} |"
+            )
+    return rows
+
+
 def _net_pnl(cell_dir: Path, summary: dict) -> float:
     if "net_pnl" in summary:
         return float(summary.get("net_pnl") or 0.0)
@@ -209,6 +249,29 @@ def _net_pnl(cell_dir: Path, summary: dict) -> float:
     with trades_path.open(newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         return sum(float(row.get("pnl_usdt") or 0.0) for row in reader)
+
+
+def _entry_stop_violations(trades_path: Path) -> int:
+    if not trades_path.exists():
+        return 0
+    with trades_path.open(newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        required = {"side", "entry_price", "entry_initial_sl"}
+        if not required.issubset(set(reader.fieldnames or [])):
+            return 0
+        violations = 0
+        for row in reader:
+            try:
+                entry_price = float(row.get("entry_price") or 0.0)
+                entry_sl = float(row.get("entry_initial_sl") or 0.0)
+            except ValueError:
+                continue
+            side = str(row.get("side") or "").upper()
+            if side == "LONG" and entry_sl >= entry_price:
+                violations += 1
+            if side == "SHORT" and entry_sl <= entry_price:
+                violations += 1
+        return violations
 
 
 def write_candidate_review_report(
@@ -246,6 +309,7 @@ def write_candidate_review_report(
         f"- Verdict: `{verdict}`.",
         "- Candidates are StrategyRuntime plugins; this report does not modify runtime `Config` defaults.",
         "- Promotion requires Ruei decision after matrix completeness, run-error, risk, and robustness review.",
+        "- `max_dd_pct` in aggregate tables is the max value across windows, not the sum.",
         "",
         *_validity_warning_lines(
             incomplete_cells,
@@ -256,6 +320,10 @@ def write_candidate_review_report(
         "## Candidate summary",
         "",
         *_candidate_summary_rows(output_dir, candidate_ids, window_names),
+        "",
+        "## Per-Window Detail",
+        "",
+        *_candidate_per_window_rows(output_dir, candidate_ids, window_names),
         "",
         "## Run settings",
         "",

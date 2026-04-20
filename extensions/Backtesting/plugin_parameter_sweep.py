@@ -18,6 +18,7 @@ from typing import Any
 
 MAX_SWEEP_CELLS = 25
 SWEEP_REVIEW_STATUS = "RESEARCH_SWEEP_ONLY"
+MISSING_VALUE = "\u2014"
 
 
 def slugify(value: str) -> str:
@@ -107,6 +108,7 @@ def write_parameter_sweep_report(
     report_path.parent.mkdir(parents=True, exist_ok=True)
 
     rows = _sweep_summary_rows(sweep_dir, candidate_id, cells, windows)
+    per_window_rows = _sweep_per_window_rows(sweep_dir, cells, windows)
     lines = [
         "# Strategy Plugin Parameter Sweep",
         "",
@@ -116,6 +118,7 @@ def write_parameter_sweep_report(
         "- This is second-pass research for an existing cartridge, not an optimizer.",
         "- Results do not modify runtime `Config` defaults or `_catalog.py`.",
         "- This report is not promotion-eligible and does not replace `strategy_plugin_candidate_review.md`.",
+        "- `max_dd_pct` in aggregate tables is the max value across windows, not the sum.",
         "",
         "## Sweep settings",
         "",
@@ -129,6 +132,12 @@ def write_parameter_sweep_report(
         "| cell_id | params | windows | trades | net_pnl | max_dd_pct | run_errors | entry_stop_violations |",
         "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
         *rows,
+        "",
+        "## Per-Window Detail",
+        "",
+        "| cell_id | params | window | trades | net_pnl | max_dd_pct | run_errors | entry_stop_violations |",
+        "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: |",
+        *per_window_rows,
         "",
         "## Interpretation Guardrails",
         "",
@@ -174,11 +183,52 @@ def _sweep_summary_rows(
     return rows
 
 
+def _sweep_per_window_rows(
+    sweep_dir: Path,
+    cells: list[dict],
+    windows: Mapping[str, tuple[str, str]],
+) -> list[str]:
+    rows = []
+    for cell in sorted(cells, key=lambda item: str(item["cell_id"])):
+        cell_id = str(cell["cell_id"])
+        params = json.dumps(cell.get("params", {}), sort_keys=True, ensure_ascii=False)
+        for window_name in windows:
+            cell_dir = sweep_dir / cell_id / window_name
+            summary = _json_load_or_none(cell_dir / "summary.json")
+            if not summary:
+                rows.append(
+                    f"| `{cell_id}` | `{params}` | {window_name} (missing) | "
+                    f"{MISSING_VALUE} | {MISSING_VALUE} | {MISSING_VALUE} | {MISSING_VALUE} | {MISSING_VALUE} |"
+                )
+                continue
+
+            trades = int(summary.get("total_trades", 0) or 0)
+            net_pnl = _net_pnl(cell_dir, summary)
+            max_dd = float(summary.get("max_drawdown_pct", 0.0) or 0.0)
+            run_errors = int(summary.get("backtest_run_error_count", 0) or 0)
+            entry_stop_violations = _entry_stop_violations(cell_dir / "trades.csv")
+            rows.append(
+                f"| `{cell_id}` | `{params}` | {window_name} | {trades} | "
+                f"{net_pnl:.4f} | {max_dd:.4f} | {run_errors} | {entry_stop_violations} |"
+            )
+    return rows
+
+
 def _json_load(path: Path) -> dict:
     if not path.exists():
         return {}
     with path.open(encoding="utf-8") as f:
         return json.load(f)
+
+
+def _json_load_or_none(path: Path) -> dict | None:
+    if not path.exists():
+        return None
+    try:
+        with path.open(encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError, json.JSONDecodeError):
+        return None
 
 
 def _net_pnl(cell_dir: Path, summary: dict) -> float:
