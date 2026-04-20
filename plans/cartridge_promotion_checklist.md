@@ -14,8 +14,9 @@ This checklist defines the minimum gates for moving a plugin from research statu
 ## 3. Robustness Gates
 
 - Candidate review has completed all 3 DEFAULT_WINDOWS: TRENDING_UP, RANGING, and MIXED.
+- Candidate review `net_pnl` is positive in at least 2 of the 3 DEFAULT_WINDOWS, verified from the Per-Window Detail table in `reports/strategy_plugin_candidate_review.md`.
 - Phase 5.0 parameter sweep has run at least once with at least 3 cells.
-- Sweep results must not have all cells in all windows with `net_pnl < 0`.
+- No DEFAULT_WINDOW has all sweep cells with `net_pnl < 0`, verified from the Per-Window Detail table in `reports/strategy_plugin_parameter_sweep_*.md`.
 - Sweep report exists at `reports/strategy_plugin_parameter_sweep_*.md` and has status `RESEARCH_SWEEP_ONLY`.
 
 ## 4. Risk Gates
