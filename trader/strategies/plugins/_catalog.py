@@ -36,6 +36,20 @@ STRATEGY_CATALOG: dict[str, dict[str, Any]] = {
         "class": "EmaCross719LongOnlyStrategy",
         "params": {"timeframe": "4h", "atr_mult": 1.5},
     },
+    "rsi_mean_reversion_15m": {
+        "enabled": False,
+        "module": "trader.strategies.plugins.rsi_mean_reversion",
+        "class": "RsiMeanReversionStrategy",
+        "params": {
+            "timeframe": "15m",
+            "rsi_entry": 25.0,
+            "rsi_exit": 60.0,
+            "adx_max": 25.0,
+            "adx_exit": 30.0,
+            "stop_atr_mult": 1.5,
+            "cooldown_bars": 5,
+        },
+    },
 }
 
 
