@@ -11,15 +11,15 @@
 
 | candidate_id | windows | trades | net_pnl | max_dd_pct |
 | --- | ---: | ---: | ---: | ---: |
-| `ema_cross_7_19_long_only` | 3 | 126 | 1191.5251 | 33.5825 |
+| `rsi_mean_reversion_1h` | 3 | 14 | -169.0739 | 3.0004 |
 
 ## Per-Window Detail
 
 | candidate_id | window | trades | net_pnl | max_dd_pct | run_errors | entry_stop_violations |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| `ema_cross_7_19_long_only` | TRENDING_UP | 43 | 4220.6031 | 14.3158 | 0 | 0 |
-| `ema_cross_7_19_long_only` | RANGING | 28 | -2541.3711 | 33.5825 | 0 | 0 |
-| `ema_cross_7_19_long_only` | MIXED | 55 | -487.7069 | 22.9905 | 0 | 0 |
+| `rsi_mean_reversion_1h` | TRENDING_UP | 4 | -244.7604 | 3.0004 | 0 | 0 |
+| `rsi_mean_reversion_1h` | RANGING | 5 | -48.2845 | 1.9632 | 0 | 0 |
+| `rsi_mean_reversion_1h` | MIXED | 5 | 123.9711 | 1.2669 | 0 | 0 |
 
 ## Run settings
 
