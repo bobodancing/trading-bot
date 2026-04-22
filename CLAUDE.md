@@ -86,7 +86,8 @@ Current known plugin entries:
 - `fixture_long` / `fixture_exit` - deterministic test fixtures.
 - `macd_zero_line_btc_1d` - pilot research plugin, not production-approved by default.
 - `ema_cross_7_19_long_only` - first post-infra research cartridge, 4h BTC/ETH long-only.
-- `rsi_mean_reversion_15m` - post-alpha research cartridge, 15m BTC/ETH long-only, RANGING regime-declared.
+- `rsi_mean_reversion_15m` - gamma research cartridge, promotion-ineligible under checklist §5 (backtest engine lacks 15m support); kept as reference for future infra extension.
+- `rsi_mean_reversion_1h` - delta research cartridge replacing gamma, 1h BTC/ETH long-only, RANGING regime-declared.
 
 New candidate strategies from Ruei's research list should become strategy plugins before backtest:
 

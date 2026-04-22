@@ -50,6 +50,20 @@ STRATEGY_CATALOG: dict[str, dict[str, Any]] = {
             "cooldown_bars": 5,
         },
     },
+    "rsi_mean_reversion_1h": {
+        "enabled": False,
+        "module": "trader.strategies.plugins.rsi_mean_reversion_1h",
+        "class": "RsiMeanReversion1hStrategy",
+        "params": {
+            "timeframe": "1h",
+            "rsi_entry": 25.0,
+            "rsi_exit": 60.0,
+            "adx_max": 25.0,
+            "adx_exit": 30.0,
+            "stop_atr_mult": 1.5,
+            "cooldown_bars": 5,
+        },
+    },
 }
 
 
