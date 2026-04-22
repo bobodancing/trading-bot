@@ -57,6 +57,14 @@ no `off-regime entry suppression` line, the cartridge is treated as
 
 ## 5. Process Gates
 
+- Every timeframe in the plugin's `required_timeframes` must be
+  supported by the current backtest engine and runtime data path.
+  Supported timeframes at this time: `1h`, `4h`, `1d`. Enforcement
+  sites: `extensions/Backtesting/backtest_engine.py` `_load_data`,
+  `_precompute_indicators`, and the `tse.get_1h_timestamps(...)`
+  iteration loop. Extending to a new timeframe is an infra change
+  and must land before a cartridge on that timeframe can pass §2
+  invariant gates.
 - `trader/strategies/plugins/HOWTO.md` Locked spec is filled for timeframe, symbol scope, indicators, params, entry rule, and stop rule.
 - Plugin is registered in `trader/strategies/plugins/_catalog.py`; `enabled: False` is acceptable before promotion.
 - `CLAUDE.md` Current known plugin entries has one entry for the plugin.
