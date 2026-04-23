@@ -85,6 +85,10 @@ Current known plugin entries:
 
 - `fixture_long` / `fixture_exit` - deterministic test fixtures.
 - `macd_zero_line_btc_1d` - pilot research plugin, not production-approved by default.
+- `macd_zero_line_btc_1d_trending_up` - regime-aware MACD follow-up cartridge, 1d BTC long-only, TRENDING_UP regime-declared.
+- `macd_signal_btc_4h_trending_up` - higher-frequency MACD continuation cartridge, BTC 4h entries under a 1d trend gate, TRENDING_UP regime-declared.
+- `macd_signal_btc_4h_trending_up_confirmed` - confirmed-entry variant of the 4h MACD continuation cartridge, adds histogram-expansion and price-over-EMA checks under the same 1d trend gate.
+- `macd_signal_btc_4h_trending_up_confirmed_failfast` - fail-fast exit variant of the confirmed 4h MACD continuation cartridge, closes stalled continuation attempts after two 4h bars without follow-through.
 - `ema_cross_7_19_long_only` - first post-infra research cartridge, 4h BTC/ETH long-only.
 - `rsi_mean_reversion_15m` - gamma research cartridge, promotion-ineligible under checklist §5 (backtest engine lacks 15m support); kept as reference for future infra extension.
 - `rsi_mean_reversion_1h` - delta research cartridge replacing gamma, 1h BTC/ETH long-only, RANGING regime-declared.

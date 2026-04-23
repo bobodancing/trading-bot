@@ -29,19 +29,25 @@ logger = logging.getLogger(__name__)
 
 def _ema(series: pd.Series, length: int) -> pd.Series:
     if ta is not None:
-        return ta.ema(series, length=length)
-    return series.ewm(span=length, adjust=False).mean()
+        result = ta.ema(series, length=length)
+        if result is not None:
+            return result
+    return series.astype("float64").ewm(span=length, adjust=False).mean()
 
 
 def _sma(series: pd.Series, length: int) -> pd.Series:
     if ta is not None:
-        return ta.sma(series, length=length)
+        result = ta.sma(series, length=length)
+        if result is not None:
+            return result
     return series.rolling(window=length).mean()
 
 
 def _atr(high: pd.Series, low: pd.Series, close: pd.Series, length: int) -> pd.Series:
     if ta is not None:
-        return ta.atr(high, low, close, length=length)
+        result = ta.atr(high, low, close, length=length)
+        if result is not None:
+            return result
     tr = pd.concat([
         high - low,
         (high - close.shift()).abs(),

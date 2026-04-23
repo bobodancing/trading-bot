@@ -16,7 +16,8 @@ from trader.strategies import (
 )
 from trader.strategies.plugins._catalog import get_strategy_catalog
 from trader.strategies.plugins.fixture import FixtureLongStrategy
-from trader.strategy_runtime import StrategyRuntime
+from trader.strategies.plugins.macd_signal_trending_up_4h import MacdSignalTrendingUp4hStrategy
+from trader.strategy_runtime import MarketSnapshotBuilder, StrategyRuntime
 
 
 def _frame(rows=80):
@@ -289,6 +290,32 @@ def test_allowed_symbols_filter_snapshot_and_plugin_context():
 
     assert runtime._symbols_for_snapshot(context.symbols, [plugin]) == ["BTC/USDT"]
     assert runtime._context_for_plugin(context, plugin).symbols == ["BTC/USDT"]
+
+
+def test_snapshot_builder_uses_plugin_timeframes_after_param_override(monkeypatch):
+    calls = []
+    bot = _FakeBot()
+
+    def _fetch_ohlcv(symbol, timeframe, limit=100):
+        calls.append((symbol, timeframe, limit))
+        return _frame(rows=max(limit, 300))
+
+    bot.fetch_ohlcv = _fetch_ohlcv
+    monkeypatch.setattr("trader.strategy_runtime.IndicatorRegistry.apply", lambda df, indicators: df)
+
+    builder = MarketSnapshotBuilder(bot)
+    plugin = MacdSignalTrendingUp4hStrategy(
+        params={"entry_timeframe": "1h", "trend_timeframe": "1d"}
+    )
+
+    snapshot = builder.build(["BTC/USDT"], [plugin])
+
+    assert {(symbol, timeframe) for symbol, timeframe, _limit in calls} == {
+        ("BTC/USDT", "1h"),
+        ("BTC/USDT", "1d"),
+    }
+    assert not snapshot.get("BTC/USDT", "1h").empty
+    assert not snapshot.get("BTC/USDT", "1d").empty
 
 
 def test_allowed_symbol_mismatch_rejects_before_direct_route(monkeypatch):

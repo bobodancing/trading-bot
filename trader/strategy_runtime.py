@@ -56,7 +56,11 @@ class MarketSnapshotBuilder:
                     frames[symbol][timeframe] = pd.DataFrame()
                     continue
                 df = IndicatorRegistry.apply(df, indicators)
-                frames[symbol][timeframe] = drop_unfinished_candle(df)
+                # Backtest replay already exposes closed bars only; dropping the
+                # last row again would shift signals one extra candle late.
+                if not getattr(self.bot, "_is_backtest", False):
+                    df = drop_unfinished_candle(df)
+                frames[symbol][timeframe] = df
         return MarketSnapshot(frames=frames, generated_at=datetime.now(timezone.utc))
 
 
