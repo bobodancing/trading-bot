@@ -412,6 +412,179 @@ Conclusion:
 - the `chop / no-trade discipline` pass is now complete enough to move on
   without more brute-force sanding in this direction
 
+### Post-entry management: remainder ratchet
+
+The first `post-entry management` pass kept the `partial67` entry, stop, trend
+gate, and first partial intact, then added a post-partial remainder ratchet:
+
+- candidate:
+  `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_remainder_ratchet`
+- default tested cell:
+  - `derisk_close_pct = 0.67`
+  - `remainder_ratchet_arm_r = 1.0`
+  - `remainder_ratchet_giveback_r = 1.0`
+- new exit reason: `REMAINDER_RATCHET_EXIT`
+
+Parameter read:
+
+- `remainder_ratchet_giveback_r = 0.75 / 1.0 / 1.25` was inactive in the
+  first min-3 sweep when `arm_r = 1.5`
+- `remainder_ratchet_arm_r` was live:
+
+| arm_r | trades | net_pnl | max_dd_pct | MIXED net_pnl |
+| ---: | ---: | ---: | ---: | ---: |
+| `1.0` | 46 | 1597.8170 | 4.1130 | 254.9628 |
+| `1.5` | 46 | 1594.3058 | 4.1130 | 251.4516 |
+| `2.0` | 46 | 1594.3058 | 4.1130 | 251.4516 |
+| `2.5` | 46 | 1562.0733 | 4.4059 | 251.4516 |
+
+Candidate review read versus the `working baseline`:
+
+| candidate | trades | net_pnl | max_dd_pct | TRENDING_UP | RANGING | MIXED |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `partial67` working baseline | 46 | 1553.9654 | 4.4059 | 1484.5085 | -173.8867 | 243.3437 |
+| `partial67_remainder_ratchet` | 46 | 1597.8170 | 4.1130 | 1516.7409 | -173.8867 | 254.9628 |
+| delta | 0 | +43.8516 | -0.2929 | +32.2324 | 0.0000 | +11.6191 |
+
+Supplemental 8-window read versus the `working baseline`:
+
+| window | partial67 ret% | ratchet arm10 ret% | delta |
+| --- | ---: | ---: | ---: |
+| bull strong-up 1 | 2.2863 | 2.8066 | +0.5203 |
+| bear persistent-down | 1.9478 | 2.0640 | +0.1162 |
+| range / low-vol | 0.0000 | 0.0000 | +0.0000 |
+| bull recovery 2026 | 0.0000 | 0.0000 | +0.0000 |
+| FTX-style crash | -0.1629 | -0.1629 | +0.0000 |
+| sideways transition | -1.9695 | -1.9007 | +0.0688 |
+| classic rollercoaster 2021-2022 | 15.6791 | 15.5907 | -0.0884 |
+| recovery / ETF tape 2023-2024 | 10.6388 | 11.4326 | +0.7938 |
+
+Interpretation:
+
+- this is a real post-entry management improvement, not an entry-filter effect
+- it preserves trade count and leaves `RANGING` unchanged
+- it improves `TRENDING_UP`, `MIXED`, and the modern `2023-2024` recovery /
+  ETF tape window
+- the tradeoff is small but real: it slightly clips the classic 2021-2022
+  rollercoaster window
+
+Conclusion:
+
+- keep `partial67_remainder_ratchet` in the baseline-candidate pool as the
+  leading `post-entry management` candidate
+- do **not** replace the `working baseline` yet; defer that decision until the
+  `transition bleed` and winner-vs-loser decomposition passes are complete
+- next structural pass should move to `transition bleed`
+
+### Transition bleed: persistence and decay probes
+
+The `transition bleed` pass tested two entry-side probes around the same
+`working baseline` without changing exits, stops, or `trend_spread_min`.
+
+First probe:
+
+- `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_transition_buffer`
+- rule: require the 1d trend gate to persist for `trend_persistence_bars`
+- sweep:
+
+| persistence bars | trades | net_pnl | max_dd_pct | read |
+| ---: | ---: | ---: | ---: | --- |
+| `1` | 46 | 1553.9654 | 4.4059 | baseline-equivalent |
+| `2` | 46 | 1553.9654 | 4.4059 | inactive |
+| `3` | 46 | 1553.9654 | 4.4059 | inactive |
+| `5` | 44 | 1535.3729 | 4.4100 | over-waited and cut winners |
+
+Second probe:
+
+- `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_transition_decay_filter`
+- rule: reject entries when the 1d EMA20/EMA50 spread is contracting over a
+  short lookback
+- sweep with `trend_spread_slope_min = 0.0`:
+
+| slope bars | trades | net_pnl | max_dd_pct | TRENDING_UP | RANGING | MIXED |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `3` | 36 | 969.9790 | 4.6554 | 822.2919 | -173.8867 | 321.5739 |
+| `5` | 38 | 924.7444 | 4.6554 | 822.2919 | -173.8867 | 276.3393 |
+| `10` | 34 | 981.4051 | 4.7082 | 691.1179 | -45.2810 | 335.5683 |
+
+Lenient threshold check with `slope_bars = 3`:
+
+| slope min | trades | net_pnl | max_dd_pct | read |
+| ---: | ---: | ---: | ---: | --- |
+| `-0.010` | 46 | 1553.9654 | 4.4059 | inactive |
+| `-0.005` | 46 | 1553.9654 | 4.4059 | inactive |
+| `-0.002` | 42 | 878.3848 | 4.6602 | active but worse |
+| `0.000` | 36 | 969.9790 | 4.6554 | active but too defensive |
+
+Interpretation:
+
+- persistence buffering does not catch the current weak surface
+- trend-decay filtering does catch some `MIXED` / transition bleed, but it pays
+  too much by removing profitable `TRENDING_UP` participation
+- this pass produced a useful diagnostic branch, not a baseline candidate
+
+Conclusion:
+
+- do **not** promote either transition branch into the baseline-candidate pool
+- keep `transition_decay_filter` only as evidence that a trend-weakening signal
+  exists, but needs better targeting
+- next ordered pass should move to `winner protection vs loser suppression`
+
+### Winner protection vs loser suppression decomposition
+
+The decomposition pass compared the current `working baseline` against the two
+most informative surviving branches:
+
+- `partial67_late_entry_filter`
+- `partial67_remainder_ratchet`
+
+Default review-window decomposition:
+
+| candidate | common trades | baseline-only trades | same-entry delta | avoided loser pnl | missed winner pnl | net delta | primary mechanism |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `late_entry_filter` | 16 | 30 | 0.0000 | +1235.6351 | -932.7919 | +302.8432 | loser suppression with winner tax |
+| `remainder_ratchet` | 46 | 0 | +43.8515 | 0.0000 | 0.0000 | +43.8515 | winner protection / capture |
+
+Supplemental matrix read:
+
+- `late_entry_filter` is net-positive in bearish / transition-heavy windows:
+  - `bear_persistent_down`: `+278.2380`
+  - `ftx_style_crash`: `+16.2852`
+  - `sideways_transition`: `+235.4557`
+  - `recovery_2023_2024`: `+362.7342`
+- but it breaks on strong winner-rich tapes:
+  - `bull_strong_up_1`: `-175.1797`
+  - `classic_rollercoaster_2021_2022`: `-687.0087`
+- `remainder_ratchet` keeps the same trade set and improves winner capture in
+  most windows:
+  - `bull_strong_up_1`: `+33.1428`
+  - `bear_persistent_down`: `+8.1079`
+  - `sideways_transition`: `+6.8846`
+  - `recovery_2023_2024`: `+72.2598`
+  - `classic_rollercoaster_2021_2022`: `-3.5340`
+
+Interpretation:
+
+- late-entry filtering is a defensive branch, not a clean baseline
+  replacement
+- remainder ratchet is the cleaner baseline-candidate branch because it
+  improves capture without changing entry participation
+- blindly stacking late-entry filtering on top of ratchet is risky because it
+  would probably import the winner tax
+
+Reference report:
+
+- [winner / loser decomposition](</C:/Users/user/Documents/tradingbot/strategy-runtime-reset/reports/macd_signal_btc_4h_trending_up_winner_loser_decomposition.md:1>)
+
+Conclusion:
+
+- keep `partial67_remainder_ratchet` as the leading baseline-candidate branch
+- keep `partial67_late_entry_filter` as a defensive diagnostic branch
+- explicitly reserve a future branch study for `partial67_late_entry_filter`
+  as a `RANGING` defense probe, because its default review result cut
+  `RANGING` from `3 trades / -173.8867` to `1 trade / -45.2810`
+- move the next ordered pass to `separate bullish and bearish families`
+
 ## Current Read
 
 - `macd_signal_btc_4h_trending_up` remains the `frozen baseline` for this
@@ -421,6 +594,21 @@ Conclusion:
 - `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_late_entry_filter`
   is now the leading entry-side precision candidate, but it is not yet a clean
   enough all-window winner to replace the `working baseline`.
+- `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_late_entry_filter`
+  should later get its own branch study specifically for `RANGING` defense,
+  not as a direct baseline replacement.
+- `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_remainder_ratchet`
+  is now the leading post-entry management candidate, but it is not yet a
+  clean enough all-window winner to replace the `working baseline`.
+- the `winner protection vs loser suppression` decomposition is now complete:
+  - `late_entry_filter` is mostly loser suppression, but its winner tax is too
+    large in strong trend tapes
+  - `remainder_ratchet` is mostly winner protection / capture improvement, and
+    remains the cleaner baseline-candidate branch
+- the `transition bleed` pass is now complete enough to move on:
+  - persistence buffer was inactive until it over-waited
+  - trend-decay filter was active but too defensive
+  - no transition branch enters the baseline-candidate pool
 - the `chop / no-trade discipline` pass is now complete:
   - raw ADX floors were too blunt
   - local EMA spread was inactive
@@ -450,6 +638,10 @@ Conclusion:
     windows, but at the cost of a major participation cut
   - chop-trend suppression reduced some weak participation, but not enough to
     beat the working baseline
+  - remainder ratchet improved post-entry capture without changing entry
+    count, but slightly clipped the 2021-2022 long window
+  - transition filters can identify some weak `MIXED` entries, but current
+    forms over-cut trend winners
 
 ## Ordered Research Queue
 
@@ -471,18 +663,32 @@ Future structural comparisons should now run in this order:
    - target: improve capture after entry without rewriting the baseline entry
    - success read: better give-back control or better winner retention on the
      same entry set
+   - first pass complete via `partial67_remainder_ratchet`
+   - read: active and baseline-candidate worthy, but wait for transition bleed
+     before changing the working baseline
 4. `transition bleed`
    - target: reduce damage near regime flips and unstable trend labels
    - success read: better `sideways transition` behavior and cleaner `MIXED`
      deltas
+   - first pass complete via `partial67_transition_buffer` and
+     `partial67_transition_decay_filter`
+   - read: no baseline-candidate; current transition filters are either
+     inactive or too defensive
 5. `winner protection vs loser suppression`
    - role: diagnostic decomposition after the first four structural passes
    - question: are gains coming from better winner retention, smaller medium
      losers, or both
+   - pass complete via the winner / loser decomposition report
+   - read: `late_entry_filter` is defensive loser suppression with winner tax;
+     `remainder_ratchet` is cleaner winner protection / capture
 6. `separate bullish and bearish families`
-   - role: only after the long-side family is structurally understood
+   - role: next pass now that the long-side family is structurally clearer
    - question: should trend-up and trend-down edges be separated rather than
      forced into one family
+   - carry-forward note: keep a future side branch open for
+     `partial67_late_entry_filter` as a `RANGING` defense candidate, because
+     it materially reduced `RANGING` loss while behaving too defensively for
+     the main baseline path
 
 ## Resume Point
 
@@ -505,12 +711,6 @@ New candidate review reads should therefore follow this order:
    clean
 
 The next ordered comparison pass is now:
-
-1. `post-entry management`
-2. `transition bleed`
-3. `winner protection vs loser suppression`
-
-Only after those remaining passes land should this family move to:
 
 1. `separate bullish and bearish families`
 

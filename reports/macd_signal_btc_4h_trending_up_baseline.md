@@ -418,6 +418,166 @@ Reference reports:
 - [local spread sweep](</C:/Users/user/Documents/tradingbot/strategy-runtime-reset/reports/strategy_plugin_parameter_sweep_macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_local_spread_filter_entry_local_spread_min_min3.md:1>)
 - [chop-trend sweep](</C:/Users/user/Documents/tradingbot/strategy-runtime-reset/reports/strategy_plugin_parameter_sweep_macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_chop_trend_filter_entry_bbw_ratio_min_min3.md:1>)
 
+## 2026-04-23 Follow-Up (Round 8)
+
+The third ordered pass tested `post-entry management` around the same
+`working baseline`:
+
+- `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_remainder_ratchet`
+  - keeps the `partial67` entry / stop / trend gate unchanged
+  - keeps the first `DERISK_PARTIAL_GIVEBACK` unchanged
+  - adds `REMAINDER_RATCHET_EXIT` for the remaining position after partial
+  - locked research default after sweep:
+    `remainder_ratchet_arm_r = 1.0`,
+    `remainder_ratchet_giveback_r = 1.0`
+
+Parameter read:
+
+- `remainder_ratchet_giveback_r = 0.75 / 1.0 / 1.25` was inactive in the
+  first sweep
+- `remainder_ratchet_arm_r` was the active timing lever
+- best tested review cell was `arm_r = 1.0`:
+  `46 trades`, `+1597.8170`, `max_dd_pct 4.1130`
+
+Candidate review outcome versus the current `working baseline`:
+
+| candidate | trades | net_pnl | max_dd_pct | TRENDING_UP | RANGING | MIXED |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `partial67` working baseline | 46 | 1553.9654 | 4.4059 | 1484.5085 | -173.8867 | 243.3437 |
+| `partial67_remainder_ratchet` | 46 | 1597.8170 | 4.1130 | 1516.7409 | -173.8867 | 254.9628 |
+| delta | 0 | +43.8516 | -0.2929 | +32.2324 | 0.0000 | +11.6191 |
+
+Supplemental 8-window read:
+
+| window | partial67 ret% | ratchet arm10 ret% | delta |
+| --- | ---: | ---: | ---: |
+| bull strong-up 1 | 2.2863 | 2.8066 | +0.5203 |
+| bear persistent-down | 1.9478 | 2.0640 | +0.1162 |
+| range / low-vol | 0.0000 | 0.0000 | +0.0000 |
+| bull recovery 2026 | 0.0000 | 0.0000 | +0.0000 |
+| FTX-style crash | -0.1629 | -0.1629 | +0.0000 |
+| sideways transition | -1.9695 | -1.9007 | +0.0688 |
+| classic rollercoaster 2021-2022 | 15.6791 | 15.5907 | -0.0884 |
+| recovery / ETF tape 2023-2024 | 10.6388 | 11.4326 | +0.7938 |
+
+Net read:
+
+- this is the cleanest post-entry management branch so far
+- it improves the review matrix without changing trade count
+- it improves the modern recovery / ETF tape window and slightly improves
+  `sideways transition`
+- it does **not** fix `RANGING`
+- it slightly clips the 2021-2022 classic rollercoaster window, so it should
+  stay in the baseline-candidate pool rather than replace the `working
+  baseline` immediately
+
+Reference reports:
+
+- [candidate review](</C:/Users/user/Documents/tradingbot/strategy-runtime-reset/reports/strategy_plugin_candidate_review.md:1>)
+- [giveback-r sweep](</C:/Users/user/Documents/tradingbot/strategy-runtime-reset/reports/strategy_plugin_parameter_sweep_macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_remainder_ratchet_giveback_r_min3.md:1>)
+- [arm-r sweep](</C:/Users/user/Documents/tradingbot/strategy-runtime-reset/reports/strategy_plugin_parameter_sweep_macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_remainder_ratchet_arm_r_min4.md:1>)
+
+## 2026-04-23 Follow-Up (Round 9)
+
+The fourth ordered pass tested `transition bleed` around the same `working
+baseline`, with entry direction, stops, trend gate, and staged exit structure
+kept unchanged.
+
+Two probes were run:
+
+- `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_transition_buffer`
+  - requires the 1d trend gate to persist for `trend_persistence_bars`
+    consecutive daily bars before entry
+  - sweep result:
+    `1 / 2 / 3` bars were baseline-equivalent; `5` bars cut trades from `46`
+    to `44` and reduced aggregate from `+1553.9654` to `+1535.3729`
+- `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_transition_decay_filter`
+  - rejects entries when the 1d EMA20/EMA50 trend spread is contracting over a
+    short lookback
+  - best diagnostic cells improved `MIXED`, but over-cut profitable
+    `TRENDING_UP` participation
+
+Transition buffer sweep:
+
+| persistence bars | trades | net_pnl | max_dd_pct | read |
+| ---: | ---: | ---: | ---: | --- |
+| `1` | 46 | 1553.9654 | 4.4059 | baseline-equivalent |
+| `2` | 46 | 1553.9654 | 4.4059 | inactive |
+| `3` | 46 | 1553.9654 | 4.4059 | inactive |
+| `5` | 44 | 1535.3729 | 4.4100 | over-waited and cut winners |
+
+Transition decay sweep with `trend_spread_slope_min = 0.0`:
+
+| slope bars | trades | net_pnl | max_dd_pct | TRENDING_UP | RANGING | MIXED |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `3` | 36 | 969.9790 | 4.6554 | 822.2919 | -173.8867 | 321.5739 |
+| `5` | 38 | 924.7444 | 4.6554 | 822.2919 | -173.8867 | 276.3393 |
+| `10` | 34 | 981.4051 | 4.7082 | 691.1179 | -45.2810 | 335.5683 |
+
+Lenient threshold check with `slope_bars = 3`:
+
+| slope min | trades | net_pnl | max_dd_pct | read |
+| ---: | ---: | ---: | ---: | --- |
+| `-0.010` | 46 | 1553.9654 | 4.4059 | inactive |
+| `-0.005` | 46 | 1553.9654 | 4.4059 | inactive |
+| `-0.002` | 42 | 878.3848 | 4.6602 | active but worse |
+| `0.000` | 36 | 969.9790 | 4.6554 | active but too defensive |
+
+Net read:
+
+- persistence buffering did not catch the current weak surface
+- trend-decay filtering confirms a real weakening signal exists, but the
+  tested form pays too much by removing profitable trend entries
+- no transition branch enters the baseline-candidate pool
+- keep `transition_decay_filter` as diagnostic evidence only
+
+Reference reports:
+
+- [persistence sweep](</C:/Users/user/Documents/tradingbot/strategy-runtime-reset/reports/strategy_plugin_parameter_sweep_macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_transition_buffer_persistence_min4.md:1>)
+- [slope-bars sweep](</C:/Users/user/Documents/tradingbot/strategy-runtime-reset/reports/strategy_plugin_parameter_sweep_macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_transition_decay_filter_slope_bars_min3.md:1>)
+- [lenient slope-min sweep](</C:/Users/user/Documents/tradingbot/strategy-runtime-reset/reports/strategy_plugin_parameter_sweep_macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_transition_decay_filter_slope_min_lenient_min4.md:1>)
+
+## 2026-04-23 Follow-Up (Round 10)
+
+The diagnostic pass then decomposed the two most informative surviving branches
+into `winner protection` versus `loser suppression`:
+
+- `partial67_late_entry_filter`
+- `partial67_remainder_ratchet`
+
+Default review-window decomposition versus the `working baseline`:
+
+| candidate | common trades | baseline-only trades | same-entry delta | avoided loser pnl | missed winner pnl | net delta | primary mechanism |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `late_entry_filter` | 16 | 30 | 0.0000 | +1235.6351 | -932.7919 | +302.8432 | loser suppression with winner tax |
+| `remainder_ratchet` | 46 | 0 | +43.8515 | 0.0000 | 0.0000 | +43.8515 | winner protection / capture |
+
+Supplemental read:
+
+- `late_entry_filter` works best where avoided losers dominate:
+  `bear_persistent_down`, `ftx_style_crash`, `sideways_transition`, and
+  `recovery_2023_2024`
+- it degrades winner-rich tapes:
+  `bull_strong_up_1` and `classic_rollercoaster_2021_2022`
+- `remainder_ratchet` keeps the same trade set and mostly adds winner capture,
+  with only a tiny `classic_rollercoaster_2021_2022` clip
+
+Net read:
+
+- `late_entry_filter` is defensive and useful diagnostically, but not a clean
+  replacement for the `working baseline`
+- `late_entry_filter` should later get a dedicated side-branch study as a
+  `RANGING` defense probe, because it cut the default review `RANGING` cell
+  from `3 trades / -173.8867` to `1 trade / -45.2810`
+- `remainder_ratchet` remains the cleaner baseline-candidate branch because it
+  improves same-entry capture without sacrificing participation
+- do not blindly stack late-entry filtering on top of ratchet; the combined
+  branch would likely import too much winner tax
+
+Reference report:
+
+- [winner / loser decomposition](</C:/Users/user/Documents/tradingbot/strategy-runtime-reset/reports/macd_signal_btc_4h_trending_up_winner_loser_decomposition.md:1>)
+
 ## Resume Point
 
 Resume from the `working baseline`
@@ -427,6 +587,9 @@ the historical anchor.
 
 Next structural pass should be:
 
-- implement and compare a `post-entry management` candidate against both the
-  `working baseline` and the `frozen baseline`, then validate it on the fixed
-  supplemental market-phase matrix including the two long windows
+- split the research read into `separate bullish and bearish families`, using
+  `partial67` as the current `working baseline` and
+  `partial67_remainder_ratchet` as the leading same-entry capture candidate
+- keep a later side branch reserved for
+  `partial67_late_entry_filter` as a `RANGING` defense research path, not as a
+  direct replacement for the `working baseline`

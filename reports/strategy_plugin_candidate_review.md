@@ -11,15 +11,15 @@
 
 | candidate_id | windows | trades | net_pnl | max_dd_pct |
 | --- | ---: | ---: | ---: | ---: |
-| `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_late_entry_filter` | 3 | 16 | 1856.8086 | 1.8572 |
+| `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_remainder_ratchet` | 3 | 46 | 1597.8170 | 4.1130 |
 
 ## Per-Window Detail
 
 | candidate_id | window | trades | net_pnl | max_dd_pct | run_errors | entry_stop_violations |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_late_entry_filter` | TRENDING_UP | 9 | 1401.7272 | 1.8572 | 0 | 0 |
-| `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_late_entry_filter` | RANGING | 1 | -45.2810 | 0.9090 | 0 | 0 |
-| `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_late_entry_filter` | MIXED | 6 | 500.3624 | 1.7122 | 0 | 0 |
+| `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_remainder_ratchet` | TRENDING_UP | 26 | 1516.7409 | 4.1130 | 0 | 0 |
+| `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_remainder_ratchet` | RANGING | 3 | -173.8867 | 1.9442 | 0 | 0 |
+| `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_remainder_ratchet` | MIXED | 17 | 254.9628 | 3.0182 | 0 | 0 |
 
 ## Run settings
 
