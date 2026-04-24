@@ -660,6 +660,50 @@ Reference report:
 
 - [context-gated weak-tape defense](</C:/Users/user/Documents/tradingbot/strategy-runtime-reset/reports/macd_signal_btc_4h_trending_up_context_gated_weak_tape_defense.md:1>)
 
+## 2026-04-24 Follow-Up (Round 13)
+
+The next side-branch pass isolated the OR-gated proxy into two attribution
+children:
+
+- `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_trend_decay_only_late_entry_filter`
+- `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_chop_trend_only_late_entry_filter`
+
+Default review read:
+
+| candidate | trades | net_pnl | max_dd_pct | read |
+| --- | ---: | ---: | ---: | --- |
+| `partial67` working baseline | 46 | 1553.9654 | 4.4059 | reference |
+| `context_gated_late_entry_filter` | 36 | 1877.7400 | 2.7856 | OR-gated reference |
+| `trend_decay_only_late_entry_filter` | 41 | 1604.2942 | 4.3940 | near-baseline, weak defense |
+| `chop_trend_only_late_entry_filter` | 41 | 1827.4113 | 2.9913 | most OR-gated uplift survives |
+| `late_entry_filter` | 16 | 1856.8086 | 1.8572 | strongest raw defense, strongest participation cut |
+
+Attribution read:
+
+- `trend_decay_only` preserved bullish capture and improved
+  `classic_rollercoaster_2021_2022`, but it failed to avoid `ftx_style_crash`
+  and left `RANGING` / `sideways_transition` unchanged
+- `chop_trend_only` reproduced most of the OR-gated defensive uplift and kept
+  crash avoidance
+- `bull_strong_up_1` identified the noisy component:
+  - `trend_decay_only`: `+268.1561`
+  - `chop_trend_only`: `-83.5023`
+- `sideways_transition` stayed unchanged at `-196.9550` for all localized-gate
+  variants, so neither current proxy reproduces the unconditional
+  `late_entry_filter` defense
+
+Net read:
+
+- the current OR-gated result is mostly a `chop_trend` story
+- `trend_decay` is not the live weak-tape defense lever at the current
+  threshold
+- `chop_trend` is the active weak-tape proxy, but it is still too noisy to
+  become the side-branch reference
+
+Reference report:
+
+- [weak-tape gate attribution](</C:/Users/user/Documents/tradingbot/strategy-runtime-reset/reports/macd_signal_btc_4h_trending_up_weak_tape_gate_attribution.md:1>)
+
 ## Resume Point
 
 Resume from a split queue, not one blended family:
@@ -671,8 +715,13 @@ Resume from a split queue, not one blended family:
 - first concrete side-branch candidate
   `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_context_gated_late_entry_filter`
   is now informative but not clean enough
-- next side-branch pass should split the weak-tape gate into attribution probes:
-  `trend_decay`-only versus `chop_trend`-only
+- gate attribution is now complete:
+  - `trend_decay`-only is not the active defense lever
+  - `chop_trend`-only carries most of the defense uplift and most of the
+    bullish false-positive tax
+  - neither localized gate fixed `sideways_transition`
+- next side-branch pass should retune `chop_trend` localization or add a more
+  explicit transition-aware trigger
 - new bullish candidates should compare first against `partial67` and then
   against the `frozen baseline`
 - do not merge `late_entry_filter` into the mainline unless an explicit context

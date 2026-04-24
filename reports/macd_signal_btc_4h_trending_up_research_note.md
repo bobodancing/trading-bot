@@ -673,6 +673,50 @@ Reference report:
 
 - [context-gated weak-tape defense](</C:/Users/user/Documents/tradingbot/strategy-runtime-reset/reports/macd_signal_btc_4h_trending_up_context_gated_weak_tape_defense.md:1>)
 
+### Weak-tape gate attribution
+
+The attribution pass then isolated the two gate components behind the OR-gated
+proxy:
+
+- `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_trend_decay_only_late_entry_filter`
+- `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_chop_trend_only_late_entry_filter`
+
+Default review comparison:
+
+| candidate | trades | net_pnl | max_dd_pct | read |
+| --- | ---: | ---: | ---: | --- |
+| `partial67` working baseline | 46 | 1553.9654 | 4.4059 | reference |
+| `context_gated_late_entry_filter` | 36 | 1877.7400 | 2.7856 | OR-gated reference |
+| `trend_decay_only_late_entry_filter` | 41 | 1604.2942 | 4.3940 | near-baseline, weak defense |
+| `chop_trend_only_late_entry_filter` | 41 | 1827.4113 | 2.9913 | most OR-gated uplift survives |
+| `late_entry_filter` | 16 | 1856.8086 | 1.8572 | strongest raw defense, strongest participation cut |
+
+Attribution read:
+
+- `trend_decay_only` did **not** fix `RANGING`, `sideways_transition`, or
+  `ftx_style_crash`
+- `chop_trend_only` recovered most of the OR-gated uplift and also kept the
+  crash avoidance
+- `bull_strong_up_1` split the gates cleanly:
+  - `trend_decay_only`: `+268.1561`
+  - `chop_trend_only`: `-83.5023`
+- `sideways_transition` stayed unchanged at `-196.9550` for all of
+  `partial67`, `context_gated`, `trend_decay_only`, and `chop_trend_only`
+
+Interpretation:
+
+- the current OR-gated candidate gets most of its useful weak-tape behavior
+  from `chop_trend`, not from `trend_decay`
+- the same `chop_trend` proxy also causes the bullish false-positive tax
+- `trend_decay_only` behaves more like winner preservation than side-branch
+  defense
+- neither localized proxy reproduces the unconditional `late_entry_filter`
+  strength in `sideways_transition`
+
+Reference report:
+
+- [weak-tape gate attribution](</C:/Users/user/Documents/tradingbot/strategy-runtime-reset/reports/macd_signal_btc_4h_trending_up_weak_tape_gate_attribution.md:1>)
+
 ## Current Read
 
 - `macd_signal_btc_4h_trending_up` remains the `frozen baseline` for this
@@ -704,6 +748,15 @@ Reference report:
   - but `RANGING` and `sideways_transition` were not repaired
   - the current OR gate is not localized enough to become the side-branch
     reference
+- the `weak-tape gate attribution` pass is now complete:
+  - `trend_decay_only` preserved bullish winners but did not solve the defense
+    problem
+  - `chop_trend_only` reproduced most of the OR-gated defense uplift and crash
+    avoidance
+  - `chop_trend_only` also reproduced the bullish misfire, so the active proxy
+    is identified but still not localized enough
+  - neither localized gate fixed `sideways_transition`, so the unconditional
+    `late_entry_filter` remains the best side-branch reference
 - the `transition bleed` pass is now complete enough to move on:
   - persistence buffer was inactive until it over-waited
   - trend-decay filter was active but too defensive
@@ -791,10 +844,15 @@ Future structural comparisons should now run in this order:
    - read: aggregate improved, but the OR-gated proxy failed to fix
      `sideways_transition` and introduced a new `bull_strong_up_1` misfire
 8. `weak-tape gate attribution`
-   - role: isolate which proxy should control the side-branch defense
-   - question: should weak-tape activation come from `trend_decay`,
-     `chop_trend`, or a stricter intersection / thresholded gate
-   - guardrail: this remains a side branch, not a bullish-mainline replacement
+   - pass complete via:
+     `partial67_trend_decay_only_late_entry_filter` and
+     `partial67_chop_trend_only_late_entry_filter`
+   - read: `chop_trend` is the live defense proxy; `trend_decay` is mostly a
+     winner-preservation companion
+   - unresolved: neither localized gate repaired `sideways_transition`
+   - next step: retune `chop_trend` localization or design a more explicit
+     transition-aware trigger, while keeping this branch outside the bullish
+     mainline
 
 ## Resume Point
 
@@ -807,6 +865,8 @@ When work resumes, do **not**:
 - score `partial67_late_entry_filter` as a direct replacement for the bullish
   `working baseline`
 - treat the current OR-gated weak-tape proxy as solved
+- reopen `trend_decay_only` as the leading side-branch path at the current
+  threshold
 
 Next step should start from the `working baseline`
 `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67`, while
@@ -826,8 +886,12 @@ The queue is now explicitly split:
    - first concrete candidate
      `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_context_gated_late_entry_filter`
      is now complete and informative, but not clean enough
-   - next pass should isolate gate attribution:
-     `trend_decay`-only vs `chop_trend`-only activation
+   - gate attribution is now complete:
+     - `trend_decay`-only is not the live defense lever
+     - `chop_trend`-only carries most of the useful defense behavior and most
+       of the bullish misfire
+   - next pass should retune `chop_trend` localization or add a more explicit
+     `sideways_transition` trigger
    - do not promote any side-branch result into the bullish mainline without an
      explicit context gate that is actually localized
 
