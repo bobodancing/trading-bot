@@ -578,18 +578,102 @@ Reference report:
 
 - [winner / loser decomposition](</C:/Users/user/Documents/tradingbot/strategy-runtime-reset/reports/macd_signal_btc_4h_trending_up_winner_loser_decomposition.md:1>)
 
+## 2026-04-24 Follow-Up (Round 11)
+
+The next pass split the read into a `bullish mainline` versus a `weak-tape
+defense` side branch, while keeping the `working baseline` entry unchanged.
+
+Default review comparison is now formalized in the promotion-gated matrix:
+
+| candidate | trades | net_pnl | max_dd_pct | read |
+| --- | ---: | ---: | ---: | --- |
+| `partial67` working baseline | 46 | 1553.9654 | 4.4059 | reference |
+| `partial67_remainder_ratchet` | 46 | 1597.8170 | 4.1130 | same-entry bullish leader |
+| `partial67_late_entry_filter` | 16 | 1856.8086 | 1.8572 | selective defense branch |
+
+Family-level supplemental read:
+
+| family | `partial67` | `ratchet` | `late_entry_filter` | read |
+| --- | ---: | ---: | ---: | --- |
+| bullish mainline family | `88 trades / +2860.4183` | `88 / +2962.2868` | `34 / +2360.9641` | ratchet improves capture; late-entry pays winner tax via underparticipation |
+| bearish weak-tape family | `18 / +178.4922` | `18 / +186.6002` | `7 / +473.0154` | late-entry is the strongest defensive branch |
+| ranging / transition family | `4 / -196.9550` | `4 / -190.0704` | `1 / +38.5007` | late-entry is the cleanest defense, but extremely selective |
+
+Net read:
+
+- the `bullish mainline` should stay anchored on `partial67` and
+  `partial67_remainder_ratchet`
+- `remainder_ratchet` remains the leading mainline candidate because it adds
+  `+43.8515` in the default review and `+101.8685` across the bullish
+  supplemental family without reducing trade count
+- `late_entry_filter` should stay outside the bullish mainline and be reserved
+  for a separate `RANGING` / transition defense branch
+- do not score `late_entry_filter` as a direct replacement for the `working
+  baseline`; its gain comes from selective refusal, not from a cleaner
+  same-entry edge
+
+Reference reports:
+
+- [family split](</C:/Users/user/Documents/tradingbot/strategy-runtime-reset/reports/macd_signal_btc_4h_trending_up_family_split.md:1>)
+- [candidate review](</C:/Users/user/Documents/tradingbot/strategy-runtime-reset/reports/strategy_plugin_candidate_review.md:1>)
+
+## 2026-04-24 Follow-Up (Round 12)
+
+The first concrete `weak-tape defense` side-branch candidate then tested a
+context-gated version of the late-entry filter:
+
+- `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_context_gated_late_entry_filter`
+
+Default review read:
+
+| candidate | trades | net_pnl | max_dd_pct | read |
+| --- | ---: | ---: | ---: | --- |
+| `partial67` working baseline | 46 | 1553.9654 | 4.4059 | reference |
+| `context_gated_late_entry_filter` | 36 | 1877.7400 | 2.7856 | aggregate improved, still selective |
+| `late_entry_filter` | 16 | 1856.8086 | 1.8572 | strongest raw defense, strongest participation cut |
+
+Key read:
+
+- the context gate reclaimed much more `TRENDING_UP` participation than the
+  unconditional `late_entry_filter`
+- `MIXED` also improved materially
+- but `RANGING` stayed unchanged from `partial67`, so the candidate did **not**
+  actually preserve the original side-branch defense thesis
+
+Supplemental read:
+
+- strong positive recovery in `bear_persistent_down` and `recovery_2023_2024`
+- `ftx_style_crash` loser was avoided
+- but `sideways_transition` stayed unchanged at `-196.9550`
+- `bull_strong_up_1` degraded to `-32.1112`
+- `range_low_vol` introduced a new `1 trade / -4.2350`
+
+Net read:
+
+- the current OR-gated weak-tape proxy is not localized enough
+- this candidate is informative research evidence, but not yet a clean
+  replacement for the unconditional `late_entry_filter` side-branch read
+- next side-branch pass should isolate gate attribution instead of keeping the
+  current combined gate opaque
+
+Reference report:
+
+- [context-gated weak-tape defense](</C:/Users/user/Documents/tradingbot/strategy-runtime-reset/reports/macd_signal_btc_4h_trending_up_context_gated_weak_tape_defense.md:1>)
+
 ## Resume Point
 
-Resume from the `working baseline`
-`macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67` for the next
-ordered structural check, while keeping the original baseline entry frozen as
-the historical anchor.
+Resume from a split queue, not one blended family:
 
-Next structural pass should be:
-
-- split the research read into `separate bullish and bearish families`, using
-  `partial67` as the current `working baseline` and
-  `partial67_remainder_ratchet` as the leading same-entry capture candidate
-- keep a later side branch reserved for
-  `partial67_late_entry_filter` as a `RANGING` defense research path, not as a
-  direct replacement for the `working baseline`
+- `bullish mainline`: `partial67` stays the `working baseline`, and
+  `partial67_remainder_ratchet` stays the leading same-entry capture candidate
+- `weak-tape defense side branch`: `partial67_late_entry_filter` stays reserved
+  for `RANGING` / transition defense research
+- first concrete side-branch candidate
+  `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_context_gated_late_entry_filter`
+  is now informative but not clean enough
+- next side-branch pass should split the weak-tape gate into attribution probes:
+  `trend_decay`-only versus `chop_trend`-only
+- new bullish candidates should compare first against `partial67` and then
+  against the `frozen baseline`
+- do not merge `late_entry_filter` into the mainline unless an explicit context
+  gate is defined and separately justified

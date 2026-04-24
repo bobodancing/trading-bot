@@ -29,6 +29,16 @@ the first de-risk close size after the robustness sweep showed that
   locked candidate tests whether that sweep result survives a full candidate
   review as a named cartridge.
 
+## Family Role
+- structural role:
+  bullish-mainline `working baseline` after the 2026-04-24 family split
+- comparison order:
+  new bullish-family candidates should compare against this cartridge first,
+  then against the original `macd_signal_btc_4h_trending_up` frozen baseline
+- carry-forward note:
+  weak-tape defense reads now live on a separate side branch; this locked
+  cartridge should not absorb that role by default
+
 ## Out of Scope
 - ETH or multi-symbol scope
 - short leg
@@ -36,4 +46,5 @@ the first de-risk close size after the robustness sweep showed that
 - macro overlay coupling
 - stop redesign or spread-threshold sweeps
 - give-back floor retuning inside the inactive tested range
+- weak-tape defense specialization
 - runtime default enablement

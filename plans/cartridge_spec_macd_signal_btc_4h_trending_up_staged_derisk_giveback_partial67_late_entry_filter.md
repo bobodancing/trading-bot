@@ -3,8 +3,9 @@
 Derived from:
 `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67`. This is a
 research child that keeps the `partial67` staged exit path intact and adds a
-narrow late-entry stretch cap so the family can test whether some weak trades
-come from entering after price is already extended above the 4h anchor.
+narrow late-entry stretch cap. After the 2026-04-24 family split, this branch
+is no longer scored as a bullish-mainline replacement; it is the leading
+`weak-tape defense` side branch.
 
 ## Research Spec
 - id: macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_late_entry_filter
@@ -39,17 +40,32 @@ come from entering after price is already extended above the 4h anchor.
 
 ## Research Intent
 - primary question:
-  can the current `working baseline` keep its trend capture while avoiding some
-  late continuation entries that are already too stretched above the 4h anchor
+  can the family suppress weak-tape losers by refusing overextended 4h entries,
+  without paying unacceptable winner tax in clean bullish tapes
 - expected gain surface:
-  `MIXED` and sideways / transition windows
+  `RANGING`, `sideways transition`, crash-like weak tape, and bearish /
+  transition-heavy slices inside the trend-up family review set
 - main failure mode:
-  over-cutting clean trend participation the same way the broader
-  `confirmed_entry` variant did
+  over-cutting clean bullish participation and turning defense gains into a
+  false aggregate win through heavy selectivity
+
+## Family Role
+- structural role:
+  leading `weak-tape defense` side branch, not a direct bullish-mainline
+  replacement
+- evaluation order:
+  score this branch first on weak-tape windows and loser-suppression quality;
+  only compare aggregate numbers after checking winner tax in bullish windows
+- guardrail:
+  do not promote this branch into the bullish mainline unless an explicit
+  context gate proves that defense activates only where weak-tape suppression
+  dominates
 
 ## Out of Scope
 - stop redesign
 - trend spread retuning
 - generic confirmation stacking
 - bearish / short-side logic
+- direct replacement of the bullish `working baseline`
+- direct stacking with `remainder_ratchet` without an explicit context gate
 - runtime default enablement

@@ -2,7 +2,8 @@
 
 Derived from:
 `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67`. This is a
-research child for the ordered `post-entry management` pass.
+research child for the ordered `post-entry management` pass inside the
+`bullish mainline` queue.
 
 ## Research Spec
 - id: macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_remainder_ratchet
@@ -44,10 +45,21 @@ research child for the ordered `post-entry management` pass.
 - main failure mode:
   clipping old-cycle trend winners before they can compound
 
+## Family Role
+- structural role:
+  leading same-entry candidate inside the `bullish mainline`
+- evaluation order:
+  compare against `partial67` first for practical go / no-go value, then
+  against the frozen baseline, then against the 8-window supplemental matrix
+- guardrail:
+  keep the baseline entry intact; do not stack entry-side defense on top unless
+  an explicit context gate is justified first
+
 ## Out of Scope
 - entry filtering
 - stop ATR retuning
 - trend spread retuning
 - RANGING-specific mean reversion logic
 - bearish / short-side logic
+- direct import of `late_entry_filter` selectivity without a context gate
 - runtime default enablement
