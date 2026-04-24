@@ -717,6 +717,43 @@ Reference report:
 
 - [weak-tape gate attribution](</C:/Users/user/Documents/tradingbot/strategy-runtime-reset/reports/macd_signal_btc_4h_trending_up_weak_tape_gate_attribution.md:1>)
 
+### Chop-trend localization
+
+The next side-branch pass retuned the active `chop_trend` proxy itself:
+
+- `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_chop_trend_tightened_late_entry_filter`
+
+Default review comparison:
+
+| candidate | trades | net_pnl | max_dd_pct | read |
+| --- | ---: | ---: | ---: | --- |
+| `partial67` working baseline | 46 | 1553.9654 | 4.4059 | reference |
+| `context_gated_late_entry_filter` | 36 | 1877.7400 | 2.7856 | OR-gated reference |
+| `chop_trend_only_late_entry_filter` | 41 | 1827.4113 | 2.9913 | raw localized-gate reference |
+| `chop_trend_tightened_late_entry_filter` | 42 | 1848.6305 | 2.9860 | best localized `chop_trend` proxy so far |
+| `late_entry_filter` | 16 | 1856.8086 | 1.8572 | strongest raw defense, strongest participation cut |
+
+Localization read:
+
+- `bull_strong_up_1` recovered from `-83.5023` to `+167.8664`
+- `bear_persistent_down` stayed strong at `+352.4744`
+- `ftx_style_crash` stayed clean at `0.0000`
+- default `MIXED` improved from `14 / +331.2551` to `15 / +352.4744`
+- but `RANGING` stayed `3 / -173.8867`
+- and `sideways_transition` stayed unchanged at `-196.9550`
+
+Interpretation:
+
+- the localization pass materially repaired the old bullish false-positive tax
+  without losing the crash-avoidance behavior
+- this is the best localized `chop_trend` probe so far
+- but it still does **not** reproduce the unconditional `late_entry_filter`
+  strength on the key `sideways_transition` / transition-defense surface
+
+Reference report:
+
+- [chop-trend localization](</C:/Users/user/Documents/tradingbot/strategy-runtime-reset/reports/macd_signal_btc_4h_trending_up_chop_trend_localization.md:1>)
+
 ## Current Read
 
 - `macd_signal_btc_4h_trending_up` remains the `frozen baseline` for this
@@ -757,6 +794,14 @@ Reference report:
     is identified but still not localized enough
   - neither localized gate fixed `sideways_transition`, so the unconditional
     `late_entry_filter` remains the best side-branch reference
+- the first `chop-trend localization` pass is now complete:
+  - `chop_trend_tightened_late_entry_filter` repaired most of the old
+    `bull_strong_up_1` tax and improved default `MIXED`
+  - it preserved `bear_persistent_down` and `ftx_style_crash` behavior
+  - it still left default `RANGING`, `sideways_transition`, and the
+    `range_low_vol` stray loser unresolved
+  - it replaces `chop_trend_only` as the current localized-proxy reference,
+    but not as the side-branch defense reference
 - the `transition bleed` pass is now complete enough to move on:
   - persistence buffer was inactive until it over-waited
   - trend-decay filter was active but too defensive
@@ -850,9 +895,15 @@ Future structural comparisons should now run in this order:
    - read: `chop_trend` is the live defense proxy; `trend_decay` is mostly a
      winner-preservation companion
    - unresolved: neither localized gate repaired `sideways_transition`
-   - next step: retune `chop_trend` localization or design a more explicit
-     transition-aware trigger, while keeping this branch outside the bullish
-     mainline
+9. `chop-trend localization`
+   - first pass complete via:
+     `partial67_chop_trend_tightened_late_entry_filter`
+   - read: this recovered most of the old bullish false-positive tax while
+     keeping `bear_persistent_down` and `ftx_style_crash` intact
+   - unresolved: default `RANGING`, `sideways_transition`, and the
+     `range_low_vol` stray loser remain unchanged
+   - next step: design a more explicit transition-aware trigger instead of
+     continuing to sand the same extension-only lever
 
 ## Resume Point
 
@@ -867,6 +918,8 @@ When work resumes, do **not**:
 - treat the current OR-gated weak-tape proxy as solved
 - reopen `trend_decay_only` as the leading side-branch path at the current
   threshold
+- treat the localized `chop_trend` result as a solved transition-defense
+  branch
 
 Next step should start from the `working baseline`
 `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67`, while
@@ -890,8 +943,13 @@ The queue is now explicitly split:
      - `trend_decay`-only is not the live defense lever
      - `chop_trend`-only carries most of the useful defense behavior and most
        of the bullish misfire
-   - next pass should retune `chop_trend` localization or add a more explicit
-     `sideways_transition` trigger
+   - first localization pass is now complete:
+     - `chop_trend_tightened_late_entry_filter` is the best localized proxy so
+       far
+     - it repaired most of the bullish tax without losing crash avoidance
+     - it still did not fix `sideways_transition`
+   - next pass should add a more explicit `sideways_transition` /
+     transition-aware trigger
    - do not promote any side-branch result into the bullish mainline without an
      explicit context gate that is actually localized
 

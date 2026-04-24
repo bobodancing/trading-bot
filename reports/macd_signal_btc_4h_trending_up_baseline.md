@@ -704,6 +704,49 @@ Reference report:
 
 - [weak-tape gate attribution](</C:/Users/user/Documents/tradingbot/strategy-runtime-reset/reports/macd_signal_btc_4h_trending_up_weak_tape_gate_attribution.md:1>)
 
+## 2026-04-24 Follow-Up (Round 14)
+
+The next side-branch pass localized the active `chop_trend` proxy instead of
+re-opening `trend_decay`:
+
+- `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_chop_trend_tightened_late_entry_filter`
+  - keeps the same `falling ADX + compressed BBW` trigger
+  - only lets that trigger veto entries once the late entry is already at least
+    `1.5 ATR` stretched above `ema_20`
+
+Default review read:
+
+| candidate | trades | net_pnl | max_dd_pct | read |
+| --- | ---: | ---: | ---: | --- |
+| `partial67` working baseline | 46 | 1553.9654 | 4.4059 | reference |
+| `context_gated_late_entry_filter` | 36 | 1877.7400 | 2.7856 | OR-gated reference |
+| `chop_trend_only_late_entry_filter` | 41 | 1827.4113 | 2.9913 | raw localized-gate reference |
+| `chop_trend_tightened_late_entry_filter` | 42 | 1848.6305 | 2.9860 | best localized `chop_trend` probe so far |
+| `late_entry_filter` | 16 | 1856.8086 | 1.8572 | strongest raw defense, strongest participation cut |
+
+Key read:
+
+- this pass restored one default-window `MIXED` winner and improved that cell
+  from `14 / +331.2551` to `15 / +352.4744`
+- `bull_strong_up_1` recovered from `-83.5023` to `+167.8664`
+- `bear_persistent_down` stayed strong at `+352.4744`
+- `ftx_style_crash` stayed at `0.0000`
+- but default `RANGING` stayed `3 / -173.8867`
+- and `sideways_transition` stayed unchanged at `-196.9550`
+
+Net read:
+
+- this is the strongest localized `chop_trend` proxy yet
+- it is good enough to supersede `chop_trend_only` as the current localization
+  reference
+- it is still **not** enough to replace the unconditional `late_entry_filter`
+  side-branch reference, because the known transition-defense surfaces remain
+  unresolved
+
+Reference report:
+
+- [chop-trend localization](</C:/Users/user/Documents/tradingbot/strategy-runtime-reset/reports/macd_signal_btc_4h_trending_up_chop_trend_localization.md:1>)
+
 ## Resume Point
 
 Resume from a split queue, not one blended family:
@@ -720,8 +763,10 @@ Resume from a split queue, not one blended family:
   - `chop_trend`-only carries most of the defense uplift and most of the
     bullish false-positive tax
   - neither localized gate fixed `sideways_transition`
-- next side-branch pass should retune `chop_trend` localization or add a more
-  explicit transition-aware trigger
+- first localization pass is now complete:
+  - `chop_trend_tightened_late_entry_filter` is the best localized proxy so far
+  - it repaired most of the bullish tax without solving the transition surface
+- next side-branch pass should add a more explicit transition-aware trigger
 - new bullish candidates should compare first against `partial67` and then
   against the `frozen baseline`
 - do not merge `late_entry_filter` into the mainline unless an explicit context
