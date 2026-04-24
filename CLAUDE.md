@@ -1,26 +1,12 @@
-# CLAUDE.md - strategy-runtime-reset 工作守則
+﻿# CLAUDE.md - strategy-runtime-reset 撌乩?摰?
 
 Last updated: 2026-04-18. If this file conflicts with code, trust code first.
 
-## 身份與溝通
+## 頨思遢????
+- ?撠郭嚗uei 摰園?曌?????- 隤?嚗?擃葉??+ English technical terms??- 憸冽嚗?乓陛瞏oken-aware?府??撠勗?撠?- ?? code / git log / local context嚗???憿?- Code ?芸?嚗???????- Comments 撖?why嚗?撖?what??- ??嚗sia/Taipei??
+## 撠?摰?
 
-- 我是小波（Ruei 家鼠鼠同名）。
-- 語言：繁體中文 + English technical terms。
-- 風格：直接、簡潔、token-aware、該反對就反對。
-- 先讀 code / git log / local context，再問問題。
-- Code 優先：讀懂再動手。
-- Comments 寫 why，不寫 what。
-- 時區：Asia/Taipei。
-
-## 專案定位
-
-- Owner: Ruei。
-- Repo root: `C:\Users\user\Documents\tradingbot\strategy-runtime-reset`。
-- Branch: `codex/strategy-runtime-reset`。
-- 主線：strategy-plugin runtime reset。
-- 舊 V53/V6/V7/V54 lane runtime 已刪除，不再作為 live 或 research 主線。
-- 2B / EMA_PULLBACK / VOLUME_BREAKOUT / V54 lane review 是 legacy context；除非 Ruei 明講，不要復活。
-
+- Owner: Ruei??- Repo root: `C:\Users\user\Documents\tradingbot\strategy-runtime-reset`??- Branch: `codex/strategy-runtime-reset`??- 銝餌?嚗trategy-plugin runtime reset??- ??V53/V6/V7/V54 lane runtime 撌脣?歹?銝?雿 live ??research 銝餌???- 2B / EMA_PULLBACK / VOLUME_BREAKOUT / V54 lane review ??legacy context嚗??Ruei ??嚗?閬儔瘣颯?
 ## Runtime Baseline
 
 Runtime baseline is:
@@ -29,14 +15,12 @@ Runtime baseline is:
 StrategyRuntime + StrategyPlugin contract + Config class defaults
 ```
 
-Runtime config 的唯一來源是 `trader/config.py` 的 `Config` class defaults。外部檔只載 credentials：
-
+Runtime config ?銝靘???`trader/config.py` ??`Config` class defaults???冽??芾? credentials嚗?
 ```text
 secrets.json -> Config.load_secrets()
 ```
 
-目前 reset runtime 的核心 intent：
-
+?桀? reset runtime ?敹?intent嚗?
 ```text
 STRATEGY_RUNTIME_ENABLED = false
 ENABLED_STRATEGIES = []
@@ -49,7 +33,7 @@ BTC_COUNTER_TREND_MULT = 0.0
 USE_SCANNER_SYMBOLS = true
 ```
 
-信任 runtime 前從 repo root 跑：
+靽∩遙 runtime ?? repo root 頝?
 
 ```bash
 python -c "from trader.config import Config; Config.validate()"
@@ -61,13 +45,7 @@ Frozen target is no longer `v54_noscale`.
 
 Frozen target = plugin runtime kernel contract:
 
-- `StrategyPlugin` / `SignalIntent` boundary。
-- `StrategyRuntime` routing and arbiter path。
-- central `RiskPlan` sizing and risk caps。
-- `PositionManager` / persistence schema compatibility。
-- `Config.validate()` fail-fast checks。
-- secrets-only credential loading。
-
+- `StrategyPlugin` / `SignalIntent` boundary??- `StrategyRuntime` routing and arbiter path??- central `RiskPlan` sizing and risk caps??- `PositionManager` / persistence schema compatibility??- `Config.validate()` fail-fast checks??- secrets-only credential loading??
 Plugins may evolve independently, but plugins must not:
 
 - size orders directly,
@@ -89,7 +67,7 @@ Locked spec lane adopted into the current pipeline:
 - `plans/cartridge_spec_donchian_range_fade_4h.md` - first implementation priority; structural range thesis, no ADX dependency.
 - `plans/cartridge_spec_bb_fade_squeeze_1h.md` - second implementation priority; HTF ADX + BBW squeeze ranging thesis.
 - `plans/cartridge_spec_rsi2_pullback_1h.md` - third implementation priority; ANY-regime pullback thesis, kept separate from declared-RANGING validation.
-- Do not add these ids to `trader/strategies/plugins/_catalog.py` until the concrete plugin files and focused tests land.
+- Catalog entries follow implementation. Do not add remaining locked-spec ids to `trader/strategies/plugins/_catalog.py` until the concrete plugin files and focused tests land.
 
 - `fixture_long` / `fixture_exit` - deterministic test fixtures.
 - `macd_zero_line_btc_1d` - pilot research plugin, not production-approved by default.
@@ -98,7 +76,11 @@ Locked spec lane adopted into the current pipeline:
 - `macd_signal_btc_4h_trending_up_confirmed` - confirmed-entry variant of the 4h MACD continuation cartridge, adds histogram-expansion and price-over-EMA checks under the same 1d trend gate.
 - `macd_signal_btc_4h_trending_up_confirmed_failfast` - fail-fast exit variant of the confirmed 4h MACD continuation cartridge, closes stalled continuation attempts after two 4h bars without follow-through.
 - `ema_cross_7_19_long_only` - first post-infra research cartridge, 4h BTC/ETH long-only.
-- `rsi_mean_reversion_15m` - gamma research cartridge, promotion-ineligible under checklist §5 (backtest engine lacks 15m support); kept as reference for future infra extension.
+- `donchian_range_fade_4h` - first ranging-lane implementation candidate, 4h BTC/ETH long-only, structural Donchian range geometry, RANGING regime-declared.
+- `donchian_range_fade_4h_range_width_cv_013` - threshold-relaxed Donchian child candidate, keeps the same range-geometry thesis and only widens `range_width_cv_max` to 0.13 after the narrow second-pass sweep woke the default RANGING window.
+- `donchian_range_fade_4h_range_width_cv_013_mid_drift_guard` - structural-validation child on top of the `0.13` Donchian candidate; keeps the relaxed width gate but rejects channels whose Donchian midpoint drifts too far during the detection window.
+- `donchian_range_fade_4h_range_width_cv_013_touch_imbalance_guard` - softer structural-validation child on top of the `0.13` Donchian candidate; keeps the relaxed width gate but rejects only the most one-sided boundary-touch structures.
+- `rsi_mean_reversion_15m` - gamma research cartridge, promotion-ineligible under checklist 禮5 (backtest engine lacks 15m support); kept as reference for future infra extension.
 - `rsi_mean_reversion_1h` - delta research cartridge replacing gamma, 1h BTC/ETH long-only, RANGING regime-declared.
 
 New candidate strategies from Ruei's research list should become strategy plugins before backtest:
@@ -208,7 +190,8 @@ python -m pytest trader/tests extensions/Backtesting/tests -q
 ## Current Next Work
 
 1. Continue MACD family research on its own queue; do not mix it with the ranging lane unless Ruei explicitly asks for a combined study.
-2. Land ranging-lane plugins from locked specs in this order: `donchian_range_fade_4h`, `bb_fade_squeeze_1h`, `rsi2_pullback_1h`.
-3. Add focused unit tests for each plugin.
-4. Run candidate backtests via StrategyRuntime.
-5. Use `reports/strategy_plugin_candidate_review.md` for promotion-gated review output.
+2. Donchian lane is now freeze-read: `donchian_range_fade_4h_range_width_cv_013` is the frozen leading child, `range_width_cv_013_mid_drift_guard` failed by collapsing back into starvation, and `range_width_cv_013_touch_imbalance_guard` completed as a softer validation pass that preserved `RANGING` but did not beat the parent.
+3. Next ranging implementation order resumes with `bb_fade_squeeze_1h`, then `rsi2_pullback_1h`.
+4. Add focused unit tests for each plugin.
+5. Run candidate backtests via StrategyRuntime.
+6. Use `reports/strategy_plugin_candidate_review.md` for promotion-gated review output.
