@@ -754,6 +754,97 @@ Reference report:
 
 - [chop-trend localization](</C:/Users/user/Documents/tradingbot/strategy-runtime-reset/reports/macd_signal_btc_4h_trending_up_chop_trend_localization.md:1>)
 
+### Transition-aware defense
+
+The next side-branch pass stopped sanding the `chop_trend` proxy and tested an
+explicit transition-risk trigger:
+
+- `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_transition_aware_late_entry_filter`
+
+Default review comparison:
+
+| candidate | trades | net_pnl | max_dd_pct | read |
+| --- | ---: | ---: | ---: | --- |
+| `partial67` working baseline | 46 | 1553.9654 | 4.4059 | reference |
+| `chop_trend_tightened_late_entry_filter` | 42 | 1848.6305 | 2.9860 | best aggregate localized proxy |
+| `transition_aware_late_entry_filter` | 37 | 1230.6759 | 4.5977 | transition surface repaired; aggregate too selective |
+| `late_entry_filter` | 16 | 1856.8086 | 1.8572 | strongest raw defense, strongest participation cut |
+
+Transition-aware read:
+
+- default `RANGING` repaired from `3 / -173.8867` to `1 / -45.2810`
+- `sideways_transition` flipped from `-196.9550` to `+97.3769`
+- `range_low_vol` returned to `0 / 0.0000`
+- `bull_strong_up_1` jumped to `+595.7043`
+- but default `TRENDING_UP` fell to `22 / +992.0771`
+- and both long windows stayed below `chop_trend_tightened`
+
+Interpretation:
+
+- this is the first localized side-branch pass that actually explains the
+  transition-defense surface
+- it filtered the two `2023-06-23` losers that the localized `chop_trend`
+  proxy still allowed
+- it even kept the `2023-07-13` winner that the unconditional
+  `late_entry_filter` cut
+- but the current explicit trigger is still too wide in the default
+  `TRENDING_UP` window, so it is not yet a promotion candidate
+
+Reference report:
+
+- [transition-aware defense](</C:/Users/user/Documents/tradingbot/strategy-runtime-reset/reports/macd_signal_btc_4h_trending_up_transition_aware_defense.md:1>)
+
+### Transition-aware tightening
+
+The next pass kept the same explicit transition context and only narrowed the
+veto arm:
+
+- `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_transition_aware_tightened_late_entry_filter`
+
+Attribution that justified the tightening:
+
+- the first explicit pass blocked default `TRENDING_UP` trades at
+  `1.49`, `2.37`, `2.80`, and `2.80 ATR`
+- the known `2023-06-23` `sideways_transition` losers sat out at `3.55 ATR`
+- so the narrowed child only vetoes transition-context entries at
+  `>= 3.0 ATR`
+
+Default review comparison:
+
+| candidate | trades | net_pnl | max_dd_pct | read |
+| --- | ---: | ---: | ---: | --- |
+| `partial67` working baseline | 46 | 1553.9654 | 4.4059 | reference |
+| `transition_aware_late_entry_filter` | 37 | 1230.6759 | 4.5977 | first explicit transition probe; too selective |
+| `transition_aware_tightened_late_entry_filter` | 44 | 1682.5711 | 4.4059 | first strict default-review improvement over `partial67` |
+| `chop_trend_tightened_late_entry_filter` | 42 | 1848.6305 | 2.9860 | best aggregate localized proxy |
+| `late_entry_filter` | 16 | 1856.8086 | 1.8572 | strongest raw defense, strongest participation cut |
+
+Transition-aware tightening read:
+
+- default `TRENDING_UP` recovered fully to `26 / +1484.5085`
+- default `MIXED` also recovered fully to `17 / +243.3437`
+- repaired default `RANGING` stayed intact at `1 / -45.2810`
+- `sideways_transition` stayed at `+97.3769`
+- `range_low_vol` and `ftx_style_crash` stayed at `0 / 0.0000`
+- `bull_strong_up_1` stayed at `+595.7043`
+- `recovery_2023_2024` jumped to `+2245.5016`, the strongest read in the
+  current side branch
+- but `bear_persistent_down` softened to `+243.3437`, still below
+  `chop_trend_tightened` and the unconditional defense reference
+
+Interpretation:
+
+- this is the first explicit transition child that strictly improves the
+  default review over `partial67`
+- the first explicit mechanism was valid; its arm was just too wide
+- this child becomes the leading explicit transition-surface candidate
+- but it does not replace `late_entry_filter` as the raw defense ceiling and
+  does not yet replace `chop_trend_tightened` as the bearish-defense reference
+
+Reference report:
+
+- [transition-aware tightening](</C:/Users/user/Documents/tradingbot/strategy-runtime-reset/reports/macd_signal_btc_4h_trending_up_transition_aware_tightening.md:1>)
+
 ## Current Read
 
 - `macd_signal_btc_4h_trending_up` remains the `frozen baseline` for this
@@ -802,6 +893,23 @@ Reference report:
     `range_low_vol` stray loser unresolved
   - it replaces `chop_trend_only` as the current localized-proxy reference,
     but not as the side-branch defense reference
+- the first `transition-aware defense` pass is now complete:
+  - `transition_aware_late_entry_filter` is the first localized proxy that
+    repaired default `RANGING` and flipped `sideways_transition` positive
+  - it also removed the `range_low_vol` stray loser and kept
+    `bull_strong_up_1` strong
+  - but default `TRENDING_UP` and the long windows paid too much tax
+  - it becomes the explicit transition-surface reference, but not the overall
+    side-branch reference
+- the first `transition-aware tightening` pass is now complete:
+  - `transition_aware_tightened_late_entry_filter` restored default
+    `TRENDING_UP` and `MIXED` back to `partial67`
+  - it kept the repaired default `RANGING`, `sideways_transition`,
+    `range_low_vol`, and `ftx_style_crash` surfaces intact
+  - it becomes the leading explicit transition-surface candidate and the first
+    side-branch child that strictly improves default review over `partial67`
+  - but `bear_persistent_down` still trails `chop_trend_tightened` and the
+    unconditional `late_entry_filter`
 - the `transition bleed` pass is now complete enough to move on:
   - persistence buffer was inactive until it over-waited
   - trend-decay filter was active but too defensive
@@ -815,7 +923,9 @@ Reference report:
   behind the working baseline.
 - `TRENDING_UP` sign is real and repeatable enough to justify keeping the
   family alive.
-- `RANGING` contamination remains manageable but unresolved.
+- `RANGING` contamination is now explicitly localizable in the
+  `transition_aware_tightened` lane, but broader side-branch ranking still
+  depends on how much bearish-defense weight we want to keep.
 - `derisk_close_pct` is now the main active tuning lever inside the staged
   exit family, with `0.67` now surviving both the min-3 sweep and a locked
   candidate review.
@@ -837,8 +947,8 @@ Reference report:
     beat the working baseline
   - remainder ratchet improved post-entry capture without changing entry
     count, but slightly clipped the 2021-2022 long window
-  - transition filters can identify some weak `MIXED` entries, but current
-    forms over-cut trend winners
+  - transition filters can identify weak transition tape, but current forms
+    still over-cut broader trend participation
 
 ## Ordered Research Queue
 
@@ -904,36 +1014,28 @@ Future structural comparisons should now run in this order:
      `range_low_vol` stray loser remain unchanged
    - next step: design explicit transition-aware triggers instead of
      continuing to sand the same extension-only lever
-10. `transition-aware defense — parallel probes`
-    - scope: two structurally different gate mechanisms, both targeting the
-      unresolved `sideways_transition` surface, implemented as parallel
-      probes so the next pass tests mechanism class, not just parameters
-    - probe A — divergence-based (state during signal):
-      `partial67_transition_aware_late_entry_filter` (Codex in progress;
-      spec at
-      `plans/cartridge_spec_macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_transition_aware_late_entry_filter.md`)
-      activates the late-entry cap when price is still breaking local highs
-      while `macd_hist` is materially weaker than the prior positive impulse
-    - probe B — event-based (regime-flip transition dynamics):
-      `partial67_squeeze_release_unconfirmed_late_entry_filter` (spec
-      landed; see
-      `plans/cartridge_spec_macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_squeeze_release_unconfirmed_late_entry_filter.md`)
-      activates the late-entry cap only when BBW has just released from a
-      true squeeze AND the prior 4h bar closed in the lower quarter of its
-      range (unconfirmed first breakout)
-    - evaluation rule: each probe runs a pinned-cell candidate review first;
-      no sweep and no OR-stacking between probes until each lands a clean
-      individual result
-    - pre-committed decision gates (applies to both probes):
-      - must pass: `sideways_transition` moves from `-196.9550` to `≥ -50`
-        (ideally positive)
-      - must not break: `bull_strong_up_1 ≥ +100`,
-        `classic_rollercoaster_2021_2022 ≥ +1700`, default `TRENDING_UP` ≥
-        `partial67 = +1484.5085`
-      - informative only: default `RANGING`, `range_low_vol` stray loser
-    - failure read: if both probes fail the `sideways_transition` gate,
-      collapse the mechanism class and redirect to window-specific macro
-      analysis for 2023-06~09 rather than more structural gate design
+10. `transition-aware defense`
+    - first pass complete via:
+      `partial67_transition_aware_late_entry_filter`
+    - read: this is the first localized pass that repaired default `RANGING`
+      and turned `sideways_transition` positive
+    - read: it also removed the `range_low_vol` stray loser and kept
+      `bull_strong_up_1` strong
+    - unresolved: default `TRENDING_UP` and both long windows paid too much
+      tax, so the candidate is still too wide
+    - tightening pass complete via:
+      `partial67_transition_aware_tightened_late_entry_filter`
+    - read: restored default `TRENDING_UP` and `MIXED` back to `partial67`
+      while keeping repaired `RANGING` and `sideways_transition`
+    - read: this is now the leading explicit transition-surface candidate and
+      the first strict default-review improvement over `partial67`
+    - unresolved: `bear_persistent_down` still trails both
+      `chop_trend_tightened` and `late_entry_filter`
+    - pending alternate mechanism:
+      `partial67_squeeze_release_unconfirmed_late_entry_filter` remains an
+      unrun event-based follow-up spec, not yet a landed candidate
+    - next step: compare the tightened explicit-transition child against the
+      pending event-based alternate mechanism before any further stacking
 
 ## Resume Point
 
@@ -950,11 +1052,12 @@ When work resumes, do **not**:
   threshold
 - treat the localized `chop_trend` result as a solved transition-defense
   branch
-- sweep any of the new transition-aware probe params before its pinned-cell
-  candidate review lands a signal
-- OR-stack the divergence-based (`transition_aware`) and event-based
-  (`squeeze_release_unconfirmed`) probes before each has a clean individual
-  candidate review
+- treat the tightened `transition_aware` result as a solved side-branch
+  outcome
+- keep micro-sweeping the tightened `transition_aware` threshold before an
+  alternate mechanism gets the same head-to-head review
+- OR-stack the explicit `transition_aware` probe with another transition
+  trigger before each has a clean individual candidate review
 
 Next step should start from the `working baseline`
 `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67`, while
@@ -983,18 +1086,26 @@ The queue is now explicitly split:
        far
      - it repaired most of the bullish tax without losing crash avoidance
      - it still did not fix `sideways_transition`
-   - next pass now runs two parallel transition-aware probes (see ordered
-     queue item 10):
-     - probe A `partial67_transition_aware_late_entry_filter` —
-       divergence-based (price-chase + hist-fade) — Codex in progress
-     - probe B `partial67_squeeze_release_unconfirmed_late_entry_filter` —
-       event-based (BBW squeeze release + unconfirmed first breakout bar) —
-       spec landed, pinned cell pre-committed, no sweep before signal
-   - pre-committed decision gates for both probes are in queue item 10
+   - first explicit transition-aware pass is now complete:
+     - `transition_aware_late_entry_filter` repaired default `RANGING` and
+       flipped `sideways_transition` positive
+     - it also removed the `range_low_vol` stray loser
+     - but it over-cut default `TRENDING_UP`
+   - first transition-aware tightening pass is now complete:
+     - `transition_aware_tightened_late_entry_filter` restored default
+       `TRENDING_UP` and `MIXED` back to `partial67`
+     - it kept the repaired `RANGING`, `sideways_transition`,
+       `range_low_vol`, and `ftx_style_crash` surfaces intact
+     - it is now the leading explicit transition-surface candidate
+     - but `bear_persistent_down` still trails the stronger bearish-defense
+       references
+   - pending alternate mechanism:
+     - `partial67_squeeze_release_unconfirmed_late_entry_filter` stays as an
+       unrun follow-up spec only
    - do not promote any side-branch result into the bullish mainline without an
      explicit context gate that is actually localized
-   - do not OR-stack the two transition probes before each lands a clean
-     individual candidate review
+   - do not OR-stack transition probes before each lands a clean individual
+     candidate review
 
 Guardrail:
 

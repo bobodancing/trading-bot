@@ -16,6 +16,8 @@
 | `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_trend_decay_only_late_entry_filter` | 3 | 41 | 1604.2942 | 4.3940 |
 | `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_chop_trend_only_late_entry_filter` | 3 | 41 | 1827.4113 | 2.9913 |
 | `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_chop_trend_tightened_late_entry_filter` | 3 | 42 | 1848.6305 | 2.9860 |
+| `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_transition_aware_late_entry_filter` | 3 | 37 | 1230.6759 | 4.5977 |
+| `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_transition_aware_tightened_late_entry_filter` | 3 | 44 | 1682.5711 | 4.4059 |
 | `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_late_entry_filter` | 3 | 16 | 1856.8086 | 1.8572 |
 
 ## Per-Window Detail
@@ -37,6 +39,12 @@
 | `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_chop_trend_tightened_late_entry_filter` | TRENDING_UP | 24 | 1670.0429 | 2.7932 | 0 | 0 |
 | `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_chop_trend_tightened_late_entry_filter` | RANGING | 3 | -173.8867 | 1.9442 | 0 | 0 |
 | `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_chop_trend_tightened_late_entry_filter` | MIXED | 15 | 352.4744 | 2.9860 | 0 | 0 |
+| `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_transition_aware_late_entry_filter` | TRENDING_UP | 22 | 992.0771 | 4.5977 | 0 | 0 |
+| `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_transition_aware_late_entry_filter` | RANGING | 1 | -45.2810 | 0.9090 | 0 | 0 |
+| `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_transition_aware_late_entry_filter` | MIXED | 14 | 283.8799 | 2.5850 | 0 | 0 |
+| `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_transition_aware_tightened_late_entry_filter` | TRENDING_UP | 26 | 1484.5085 | 4.4059 | 0 | 0 |
+| `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_transition_aware_tightened_late_entry_filter` | RANGING | 1 | -45.2810 | 0.9090 | 0 | 0 |
+| `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_transition_aware_tightened_late_entry_filter` | MIXED | 17 | 243.3437 | 3.0192 | 0 | 0 |
 | `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_late_entry_filter` | TRENDING_UP | 9 | 1401.7272 | 1.8572 | 0 | 0 |
 | `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_late_entry_filter` | RANGING | 1 | -45.2810 | 0.9090 | 0 | 0 |
 | `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_late_entry_filter` | MIXED | 6 | 500.3624 | 1.7122 | 0 | 0 |
