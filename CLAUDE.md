@@ -83,6 +83,14 @@ Plugins may evolve independently, but plugins must not:
 
 Current known plugin entries:
 
+Locked spec lane adopted into the current pipeline:
+
+- `plans/ranging_strategy_brainstorm_design.md` is brainstorming / handoff context only. Do not implement directly from that file when a locked cartridge spec exists.
+- `plans/cartridge_spec_donchian_range_fade_4h.md` - first implementation priority; structural range thesis, no ADX dependency.
+- `plans/cartridge_spec_bb_fade_squeeze_1h.md` - second implementation priority; HTF ADX + BBW squeeze ranging thesis.
+- `plans/cartridge_spec_rsi2_pullback_1h.md` - third implementation priority; ANY-regime pullback thesis, kept separate from declared-RANGING validation.
+- Do not add these ids to `trader/strategies/plugins/_catalog.py` until the concrete plugin files and focused tests land.
+
 - `fixture_long` / `fixture_exit` - deterministic test fixtures.
 - `macd_zero_line_btc_1d` - pilot research plugin, not production-approved by default.
 - `macd_zero_line_btc_1d_trending_up` - regime-aware MACD follow-up cartridge, 1d BTC long-only, TRENDING_UP regime-declared.
@@ -199,7 +207,8 @@ python -m pytest trader/tests extensions/Backtesting/tests -q
 
 ## Current Next Work
 
-1. Convert selected research ideas into StrategyPlugin candidates.
-2. Add focused unit tests for each plugin.
-3. Run candidate backtests via StrategyRuntime.
-4. Use `reports/strategy_plugin_candidate_review.md` for promotion-gated review output.
+1. Continue MACD family research on its own queue; do not mix it with the ranging lane unless Ruei explicitly asks for a combined study.
+2. Land ranging-lane plugins from locked specs in this order: `donchian_range_fade_4h`, `bb_fade_squeeze_1h`, `rsi2_pullback_1h`.
+3. Add focused unit tests for each plugin.
+4. Run candidate backtests via StrategyRuntime.
+5. Use `reports/strategy_plugin_candidate_review.md` for promotion-gated review output.

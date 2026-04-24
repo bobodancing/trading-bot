@@ -8,6 +8,13 @@
 > Author: 小波 (brainstorming session with Ruei)
 > Skill: `superpowers:brainstorming`
 
+> Pipeline note (2026-04-24): this file is now brainstorming / handoff context only.
+> The current pipeline executes from the locked cartridge specs:
+> `plans/cartridge_spec_donchian_range_fade_4h.md` ->
+> `plans/cartridge_spec_bb_fade_squeeze_1h.md` ->
+> `plans/cartridge_spec_rsi2_pullback_1h.md`.
+> Do not add catalog entries for those ids until the concrete plugins and focused tests exist.
+
 ---
 
 ## 0. Why this document exists
