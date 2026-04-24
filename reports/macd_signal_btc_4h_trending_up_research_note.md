@@ -902,8 +902,38 @@ Future structural comparisons should now run in this order:
      keeping `bear_persistent_down` and `ftx_style_crash` intact
    - unresolved: default `RANGING`, `sideways_transition`, and the
      `range_low_vol` stray loser remain unchanged
-   - next step: design a more explicit transition-aware trigger instead of
+   - next step: design explicit transition-aware triggers instead of
      continuing to sand the same extension-only lever
+10. `transition-aware defense — parallel probes`
+    - scope: two structurally different gate mechanisms, both targeting the
+      unresolved `sideways_transition` surface, implemented as parallel
+      probes so the next pass tests mechanism class, not just parameters
+    - probe A — divergence-based (state during signal):
+      `partial67_transition_aware_late_entry_filter` (Codex in progress;
+      spec at
+      `plans/cartridge_spec_macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_transition_aware_late_entry_filter.md`)
+      activates the late-entry cap when price is still breaking local highs
+      while `macd_hist` is materially weaker than the prior positive impulse
+    - probe B — event-based (regime-flip transition dynamics):
+      `partial67_squeeze_release_unconfirmed_late_entry_filter` (spec
+      landed; see
+      `plans/cartridge_spec_macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_squeeze_release_unconfirmed_late_entry_filter.md`)
+      activates the late-entry cap only when BBW has just released from a
+      true squeeze AND the prior 4h bar closed in the lower quarter of its
+      range (unconfirmed first breakout)
+    - evaluation rule: each probe runs a pinned-cell candidate review first;
+      no sweep and no OR-stacking between probes until each lands a clean
+      individual result
+    - pre-committed decision gates (applies to both probes):
+      - must pass: `sideways_transition` moves from `-196.9550` to `≥ -50`
+        (ideally positive)
+      - must not break: `bull_strong_up_1 ≥ +100`,
+        `classic_rollercoaster_2021_2022 ≥ +1700`, default `TRENDING_UP` ≥
+        `partial67 = +1484.5085`
+      - informative only: default `RANGING`, `range_low_vol` stray loser
+    - failure read: if both probes fail the `sideways_transition` gate,
+      collapse the mechanism class and redirect to window-specific macro
+      analysis for 2023-06~09 rather than more structural gate design
 
 ## Resume Point
 
@@ -920,6 +950,11 @@ When work resumes, do **not**:
   threshold
 - treat the localized `chop_trend` result as a solved transition-defense
   branch
+- sweep any of the new transition-aware probe params before its pinned-cell
+  candidate review lands a signal
+- OR-stack the divergence-based (`transition_aware`) and event-based
+  (`squeeze_release_unconfirmed`) probes before each has a clean individual
+  candidate review
 
 Next step should start from the `working baseline`
 `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67`, while
@@ -948,10 +983,18 @@ The queue is now explicitly split:
        far
      - it repaired most of the bullish tax without losing crash avoidance
      - it still did not fix `sideways_transition`
-   - next pass should add a more explicit `sideways_transition` /
-     transition-aware trigger
+   - next pass now runs two parallel transition-aware probes (see ordered
+     queue item 10):
+     - probe A `partial67_transition_aware_late_entry_filter` —
+       divergence-based (price-chase + hist-fade) — Codex in progress
+     - probe B `partial67_squeeze_release_unconfirmed_late_entry_filter` —
+       event-based (BBW squeeze release + unconfirmed first breakout bar) —
+       spec landed, pinned cell pre-committed, no sweep before signal
+   - pre-committed decision gates for both probes are in queue item 10
    - do not promote any side-branch result into the bullish mainline without an
      explicit context gate that is actually localized
+   - do not OR-stack the two transition probes before each lands a clean
+     individual candidate review
 
 Guardrail:
 
