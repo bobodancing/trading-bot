@@ -1,6 +1,6 @@
 ﻿# CLAUDE.md - strategy-runtime-reset 撌乩?摰?
 
-Last updated: 2026-04-18. If this file conflicts with code, trust code first.
+Last updated: 2026-04-29. If this file conflicts with code, trust code first.
 
 ## 頨思遢????
 - ?撠郭嚗uei 摰園?曌?????- 隤?嚗?擃葉??+ English technical terms??- 憸冽嚗?乓陛瞏oken-aware?府??撠勗?撠?- ?? code / git log / local context嚗???憿?- Code ?芸?嚗???????- Comments 撖?why嚗?撖?what??- ??嚗sia/Taipei??
@@ -75,6 +75,7 @@ Locked spec lane adopted into the current pipeline:
 - `macd_signal_btc_4h_trending_up` - higher-frequency MACD continuation cartridge, BTC 4h entries under a 1d trend gate, TRENDING_UP regime-declared.
 - `macd_signal_btc_4h_trending_up_confirmed` - confirmed-entry variant of the 4h MACD continuation cartridge, adds histogram-expansion and price-over-EMA checks under the same 1d trend gate.
 - `macd_signal_btc_4h_trending_up_confirmed_failfast` - fail-fast exit variant of the confirmed 4h MACD continuation cartridge, closes stalled continuation attempts after two 4h bars without follow-through.
+- `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_transition_aware_tightened_late_entry_filter` - promoted Slot A runtime candidate, BTC 4h continuation under a 1d trend gate with tightened transition-aware late-entry defense.
 - `ema_cross_7_19_long_only` - first post-infra research cartridge, 4h BTC/ETH long-only.
 - `donchian_range_fade_4h` - first ranging-lane implementation candidate, 4h BTC/ETH long-only, structural Donchian range geometry, RANGING regime-declared.
 - `donchian_range_fade_4h_range_width_cv_013` - threshold-relaxed Donchian child candidate, keeps the same range-geometry thesis and only widens `range_width_cv_max` to 0.13 after the narrow second-pass sweep woke the default RANGING window.
@@ -189,9 +190,19 @@ python -m pytest trader/tests extensions/Backtesting/tests -q
 
 ## Current Next Work
 
-1. Continue MACD family research on its own queue; do not mix it with the ranging lane unless Ruei explicitly asks for a combined study.
-2. Donchian lane is now freeze-read: `donchian_range_fade_4h_range_width_cv_013` is the frozen leading child, `range_width_cv_013_mid_drift_guard` failed by collapsing back into starvation, and `range_width_cv_013_touch_imbalance_guard` completed as a softer validation pass that preserved `RANGING` but did not beat the parent.
-3. Next ranging implementation order resumes with `bb_fade_squeeze_1h`, then `rsi2_pullback_1h`.
-4. Add focused unit tests for each plugin.
-5. Run candidate backtests via StrategyRuntime.
-6. Use `reports/strategy_plugin_candidate_review.md` for promotion-gated review output.
+1. Portfolio A+B has been promoted into runtime defaults by Ruei approval:
+   commit `5dee878` enabled the catalog entries and commit `1933e65` set
+   `STRATEGY_RUNTIME_ENABLED=True` with the frozen pair in `ENABLED_STRATEGIES`.
+2. Promoted candidate pair:
+   Slot A `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_transition_aware_tightened_late_entry_filter`;
+   Slot B `donchian_range_fade_4h_range_width_cv_013`.
+3. Next immediate work is post-promotion control: update promotion artifacts,
+   verify runtime-default parity, run a small promoted-default smoke backtest,
+   and define deployment boundary. Do not start new alpha research during this
+   control pass.
+4. After post-promotion control, close Phase 4 RSI2 attribution and Phase 5 BB
+   rescue/park decision from `plans/2026-04-25_portfolio_research_reorder_plan.md`.
+5. `plans/2026-04-25_strategy_research_backlog_design.md` is now scheduled as
+   the recovery pool after Phase 4/5 closeout plus trigger review. Do not
+   implement backlog plugins until a trigger review memo and explicit Ruei
+   approval select exactly one mechanism pair.
