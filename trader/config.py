@@ -145,8 +145,11 @@ class Config:
 
     # ==================== Strategy Runtime ====================
 
-    STRATEGY_RUNTIME_ENABLED = False
-    ENABLED_STRATEGIES: list = []
+    STRATEGY_RUNTIME_ENABLED = True
+    ENABLED_STRATEGIES: list = [
+        "macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_transition_aware_tightened_late_entry_filter",
+        "donchian_range_fade_4h_range_width_cv_013",
+    ]
     DEFAULT_STRATEGY_RISK_PROFILE = "central_default"
 
     # ==================== Persistence / Debug ====================
