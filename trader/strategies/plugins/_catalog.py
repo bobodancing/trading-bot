@@ -269,7 +269,7 @@ STRATEGY_CATALOG: dict[str, dict[str, Any]] = {
         },
     },
     "macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_transition_aware_tightened_late_entry_filter": {
-        "enabled": False,
+        "enabled": True,
         "module": "trader.strategies.plugins.macd_signal_trending_up_4h_staged_derisk_giveback_partial67_transition_aware_tightened_late_entry_filter",
         "class": "MacdSignalTrendingUp4hStagedDeriskGivebackPartial67TransitionAwareTightenedLateEntryFilterStrategy",
         "params": {
@@ -441,7 +441,7 @@ STRATEGY_CATALOG: dict[str, dict[str, Any]] = {
         },
     },
     "donchian_range_fade_4h_range_width_cv_013": {
-        "enabled": False,
+        "enabled": True,
         "module": "trader.strategies.plugins.donchian_range_fade_4h_range_width_cv_013",
         "class": "DonchianRangeFade4hRangeWidthCv013Strategy",
         "params": {
