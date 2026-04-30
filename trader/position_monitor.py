@@ -244,6 +244,10 @@ class PositionMonitor:
             'FAST_STOP_067R': 'early_stop_r',
             'BACKTEST_STOP_TRIGGER': 'sl_hit',
             'BACKTEST_END': 'backtest_end',
+            'RSI2_EXIT_TARGET': 'rsi2_exit_target',
+            'SMA5_BOUNCE_EXIT': 'sma5_bounce_exit',
+            'TIME_STOP': 'time_stop',
+            'HTF_TREND_FLIP': 'htf_trend_flip',
         }
         return decision_map.get(decision_reason)
 
