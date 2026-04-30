@@ -10,7 +10,7 @@ an unconfirmed first breakout bar, rather than on an instantaneous compression
 state. Keeps the `partial67` entry, staged exit, and late-entry stretch cap
 unchanged; only replaces the cap's activation context.
 
-## Research Spec
+## Locked Spec
 - id: macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_squeeze_release_unconfirmed_late_entry_filter
 - scope: BTC/USDT on 4h entries, 1d trend gate, long-only
 - indicators:
@@ -54,6 +54,14 @@ unchanged; only replaces the cap's activation context.
   - squeeze_trough_pctrank_max=15.0
   - weak_breakout_upper_fraction=0.25
 - regime: target_regime = TRENDING_UP
+- off-regime entry suppression: the 1d trend gate suppresses entries unless
+  `ema_20 > ema_50` and `(ema_20 - ema_50) / ema_50 >= trend_spread_min`.
+
+## Regime Declaration
+- target_regime: TRENDING_UP
+- rationale: The cartridge is a BTC 4h long-only continuation strategy guarded
+  by a 1d bullish EMA trend gate; its side-branch veto only localizes weak-tape
+  defense and does not change the declared trend-following thesis.
 
 ## Research Intent
 - primary question:

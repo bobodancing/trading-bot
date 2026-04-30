@@ -7,7 +7,7 @@ keeps the baseline price-geometry thesis unchanged and only relaxes
 starved the default `RANGING` window and the narrow second-pass sweep showed
 that `0.13` is the first cell that wakes the declared regime surface.
 
-## Research Spec
+## Locked Spec
 - id: donchian_range_fade_4h_range_width_cv_013
 - scope: BTC/USDT, ETH/USDT on 4h, long-only, single-timeframe
 - indicators: unchanged from `donchian_range_fade_4h`
@@ -38,6 +38,14 @@ that `0.13` is the first cell that wakes the declared regime surface.
   - cooldown_bars=3
   - emit_once=True
 - regime: target_regime = RANGING
+- off-regime entry suppression: plugin-local `range_detected` must be true via
+  `width_cv < 0.13` plus minimum lower/upper Donchian touch counts before any
+  lower-band fade entry can emit.
+
+## Regime Declaration
+- target_regime: RANGING
+- rationale: The cartridge thesis is structural range fade; entries require a
+  stable Donchian range shape before buying the lower boundary.
 
 ## Research Intent
 - primary question:

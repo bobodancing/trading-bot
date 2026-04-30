@@ -7,7 +7,7 @@ same explicit transition-risk proxy, but only lets that proxy veto the signal
 when the entry is an extreme `>= 3.0 ATR` chase instead of any
 `> 1.25 ATR` overshoot.
 
-## Research Spec
+## Locked Spec
 - id: macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_transition_aware_tightened_late_entry_filter
 - scope: BTC/USDT on 4h entries, 1d trend gate, long-only
 - indicators:
@@ -47,6 +47,14 @@ when the entry is an extreme `>= 3.0 ATR` chase instead of any
   - transition_prior_positive_hist_min=10.0
   - transition_extension_atr_trigger=3.0
 - regime: target_regime = TRENDING_UP
+- off-regime entry suppression: the 1d trend gate suppresses entries unless
+  `ema_20 > ema_50` and `(ema_20 - ema_50) / ema_50 >= trend_spread_min`.
+
+## Regime Declaration
+- target_regime: TRENDING_UP
+- rationale: The cartridge is a BTC 4h long-only continuation strategy guarded
+  by a 1d bullish EMA trend gate; the tightened transition veto is a weak-tape
+  defense layer, not a separate ranging thesis.
 
 ## Research Intent
 - primary question:
