@@ -34,10 +34,13 @@ class Config:
 
     # ==================== Universe / Scanner ====================
 
-    SYMBOLS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'DOGE/USDT']
+    SYMBOLS = ['BTC/USDT', 'ETH/USDT']
 
-    USE_SCANNER_SYMBOLS = True
+    # The promoted StrategyRuntime portfolio is fixed by Config + plugin scope.
+    # Scanner output is runtime diagnostics, not a live universe selector.
+    USE_SCANNER_SYMBOLS = False
     SCANNER_JSON_PATH = 'hot_symbols.json'
+    RUNTIME_SCANNER_JSON_PATH = 'runtime_scanner.json'
     SCANNER_MAX_AGE_MINUTES = 30
 
     # ==================== Signal & Indicators ====================

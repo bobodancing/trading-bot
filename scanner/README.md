@@ -1,51 +1,49 @@
-# 🔍 Market Scanner v1.0
+# Scanner
 
-**主動掃描加密貨幣市場，找出最符合 2B 策略的交易機會**
+The scanner package now has two separate roles:
 
-## 📋 快速開始
+- `runtime_scanner.py`: current runtime diagnostics for the promoted StrategyRuntime portfolio.
+- `market_scanner.py`: legacy 2B research scanner, retained for historical/research use.
+
+## Runtime Scanner
+
+The promoted A+B runtime does not use scanner output as its tradable universe.
+The live universe is fixed by `trader.config.Config.SYMBOLS` and each enabled
+plugin's `allowed_symbols`.
+
+Run a one-shot runtime diagnostics report:
 
 ```bash
-# 單次掃描
+python -m scanner.runtime_scanner
+```
+
+Default output:
+
+```text
+runtime_scanner.json
+```
+
+The runtime report intentionally does not write `bot_symbols` or `hot_symbols`.
+It reports:
+
+- enabled strategy ids and plugin scopes
+- runtime symbols derived from plugin scope
+- OHLCV data depth and freshness by timeframe
+- 4h regime feature diagnostics aligned with `RegimeArbiter`
+- Slot A MACD trend/readiness telemetry
+- Slot B Donchian range/readiness telemetry
+
+This report is advisory only. It does not size orders, place orders, mutate
+`Config`, or feed `StrategyRuntime.scan_for_entries()`.
+
+## Legacy 2B Scanner
+
+The old market scanner is still available:
+
+```bash
 python -m scanner.market_scanner --once
-
-# 循環掃描（每 15 分鐘）
-python -m scanner.market_scanner
-
-# 使用自定義配置
-python -m scanner.market_scanner --config scanner/scanner_config.json
 ```
 
-## 🔬 四層過濾邏輯
-
-| 層級 | 名稱 | 功能 |
-|-----|------|------|
-| Layer 1 | 流動性過濾 | 排除低流動性幣種 |
-| Layer 2 | 動能篩選 | 找出有趨勢的標的 |
-| Layer 3 | 形態匹配 | 2B 信號 + 預警 |
-| Layer 4 | 相關性過濾 | 分散風險 |
-
-## 📊 輸出檔案
-
-- `hot_symbols.json` - 掃描結果（供 Bot 讀取）
-- `scanner_results.db` - 歷史記錄
-- `scanner.log` - 日誌
-
-## ⚙️ 配置說明
-
-編輯 `scanner_config.json` 調整參數：
-
-```json
-{
-    "L1_MIN_VOLUME_USD": 50000000,  // 最低 24H 成交量
-    "L2_MIN_ADX": 20,               // 最低 ADX 值
-    "L3_PRE_2B_THRESHOLD": 0.5,     // Pre-2B 預警距離
-    "L4_MAX_PER_SECTOR": 2,         // 同板塊最多標的
-    "OUTPUT_TOP_N": 10              // 輸出 Top N
-}
-```
-
-## 🔗 與 Trading Bot 整合
-
-Scanner 結果會自動保存到 `hot_symbols.json`，Trading Bot 可讀取此檔案使用動態標的。
-
-詳見主專案 README。
+It writes the legacy `hot_symbols.json` contract with `hot_symbols` and
+`bot_symbols`. That output is no longer the default live runtime universe for
+the promoted A+B portfolio.

@@ -1,35 +1,34 @@
-# -*- coding: utf-8 -*-
-"""
-Market Scanner 模組
-==================
-從 scanner 資料夾導入主要類別
-"""
+"""Scanner package exports."""
 
 from .market_scanner import (
+    SCANNER_AVAILABLE,
     MarketScanner,
-    ScannerConfig,
-    ScanResult,
     MarketSummary,
-    StructureAnalysis,
+    ScanResult,
+    ScannerConfig,
     SignalSide,
     SignalType,
-    VolumeGrade,
+    StructureAnalysis,
     StructureQuality,
+    VolumeGrade,
     get_sector,
-    SCANNER_AVAILABLE
 )
+from .runtime_scanner import RuntimeScanner, RuntimeScannerSettings
 
-__version__ = "1.0.0"
+__version__ = "2.0.0"
+
 __all__ = [
-    'MarketScanner',
-    'ScannerConfig', 
-    'ScanResult',
-    'MarketSummary',
-    'StructureAnalysis',
-    'SignalSide',
-    'SignalType',
-    'VolumeGrade',
-    'StructureQuality',
-    'get_sector',
-    'SCANNER_AVAILABLE'
+    "MarketScanner",
+    "ScannerConfig",
+    "ScanResult",
+    "MarketSummary",
+    "StructureAnalysis",
+    "SignalSide",
+    "SignalType",
+    "VolumeGrade",
+    "StructureQuality",
+    "get_sector",
+    "SCANNER_AVAILABLE",
+    "RuntimeScanner",
+    "RuntimeScannerSettings",
 ]
