@@ -269,7 +269,7 @@ class ScannerUniverseScanner:
         return supported or None
 
     def _rank_tickers(self, tickers: Mapping[str, Any]) -> list[dict[str, Any]]:
-        candidates: list[dict[str, Any]] = []
+        candidates_by_symbol: dict[str, dict[str, Any]] = {}
         for key, ticker in tickers.items():
             if not isinstance(ticker, Mapping):
                 continue
@@ -278,16 +278,17 @@ class ScannerUniverseScanner:
                 continue
             symbol = _normalize_symbol(raw_symbol)
             quote_volume = _as_float(ticker.get("quoteVolume"))
-            candidates.append(
-                {
-                    "symbol": symbol,
-                    "quote_volume_24h": quote_volume,
-                    "raw_symbol": raw_symbol,
-                }
-            )
+            candidate = {
+                "symbol": symbol,
+                "quote_volume_24h": quote_volume,
+                "raw_symbol": raw_symbol,
+            }
+            existing = candidates_by_symbol.get(symbol)
+            if existing is None or _volume_sort_value(candidate) > _volume_sort_value(existing):
+                candidates_by_symbol[symbol] = candidate
         return sorted(
-            candidates,
-            key=lambda item: item["quote_volume_24h"] if item["quote_volume_24h"] is not None else -1.0,
+            candidates_by_symbol.values(),
+            key=_volume_sort_value,
             reverse=True,
         )
 
@@ -421,6 +422,11 @@ def _clean_number(value: Any, digits: int = 8) -> Optional[float]:
     if number is None:
         return None
     return round(number, digits)
+
+
+def _volume_sort_value(candidate: Mapping[str, Any]) -> float:
+    quote_volume = candidate.get("quote_volume_24h")
+    return float(quote_volume) if quote_volume is not None else -1.0
 
 
 def _json_default(value: Any) -> Any:

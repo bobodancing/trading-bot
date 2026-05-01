@@ -44,6 +44,7 @@ def _exchange():
     exchange = MagicMock()
     exchange.markets = {
         "BTC/USDT:USDT": {"symbol": "BTC/USDT:USDT"},
+        "BTC/USDT:USDT-LOW": {"symbol": "BTC/USDT:USDT-LOW"},
         "ETH/USDT:USDT": {"symbol": "ETH/USDT:USDT"},
         "USDC/USDT:USDT": {"symbol": "USDC/USDT:USDT"},
         "LOW/USDT:USDT": {"symbol": "LOW/USDT:USDT"},
@@ -51,6 +52,7 @@ def _exchange():
     }
     exchange.fetch_tickers.return_value = {
         "BTC/USDT:USDT": {"symbol": "BTC/USDT:USDT", "quoteVolume": 90_000_000_000.0},
+        "BTC/USDT:USDT-LOW": {"symbol": "BTC/USDT:USDT-LOW", "quoteVolume": 1_000.0},
         "ETH/USDT:USDT": {"symbol": "ETH/USDT:USDT", "quoteVolume": 40_000_000_000.0},
         "USDC/USDT:USDT": {"symbol": "USDC/USDT:USDT", "quoteVolume": 5_000_000_000.0},
         "LOW/USDT:USDT": {"symbol": "LOW/USDT:USDT", "quoteVolume": 10_000.0},
@@ -85,6 +87,7 @@ def test_scanner_universe_filters_liquid_usdt_symbols_and_reason_codes(tmp_path)
         item["symbol"]: set(item["reason_codes"])
         for item in report["excluded_symbols"]
     }
+    assert "BTC/USDT" not in excluded
     assert "excluded_symbol" in excluded["USDC/USDT"]
     assert "low_volume" in excluded["LOW/USDT"]
     assert "excluded_pattern" in excluded["BTCUP/USDT"]
