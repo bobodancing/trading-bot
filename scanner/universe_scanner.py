@@ -12,6 +12,7 @@ import json
 import logging
 import os
 import sys
+import time
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -70,6 +71,7 @@ class ScannerUniverseSettings:
     candidate_scan_limit: int = 60
     min_quote_volume_usd: float = 20_000_000.0
     max_age_minutes: int = 30
+    scan_interval_minutes: float = 15.0
     freshness_multiplier: float = 2.5
     max_excluded_symbols: int = 200
     required_timeframes: dict[str, int] = field(default_factory=_default_required_timeframes)
@@ -122,6 +124,12 @@ class ScannerUniverseSettings:
             ),
             max_age_minutes=int(
                 data.get("SCANNER_UNIVERSE_MAX_AGE_MINUTES", cls.max_age_minutes)
+            ),
+            scan_interval_minutes=float(
+                data.get(
+                    "SCANNER_UNIVERSE_SCAN_INTERVAL_MINUTES",
+                    cls.scan_interval_minutes,
+                )
             ),
             freshness_multiplier=float(
                 data.get("SCANNER_UNIVERSE_FRESHNESS_MULTIPLIER", cls.freshness_multiplier)
@@ -230,10 +238,12 @@ class ScannerUniverseScanner:
     def write_report(self, report: Mapping[str, Any]) -> Path:
         path = self.settings.output_json_path
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
+        temp_path = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+        temp_path.write_text(
             json.dumps(report, indent=2, sort_keys=True, ensure_ascii=True, default=_json_default),
             encoding="utf-8",
         )
+        temp_path.replace(path)
         logger.info("Scanner universe wrote %s", path)
         return path
 
@@ -449,23 +459,63 @@ def _parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser.add_argument("--config", default=str(DEFAULT_CONFIG_PATH))
     parser.add_argument("--output", default=None)
     parser.add_argument("--no-write", action="store_true")
+    parser.add_argument("--loop", action="store_true", help="Run continuously at the configured interval")
+    parser.add_argument("--once", action="store_true", help="Run one scan and exit (default)")
+    parser.add_argument("--interval-minutes", type=float, default=None)
     return parser.parse_args(argv)
+
+
+def _run_once(scanner: ScannerUniverseScanner, *, write: bool, print_report: bool) -> dict[str, Any]:
+    report = scanner.scan(write=write)
+    if print_report:
+        print(json.dumps(report, indent=2, sort_keys=True, ensure_ascii=True, default=_json_default))
+    return report
 
 
 def main(argv: Optional[list[str]] = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
     args = _parse_args(argv)
+    if args.loop and args.once:
+        raise SystemExit("--loop and --once are mutually exclusive")
+
     settings = ScannerUniverseSettings.from_json(args.config)
     if args.output:
         output_path = Path(os.path.expanduser(args.output))
         if not output_path.is_absolute():
             output_path = PROJECT_ROOT / output_path
         settings = replace(settings, output_json_path=output_path)
+    if args.interval_minutes is not None:
+        settings = replace(settings, scan_interval_minutes=float(args.interval_minutes))
+    if settings.scan_interval_minutes <= 0:
+        raise SystemExit("scan interval must be positive")
 
     scanner = ScannerUniverseScanner(settings=settings)
-    report = scanner.scan(write=not args.no_write)
-    if args.no_write:
-        print(json.dumps(report, indent=2, sort_keys=True, ensure_ascii=True, default=_json_default))
+    if not args.loop:
+        _run_once(scanner, write=not args.no_write, print_report=args.no_write)
+        return 0
+
+    interval_seconds = settings.scan_interval_minutes * 60
+    logger.info(
+        "Scanner universe loop started: interval=%.2f minute(s), output=%s",
+        settings.scan_interval_minutes,
+        settings.output_json_path,
+    )
+    while True:
+        try:
+            _run_once(scanner, write=not args.no_write, print_report=args.no_write)
+            logger.info("Scanner universe sleeping %.2f minute(s)", settings.scan_interval_minutes)
+            time.sleep(interval_seconds)
+        except KeyboardInterrupt:
+            logger.info("Scanner universe loop stopped")
+            return 0
+        except Exception as exc:
+            retry_seconds = min(interval_seconds, 60.0)
+            logger.exception(
+                "Scanner universe loop scan failed: %s; retrying in %.0f second(s)",
+                exc,
+                retry_seconds,
+            )
+            time.sleep(retry_seconds)
     return 0
 
 

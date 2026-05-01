@@ -51,6 +51,22 @@ Default output:
 scanner_universe.json
 ```
 
+The command above runs once and exits, which is still the safest mode for cron.
+For a long-running scanner process, use loop mode:
+
+```bash
+python -m scanner.universe_scanner --loop --interval-minutes 15
+```
+
+Use either cron one-shot execution or loop mode, not both, so two scanner
+processes do not compete to update the same file.
+
+Loop mode only rewrites `scanner_universe.json`; it does not import or run
+`bot.py`. Runtime remains decoupled and will keep falling back to
+`Config.SYMBOLS` if the universe file is missing, stale, or malformed. Universe
+writes use an atomic temp-file replace so `bot.py` should not read a half-written
+JSON file.
+
 The universe scanner filters Binance futures USDT markets by liquidity, market
 support, excluded-symbol rules, OHLCV depth, and closed-candle freshness. It
 does not calculate alpha scores or strategy expectancy.

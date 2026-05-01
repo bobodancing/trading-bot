@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pandas as pd
 
+import scanner.universe_scanner as universe_scanner
 from scanner.universe_scanner import ScannerUniverseScanner, ScannerUniverseSettings
 from trader.config import Config
 from trader.strategies import StrategyPlugin
@@ -111,6 +112,52 @@ def test_scanner_universe_writes_json(tmp_path):
     assert payload["status"] == "ok"
     assert payload["filter_config"]["mode"] == "eligibility_only"
     assert payload["eligible_symbols"][0]["symbol"] == "BTC/USDT"
+    assert list(tmp_path.glob("*.tmp")) == []
+
+
+def test_scanner_universe_settings_reads_loop_interval(tmp_path):
+    config_path = tmp_path / "scanner_config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "SCANNER_UNIVERSE_OUTPUT_JSON_PATH": str(tmp_path / "scanner_universe.json"),
+                "SCANNER_UNIVERSE_SCAN_INTERVAL_MINUTES": 12.5,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    settings = ScannerUniverseSettings.from_json(config_path)
+
+    assert settings.scan_interval_minutes == 12.5
+
+
+def test_scanner_universe_loop_mode_runs_until_interrupted(monkeypatch, capsys):
+    calls = []
+
+    class FakeScanner:
+        def __init__(self, *, settings):
+            self.settings = settings
+
+        def scan(self, *, write=True):
+            calls.append((self.settings.scan_interval_minutes, write))
+            return {
+                "scanner_contract_version": "scanner-universe/v1",
+                "status": "ok",
+                "eligible_symbols": [],
+            }
+
+    def interrupt_sleep(_seconds):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(universe_scanner, "ScannerUniverseScanner", FakeScanner)
+    monkeypatch.setattr(universe_scanner.time, "sleep", interrupt_sleep)
+
+    result = universe_scanner.main(["--loop", "--no-write", "--interval-minutes", "0.01"])
+
+    assert result == 0
+    assert calls == [(0.01, False)]
+    assert "scanner-universe/v1" in capsys.readouterr().out
 
 
 class _AuditCollector:
