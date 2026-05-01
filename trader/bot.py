@@ -1293,6 +1293,7 @@ if __name__ == "__main__":
             "Scanner JSON had no usable bot_symbols/hot_symbols",
             "Scanner JSON not found",
             "Scanner JSON stale",
+            "Telegram send failed",
         ]
 
         def __init__(self):

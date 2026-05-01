@@ -32,6 +32,8 @@ class TelegramNotifier:
     def send_message(message: str):
         if not Config.TELEGRAM_ENABLED:
             return
+        if not Config.TELEGRAM_BOT_TOKEN or not Config.TELEGRAM_CHAT_ID:
+            return
 
         try:
             url = f"https://api.telegram.org/bot{Config.TELEGRAM_BOT_TOKEN}/sendMessage"

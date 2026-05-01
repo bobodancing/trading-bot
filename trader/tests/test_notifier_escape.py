@@ -151,3 +151,12 @@ class TestNotifierEscape:
         TelegramNotifier.send_message('test')
         mock_logger.error.assert_called_once()
         assert '400' in mock_logger.error.call_args[0][0]
+
+    @patch('trader.infrastructure.notifier.requests.post')
+    def test_send_message_skips_missing_credentials(self, mock_post, enable_telegram):
+        enable_telegram.TELEGRAM_BOT_TOKEN = ''
+        enable_telegram.TELEGRAM_CHAT_ID = ''
+
+        TelegramNotifier.send_message('test')
+
+        mock_post.assert_not_called()
