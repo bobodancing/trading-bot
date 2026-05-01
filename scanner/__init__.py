@@ -14,9 +14,20 @@ from .market_scanner import (
     get_sector,
 )
 from .runtime_scanner import RuntimeScanner, RuntimeScannerSettings
-from .universe_scanner import ScannerUniverseScanner, ScannerUniverseSettings
 
 __version__ = "2.0.0"
+
+
+def __getattr__(name: str):
+    if name in {"ScannerUniverseScanner", "ScannerUniverseSettings"}:
+        from .universe_scanner import ScannerUniverseScanner, ScannerUniverseSettings
+
+        exports = {
+            "ScannerUniverseScanner": ScannerUniverseScanner,
+            "ScannerUniverseSettings": ScannerUniverseSettings,
+        }
+        return exports[name]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 __all__ = [
     "MarketScanner",
