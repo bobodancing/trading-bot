@@ -11,10 +11,15 @@ import argparse
 import json
 import logging
 import os
+import sys
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Mapping, Optional
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 import pandas as pd
 
@@ -29,7 +34,6 @@ from trader.utils import drop_unfinished_candle
 
 logger = logging.getLogger(__name__)
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent / "scanner_config.json"
 DEFAULT_OUTPUT_PATH = PROJECT_ROOT / "scanner_universe.json"
 CONTRACT_VERSION = "scanner-universe/v1"
