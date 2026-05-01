@@ -42,6 +42,11 @@ class Config:
     SCANNER_JSON_PATH = 'hot_symbols.json'
     RUNTIME_SCANNER_JSON_PATH = 'runtime_scanner.json'
     SCANNER_MAX_AGE_MINUTES = 30
+    SCANNER_UNIVERSE_ENABLED = True
+    SCANNER_UNIVERSE_JSON_PATH = 'scanner_universe.json'
+    SCANNER_UNIVERSE_MAX_AGE_MINUTES = 30
+    SCANNER_UNIVERSE_TOP_N = 20
+    SCANNER_UNIVERSE_MIN_QUOTE_VOLUME_USD = 20_000_000
 
     # ==================== Signal & Indicators ====================
 
@@ -182,6 +187,18 @@ class Config:
             value = getattr(cls, attr)
             if not 0.0 <= value <= 1.0:
                 raise ValueError(f"{attr} must be within [0.0, 1.0], got {value}")
+        if cls.SCANNER_UNIVERSE_MAX_AGE_MINUTES <= 0:
+            raise ValueError(
+                f"SCANNER_UNIVERSE_MAX_AGE_MINUTES must be positive, "
+                f"got {cls.SCANNER_UNIVERSE_MAX_AGE_MINUTES}"
+            )
+        if cls.SCANNER_UNIVERSE_TOP_N <= 0:
+            raise ValueError(f"SCANNER_UNIVERSE_TOP_N must be positive, got {cls.SCANNER_UNIVERSE_TOP_N}")
+        if cls.SCANNER_UNIVERSE_MIN_QUOTE_VOLUME_USD < 0:
+            raise ValueError(
+                f"SCANNER_UNIVERSE_MIN_QUOTE_VOLUME_USD must be non-negative, "
+                f"got {cls.SCANNER_UNIVERSE_MIN_QUOTE_VOLUME_USD}"
+            )
         return True
 
     @classmethod

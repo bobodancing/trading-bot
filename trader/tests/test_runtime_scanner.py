@@ -53,10 +53,12 @@ def _scanner(tmp_path: Path, provider: DummyProvider):
     return RuntimeScanner(settings=settings, exchange=exchange, data_provider=provider)
 
 
-def test_promoted_runtime_default_does_not_use_scanner_symbols():
+def test_promoted_runtime_default_does_not_use_legacy_scanner_symbols():
     assert Config.SYMBOLS == ["BTC/USDT", "ETH/USDT"]
     assert Config.USE_SCANNER_SYMBOLS is False
     assert Config.RUNTIME_SCANNER_JSON_PATH == "runtime_scanner.json"
+    assert Config.SCANNER_UNIVERSE_ENABLED is True
+    assert Config.SCANNER_UNIVERSE_JSON_PATH == "scanner_universe.json"
 
 
 def test_runtime_scanner_uses_plugin_scope_not_legacy_bot_universe(tmp_path):

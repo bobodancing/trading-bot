@@ -152,6 +152,9 @@ class StrategyPlugin(ABC):
     required_indicators: set[str] = set()
     params_schema: dict[str, Any] = {}
     allowed_symbols: set[str] = set()
+    supports_dynamic_universe: bool = False
+    dynamic_universe_quote: str = "USDT"
+    dynamic_universe_max_symbols: Optional[int] = None
     max_concurrent_positions: Optional[int] = 1
     risk_profile: StrategyRiskProfile = StrategyRiskProfile.fixed_risk_pct()
 

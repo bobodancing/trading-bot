@@ -1,7 +1,8 @@
 # Scanner Production Universe Plan
 
 Date: 2026-04-30
-Status: planned / do not implement during Phase 4/5 closeout
+Last updated: 2026-05-01
+Status: V1 implemented for runtime universe filtering; keep alpha research separate
 Owner: Ruei
 Branch: codex/post-promotion-control-20260430
 
@@ -14,8 +15,16 @@ The current scanner v2 remains diagnostics-only for testnet runtime. During
 Phase 4/5, scanner output must stay observe-only so RSI2 and BB Fade Squeeze
 closeout reports are not mixed with a new symbol-selection variable.
 
-Production scanner integration is a later runtime-universe project, not an
-immediate alpha research task.
+Production scanner integration is a runtime-universe project, not an alpha
+research task.
+
+Implementation note (2026-05-01):
+
+- `scanner/universe_scanner.py` writes `scanner_universe.json`.
+- `StrategyRuntime` can consume `scanner_universe.json` before applying plugin
+  scope.
+- Missing/stale/malformed universe files fall back to fixed `Config.SYMBOLS`.
+- Promoted Slot A/B remain bounded by their own `allowed_symbols`.
 
 ## Locked Decisions
 
@@ -159,13 +168,15 @@ and promotion report explicitly changes them.
 
 ## Phase Schedule
 
-### Phase 4/5 Observe-Only
+### Phase 4/5 Runtime Use With Fixed Plugin Scope
 
 - Keep `runtime_scanner.json` as diagnostics-only.
-- Optionally generate `scanner_universe.json` for observation.
-- Do not feed `scanner_universe.json` into live runtime.
-- Do not use scanner universe to alter RSI2 or BB closeout backtest symbols.
-- Reports may cite scanner observations as context only.
+- Generate `scanner_universe.json` with `scanner/universe_scanner.py`.
+- Runtime may use `scanner_universe.json` as a pre-filter before Slot A/B
+  `allowed_symbols`.
+- Do not use scanner universe to alter RSI2 or BB closeout backtest symbols
+  unless the specific run is testing scanner-universe behavior.
+- Reports should separate scanner filtering effects from alpha gate effects.
 
 ### Post Phase 4/5 Integration
 

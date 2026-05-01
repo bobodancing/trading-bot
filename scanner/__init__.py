@@ -14,6 +14,7 @@ from .market_scanner import (
     get_sector,
 )
 from .runtime_scanner import RuntimeScanner, RuntimeScannerSettings
+from .universe_scanner import ScannerUniverseScanner, ScannerUniverseSettings
 
 __version__ = "2.0.0"
 
@@ -31,4 +32,6 @@ __all__ = [
     "SCANNER_AVAILABLE",
     "RuntimeScanner",
     "RuntimeScannerSettings",
+    "ScannerUniverseScanner",
+    "ScannerUniverseSettings",
 ]

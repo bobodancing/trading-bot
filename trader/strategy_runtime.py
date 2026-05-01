@@ -7,8 +7,11 @@ the core runtime handles routing, risk, execution handoff, and audit.
 from __future__ import annotations
 
 import logging
+import json
+import os
 from dataclasses import asdict
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Iterable, Optional
 
 import pandas as pd
@@ -105,7 +108,7 @@ class StrategyRuntime:
             logger.info("No enabled strategies; fail-closed no-trade cycle")
             return
 
-        base_symbols = self.bot.load_scanner_results() if Config.USE_SCANNER_SYMBOLS else list(Config.SYMBOLS)
+        base_symbols = self._base_symbols_for_entry_scan(plugins)
         if not base_symbols:
             logger.info("No symbols available for strategy runtime")
             return
@@ -390,9 +393,130 @@ class StrategyRuntime:
     def _plugin_symbols(self, plugin: StrategyPlugin, base_symbols: Iterable[str]) -> list[str]:
         base = list(dict.fromkeys(str(symbol) for symbol in base_symbols))
         allowed = self._allowed_symbols(plugin)
+        if getattr(plugin, "supports_dynamic_universe", False):
+            quote = str(getattr(plugin, "dynamic_universe_quote", "USDT") or "USDT")
+            dynamic = [symbol for symbol in base if symbol.endswith(f"/{quote}")]
+            if allowed:
+                dynamic = [symbol for symbol in dynamic if symbol in allowed]
+            max_symbols = getattr(plugin, "dynamic_universe_max_symbols", None)
+            if max_symbols is not None:
+                dynamic = dynamic[: max(int(max_symbols), 0)]
+            return dynamic
         if not allowed:
             return base
         return [symbol for symbol in base if symbol in allowed]
+
+    def _base_symbols_for_entry_scan(self, plugins: Iterable[StrategyPlugin]) -> list[str]:
+        if getattr(Config, "SCANNER_UNIVERSE_ENABLED", False):
+            scanner_symbols = self._load_scanner_universe_symbols()
+            if scanner_symbols is not None:
+                return scanner_symbols
+        if Config.USE_SCANNER_SYMBOLS:
+            return self.bot.load_scanner_results()
+        return list(Config.SYMBOLS)
+
+    def _load_scanner_universe_symbols(self) -> Optional[list[str]]:
+        try:
+            scanner_path = os.path.expanduser(Config.SCANNER_UNIVERSE_JSON_PATH)
+            if not os.path.isabs(scanner_path):
+                scanner_path = str(Path(__file__).parent.parent / scanner_path)
+            if not os.path.exists(scanner_path):
+                logger.info("Scanner universe JSON not found at %s; using fixed symbols", scanner_path)
+                return None
+
+            with open(scanner_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            if data.get("scanner_contract_version") != "scanner-universe/v1":
+                logger.warning("Scanner universe contract mismatch; using fixed symbols")
+                return None
+            if data.get("status") != "ok":
+                logger.warning("Scanner universe status=%s; using fixed symbols", data.get("status"))
+                return None
+            if self._scanner_universe_is_stale(data):
+                logger.warning("Scanner universe stale; using fixed symbols")
+                return None
+
+            supported_symbols = self._supported_runtime_symbols()
+            symbols: list[str] = []
+            metadata: dict[str, dict[str, object]] = {}
+            unsupported_count = 0
+            for item in data.get("eligible_symbols", []) or []:
+                if not isinstance(item, dict):
+                    continue
+                raw_symbol = item.get("symbol")
+                if not raw_symbol:
+                    continue
+                symbol = self._normalize_runtime_symbol(str(raw_symbol))
+                if supported_symbols is not None and symbol not in supported_symbols:
+                    unsupported_count += 1
+                    continue
+                if symbol in metadata:
+                    continue
+                symbols.append(symbol)
+                metadata[symbol] = {
+                    "scanner_source": "scanner_universe",
+                    "scanner_rank": item.get("rank"),
+                    "scanner_volume_24h": item.get("quote_volume_24h"),
+                    "scanner_reason_codes": item.get("reason_codes", []),
+                }
+
+            if hasattr(self.bot, "_scanner_symbol_meta"):
+                self.bot._scanner_symbol_meta = metadata
+            logger.info(
+                "Scanner universe loaded %s symbol(s) (unsupported_filtered=%s): %s",
+                len(symbols),
+                unsupported_count,
+                ", ".join(symbols) if symbols else "none",
+            )
+            return symbols
+        except Exception as exc:
+            logger.warning("Scanner universe load failed: %s; using fixed symbols", exc)
+            return None
+
+    @staticmethod
+    def _scanner_universe_is_stale(data: dict[str, Any]) -> bool:
+        expires_at = data.get("expires_at")
+        if expires_at:
+            try:
+                expiry = datetime.fromisoformat(str(expires_at).replace("Z", "+00:00"))
+                if expiry.tzinfo is None:
+                    expiry = expiry.replace(tzinfo=timezone.utc)
+                return datetime.now(timezone.utc) > expiry
+            except Exception:
+                return True
+
+        scan_time_str = data.get("scan_time")
+        if not scan_time_str:
+            return True
+        try:
+            scan_time = datetime.fromisoformat(str(scan_time_str).replace("Z", "+00:00"))
+            if scan_time.tzinfo is None:
+                scan_time = scan_time.replace(tzinfo=timezone.utc)
+            age_minutes = (datetime.now(timezone.utc) - scan_time).total_seconds() / 60.0
+            return age_minutes > Config.SCANNER_UNIVERSE_MAX_AGE_MINUTES
+        except Exception:
+            return True
+
+    def _supported_runtime_symbols(self) -> Optional[set[str]]:
+        if hasattr(self.bot, "_supported_scanner_symbols"):
+            return self.bot._supported_scanner_symbols()
+        markets = getattr(getattr(self.bot, "exchange", None), "markets", None)
+        if not markets or not isinstance(markets, dict):
+            return None
+        supported: set[str] = set()
+        for key, market in markets.items():
+            if isinstance(key, str):
+                supported.add(self._normalize_runtime_symbol(key))
+            if isinstance(market, dict):
+                symbol = market.get("symbol")
+                if isinstance(symbol, str):
+                    supported.add(self._normalize_runtime_symbol(symbol))
+        return supported or None
+
+    @staticmethod
+    def _normalize_runtime_symbol(symbol: str) -> str:
+        return symbol.split(":")[0] if ":" in symbol else symbol
 
     def _symbols_for_snapshot(
         self,
