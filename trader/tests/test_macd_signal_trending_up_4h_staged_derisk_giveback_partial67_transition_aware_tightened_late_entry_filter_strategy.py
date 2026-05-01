@@ -1,6 +1,10 @@
+from datetime import datetime, timezone
+from types import SimpleNamespace
+
+import pandas as pd
 import pytest
 
-from trader.strategies import Action, StrategyRegistry
+from trader.strategies import Action, StrategyContext, StrategyRegistry
 from trader.strategies.plugins._catalog import get_strategy_catalog
 from trader.strategies.plugins.macd_signal_trending_up_4h_staged_derisk_giveback_partial67_transition_aware_tightened_late_entry_filter import (
     MacdSignalTrendingUp4hStagedDeriskGivebackPartial67TransitionAwareTightenedLateEntryFilterStrategy,
@@ -40,6 +44,60 @@ def test_registry_loads_macd_signal_trending_up_4h_partial67_transition_aware_ti
     assert plugin.params["transition_hist_ratio_max"] == pytest.approx(0.25)
     assert plugin.params["transition_prior_positive_hist_min"] == pytest.approx(10.0)
     assert plugin.params["transition_extension_atr_trigger"] == pytest.approx(3.0)
+    assert "symbol" not in plugin.params
+    assert plugin.supports_dynamic_universe is True
+    assert plugin.allowed_symbols == set()
+    assert plugin.dynamic_universe_max_symbols == 20
+    assert plugin.max_concurrent_positions is None
+
+
+def _multi_symbol_context(entry_frames, trend_frames):
+    symbols = list(entry_frames)
+    snapshot = SimpleNamespace(
+        get=lambda symbol, timeframe: (
+            entry_frames.get(symbol, pd.DataFrame())
+            if timeframe == "4h"
+            else trend_frames.get(symbol, pd.DataFrame())
+            if timeframe == "1d"
+            else pd.DataFrame()
+        ),
+        latest_timestamp=lambda symbol, timeframe: (
+            entry_frames[symbol].index[-1].to_pydatetime()
+            if timeframe == "4h"
+            else trend_frames[symbol].index[-1].to_pydatetime()
+        ),
+        latest_close=lambda symbol, timeframe: (
+            float(entry_frames[symbol]["close"].iloc[-1])
+            if timeframe == "4h"
+            else float(trend_frames[symbol]["close"].iloc[-1])
+        ),
+    )
+    return StrategyContext(
+        snapshot=snapshot,
+        symbols=symbols,
+        active_positions={},
+        config=SimpleNamespace(),
+        now=datetime.now(timezone.utc),
+    )
+
+
+def test_transition_aware_tightened_late_entry_filter_scans_dynamic_universe_symbols():
+    plugin = (
+        MacdSignalTrendingUp4hStagedDeriskGivebackPartial67TransitionAwareTightenedLateEntryFilterStrategy()
+    )
+    btc_entry = _entry_frame_with_transition_hist(
+        close_offset=2000.0,
+        hist_tail=[-2.0, -1.5, -1.0, -0.8, -0.6, -0.4, -0.3, -0.2, -0.1, -0.05, -0.02, 0.08],
+    )
+    eth_entry = btc_entry.copy()
+    context = _multi_symbol_context(
+        {"BTC/USDT": btc_entry, "ETH/USDT": eth_entry},
+        {"BTC/USDT": _trend_frame(), "ETH/USDT": _trend_frame()},
+    )
+
+    intents = plugin.generate_candidates(context)
+
+    assert [intent.symbol for intent in intents] == ["BTC/USDT", "ETH/USDT"]
 
 
 def test_transition_aware_tightened_late_entry_filter_allows_overextended_entry_when_transition_context_is_inactive():

@@ -8,9 +8,9 @@ The scanner package now has two separate roles:
 
 ## Runtime Scanner
 
-The promoted A+B runtime does not use scanner output as its tradable universe.
-The live universe is fixed by `trader.config.Config.SYMBOLS` and each enabled
-plugin's `allowed_symbols`.
+The runtime diagnostics scanner is advisory only. Promoted A+B live symbol
+selection is driven by `scanner_universe.json` when that contract is valid, and
+falls back to `trader.config.Config.SYMBOLS` when it is not.
 
 Run a one-shot runtime diagnostics report:
 
@@ -58,9 +58,9 @@ does not calculate alpha scores or strategy expectancy.
 `StrategyRuntime` can consume this contract through
 `Config.SCANNER_UNIVERSE_ENABLED`. If `scanner_universe.json` is missing,
 stale, malformed, or not `status=ok`, runtime falls back to the fixed
-`Config.SYMBOLS` portfolio. Existing Slot A/B plugins remain bounded by their
-own `allowed_symbols`, so the scanner can filter BTC/ETH without widening those
-plugins to arbitrary altcoins.
+`Config.SYMBOLS` portfolio. Promoted Slot A/B plugins opt into the dynamic
+universe contract, so a valid scanner universe can feed all eligible USDT
+symbols into their normal strategy gates.
 
 ## Legacy 2B Scanner
 

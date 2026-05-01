@@ -424,7 +424,7 @@ class StrategyRuntime:
                 logger.info("Scanner universe JSON not found at %s; using fixed symbols", scanner_path)
                 return None
 
-            with open(scanner_path, "r", encoding="utf-8") as f:
+            with open(scanner_path, "r", encoding="utf-8-sig") as f:
                 data = json.load(f)
 
             if data.get("scanner_contract_version") != "scanner-universe/v1":

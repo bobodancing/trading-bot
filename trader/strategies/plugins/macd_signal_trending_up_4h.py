@@ -51,9 +51,44 @@ class MacdSignalTrendingUp4hStrategy(StrategyPlugin):
         )
 
     def generate_candidates(self, context: StrategyContext) -> list[SignalIntent]:
-        symbol = str(self.params.get("symbol") or "BTC/USDT")
         entry_timeframe = str(self.params.get("entry_timeframe") or "4h")
         trend_timeframe = str(self.params.get("trend_timeframe") or "1d")
+        intents: list[SignalIntent] = []
+        for symbol in self._target_symbols(context.symbols):
+            intents.extend(
+                self._generate_candidate_for_symbol(
+                    context,
+                    symbol,
+                    entry_timeframe,
+                    trend_timeframe,
+                )
+            )
+        return intents
+
+    def _target_symbols(self, context_symbols: list[str]) -> list[str]:
+        configured = self.params.get("symbol")
+        if configured:
+            symbols = [str(configured)]
+        elif getattr(self, "supports_dynamic_universe", False):
+            symbols = list(context_symbols)
+        else:
+            symbols = list(self.allowed_symbols or context_symbols)
+
+        allowed = set(self.allowed_symbols or set())
+        dynamic_unbounded = getattr(self, "supports_dynamic_universe", False) and not allowed
+        return [
+            symbol
+            for symbol in dict.fromkeys(symbols)
+            if symbol in context_symbols and (dynamic_unbounded or not allowed or symbol in allowed)
+        ]
+
+    def _generate_candidate_for_symbol(
+        self,
+        context: StrategyContext,
+        symbol: str,
+        entry_timeframe: str,
+        trend_timeframe: str,
+    ) -> list[SignalIntent]:
         if symbol not in context.symbols:
             return []
 

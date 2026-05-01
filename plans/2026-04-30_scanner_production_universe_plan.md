@@ -24,11 +24,11 @@ Implementation note (2026-05-01):
 - `StrategyRuntime` can consume `scanner_universe.json` before applying plugin
   scope.
 - Missing/stale/malformed universe files fall back to fixed `Config.SYMBOLS`.
-- Promoted Slot A/B remain bounded by their own `allowed_symbols`.
+- Promoted Slot A/B now explicitly opt into the scanner universe.
 
 ## Locked Decisions
 
-- Phase 4/5: scanner observe-only.
+- Phase 4/5: scanner-driven A/B runtime scope enabled by explicit Ruei request.
 - Production universe file: `scanner_universe.json`.
 - Legacy live path to avoid: `hot_symbols.json -> bot_symbols`.
 - First production universe scope: Binance futures USDT top liquid symbols.
@@ -36,7 +36,8 @@ Implementation note (2026-05-01):
 - First filter depth: eligibility only, no alpha scoring.
 - Runtime failure mode: fallback to fixed portfolio.
 - Dynamic universe contract: plugin opt-in only.
-- Promoted A+B portfolio remains fixed BTC/ETH unless explicitly changed later.
+- Promoted A+B portfolio can trade the eligible scanner universe when
+  `scanner_universe.json` is valid.
 
 ## Intended Data Flow
 
@@ -52,7 +53,7 @@ Binance futures USDT markets
   -> central router / risk / execution
 ```
 
-Current Phase 4/5 flow remains unchanged:
+Fallback flow when scanner universe is unavailable:
 
 ```text
 Config.SYMBOLS + plugin.allowed_symbols
@@ -133,13 +134,13 @@ V1 explicitly does not include:
 
 ## Runtime Integration Plan
 
-Runtime integration must be disabled by default until Phase 4/5 closeout is
-complete and Ruei approves the next runtime-universe step.
+Runtime integration is enabled for promoted A+B after Ruei's explicit
+scanner-universe request.
 
-Future config shape:
+Config shape:
 
 ```python
-SCANNER_UNIVERSE_ENABLED = False
+SCANNER_UNIVERSE_ENABLED = True
 SCANNER_UNIVERSE_JSON_PATH = "scanner_universe.json"
 SCANNER_UNIVERSE_MAX_AGE_MINUTES = 30
 ```
@@ -155,25 +156,24 @@ Runtime symbol behavior:
 - Scanner symbols must never bypass central risk, router, arbiter, cooldown, or
   execution handoff.
 
-Suggested plugin opt-in shape:
+Plugin opt-in shape:
 
 ```python
-supports_dynamic_universe = False
+supports_dynamic_universe = True
 dynamic_universe_quote = "USDT"
 dynamic_universe_max_symbols = 20
 ```
 
-Existing promoted A+B plugins should remain non-opt-in unless a later research
-and promotion report explicitly changes them.
+Promoted Slot A/B now use this opt-in shape. Missing or bad scanner output still
+falls back to fixed `Config.SYMBOLS`.
 
 ## Phase Schedule
 
-### Phase 4/5 Runtime Use With Fixed Plugin Scope
+### Phase 4/5 Runtime Use With Dynamic A/B Scope
 
 - Keep `runtime_scanner.json` as diagnostics-only.
 - Generate `scanner_universe.json` with `scanner/universe_scanner.py`.
-- Runtime may use `scanner_universe.json` as a pre-filter before Slot A/B
-  `allowed_symbols`.
+- Runtime may use `scanner_universe.json` as the Slot A/B tradable universe.
 - Do not use scanner universe to alter RSI2 or BB closeout backtest symbols
   unless the specific run is testing scanner-universe behavior.
 - Reports should separate scanner filtering effects from alpha gate effects.
@@ -188,8 +188,8 @@ and promotion report explicitly changes them.
 ### Production Enablement
 
 - Enable only after Ruei approval.
-- Start with one dynamic-universe-capable plugin.
-- Keep A+B fixed BTC/ETH as fallback baseline.
+- Start with promoted A+B dynamic-universe scope.
+- Keep fixed BTC/ETH as fallback baseline when scanner output is unavailable.
 - Monitor eligible/excluded reason-code distribution before relying on it for
   capital deployment.
 
@@ -198,7 +198,7 @@ and promotion report explicitly changes them.
 The future implementation is acceptable only if:
 
 - Missing or bad scanner JSON falls back to fixed BTC/ETH behavior.
-- Existing A+B runtime behavior is unchanged while plugins are non-opt-in.
+- Promoted A/B consume scanner symbols only while they explicitly opt in.
 - Dynamic scanner symbols cannot reach non-opt-in plugins.
 - `hot_symbols.json` is not used as the production runtime universe source.
 - Tests cover stale JSON, malformed JSON, empty eligible list, non-opt-in
@@ -212,9 +212,6 @@ python -m pytest trader/tests extensions/Backtesting/tests -q
 
 ## Out of Scope
 
-- No code changes in this plan commit.
-- No scanner-driven runtime trading during Phase 4/5.
 - No new alpha research from scanner ranking.
 - No revival of legacy 2B scanner as the live symbol source.
-- No expansion of promoted A+B beyond BTC/ETH.
 - No push from this commit unless Ruei explicitly requests it.

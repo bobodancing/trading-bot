@@ -117,12 +117,18 @@ class RuntimeScanner:
         report = {
             "scanner_contract_version": self.CONTRACT_VERSION,
             "scan_time": datetime.now(timezone.utc).isoformat(),
-            "runtime_source": "Config.ENABLED_STRATEGIES + plugin.allowed_symbols",
+            "runtime_source": "Config.ENABLED_STRATEGIES + plugin dynamic universe/fallback scope",
             "runtime_selection_feeds_trading": False,
-            "runtime_symbol_selection": "fixed_config_plugin_scope",
+            "runtime_symbol_selection": "diagnostic_config_scope_for_dynamic_plugins",
             "config": {
                 "strategy_runtime_enabled": bool(self.config.STRATEGY_RUNTIME_ENABLED),
                 "use_scanner_symbols": bool(self.config.USE_SCANNER_SYMBOLS),
+                "scanner_universe_enabled": bool(
+                    getattr(self.config, "SCANNER_UNIVERSE_ENABLED", False)
+                ),
+                "scanner_universe_json_path": str(
+                    getattr(self.config, "SCANNER_UNIVERSE_JSON_PATH", "")
+                ),
                 "config_symbols": list(self.config.SYMBOLS),
                 "enabled_strategies": list(self.config.ENABLED_STRATEGIES),
             },
@@ -138,7 +144,9 @@ class RuntimeScanner:
                 "writes_hot_symbols": False,
                 "order_execution": False,
                 "risk_sizing": False,
-                "runtime_trade_universe_source": "Config.SYMBOLS filtered by plugin.allowed_symbols",
+                "runtime_trade_universe_source": (
+                    "scanner_universe.json for opt-in plugins; Config.SYMBOLS fallback"
+                ),
             },
         }
 
@@ -184,6 +192,12 @@ class RuntimeScanner:
         for plugin in plugins:
             scopes[plugin.id] = {
                 "allowed_symbols": self._ordered_symbols(plugin.allowed_symbols or self.config.SYMBOLS),
+                "supports_dynamic_universe": bool(
+                    getattr(plugin, "supports_dynamic_universe", False)
+                ),
+                "dynamic_universe_max_symbols": getattr(
+                    plugin, "dynamic_universe_max_symbols", None
+                ),
                 "required_timeframes": dict(plugin.required_timeframes),
                 "required_indicators": sorted(plugin.required_indicators),
                 "tags": sorted(plugin.tags),

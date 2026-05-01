@@ -11,6 +11,11 @@ from trader.config import Config
 from trader.strategies import StrategyPlugin
 from trader.strategy_runtime import StrategyRuntime
 
+PROMOTED_STRATEGIES = [
+    "macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_transition_aware_tightened_late_entry_filter",
+    "donchian_range_fade_4h_range_width_cv_013",
+]
+
 
 def _ohlcv(rows=320, freq="4h"):
     now = pd.Timestamp.now(tz="UTC")
@@ -193,6 +198,44 @@ def test_strategy_runtime_uses_scanner_universe_before_slot_scope(tmp_path):
     assert scoped_symbols == ["ETH/USDT"]
 
 
+def test_promoted_slots_consume_scanner_universe_symbols(tmp_path):
+    universe_path = tmp_path / "scanner_universe.json"
+    scanner_symbols = [
+        {"symbol": "BTC/USDT", "rank": 1, "quote_volume_24h": 90_000_000_000.0},
+        {"symbol": "ETH/USDT", "rank": 2, "quote_volume_24h": 40_000_000_000.0},
+        {"symbol": "SOL/USDT", "rank": 3, "quote_volume_24h": 1_000_000_000.0},
+    ]
+    _write_universe(universe_path, scanner_symbols)
+
+    with patch.object(Config, "STRATEGY_RUNTIME_ENABLED", True), patch.object(
+        Config,
+        "ENABLED_STRATEGIES",
+        PROMOTED_STRATEGIES,
+    ), patch.object(Config, "SCANNER_UNIVERSE_ENABLED", True), patch.object(
+        Config,
+        "SCANNER_UNIVERSE_JSON_PATH",
+        str(universe_path),
+    ), patch.object(Config, "USE_SCANNER_SYMBOLS", False), patch.object(
+        Config,
+        "SYMBOLS",
+        ["BTC/USDT", "ETH/USDT"],
+    ):
+        runtime = StrategyRuntime(_FakeBot())
+        plugins = runtime.enabled_plugins()
+        base_symbols = runtime._base_symbols_for_entry_scan(plugins)
+        snapshot_symbols = runtime._symbols_for_snapshot(base_symbols, plugins)
+        plugin_symbols = {
+            plugin.id: runtime._plugin_symbols(plugin, base_symbols)
+            for plugin in plugins
+        }
+
+    expected = ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
+    assert base_symbols == expected
+    assert snapshot_symbols == expected
+    for strategy_id in PROMOTED_STRATEGIES:
+        assert plugin_symbols[strategy_id] == expected
+
+
 def test_strategy_runtime_falls_back_to_fixed_symbols_when_universe_stale(tmp_path):
     universe_path = tmp_path / "scanner_universe.json"
     _write_universe(
@@ -214,6 +257,35 @@ def test_strategy_runtime_falls_back_to_fixed_symbols_when_universe_stale(tmp_pa
         symbols = runtime._base_symbols_for_entry_scan([_ScopedStrategy()])
 
     assert symbols == ["BTC/USDT", "ETH/USDT"]
+
+
+def test_strategy_runtime_accepts_utf8_sig_scanner_universe(tmp_path):
+    universe_path = tmp_path / "scanner_universe.json"
+    now = datetime.now(timezone.utc)
+    payload = {
+        "scanner_contract_version": "scanner-universe/v1",
+        "scan_time": now.isoformat(),
+        "expires_at": (now + timedelta(minutes=30)).isoformat(),
+        "status": "ok",
+        "eligible_symbols": [
+            {"symbol": "SOL/USDT", "rank": 1, "quote_volume_24h": 10_000_000_000.0}
+        ],
+    }
+    universe_path.write_text(json.dumps(payload), encoding="utf-8-sig")
+    runtime = StrategyRuntime(_FakeBot())
+
+    with patch.object(Config, "SCANNER_UNIVERSE_ENABLED", True), patch.object(
+        Config,
+        "SCANNER_UNIVERSE_JSON_PATH",
+        str(universe_path),
+    ), patch.object(Config, "USE_SCANNER_SYMBOLS", False), patch.object(
+        Config,
+        "SYMBOLS",
+        ["BTC/USDT", "ETH/USDT"],
+    ):
+        symbols = runtime._base_symbols_for_entry_scan([_DynamicStrategy()])
+
+    assert symbols == ["SOL/USDT"]
 
 
 def test_dynamic_universe_plugin_opt_in_can_receive_scanner_symbols():

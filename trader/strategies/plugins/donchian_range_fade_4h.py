@@ -226,10 +226,12 @@ class DonchianRangeFade4hStrategy(StrategyPlugin):
     def _target_symbols(self, context_symbols: list[str]) -> list[str]:
         configured = self.params.get("symbol")
         symbols = [str(configured)] if configured else list(context_symbols)
+        allowed = set(self.allowed_symbols or set())
+        dynamic_unbounded = getattr(self, "supports_dynamic_universe", False) and not allowed
         return [
             symbol
             for symbol in dict.fromkeys(symbols)
-            if symbol in self.allowed_symbols and symbol in context_symbols
+            if symbol in context_symbols and (dynamic_unbounded or symbol in allowed)
         ]
 
     def _timeframe(self) -> str:

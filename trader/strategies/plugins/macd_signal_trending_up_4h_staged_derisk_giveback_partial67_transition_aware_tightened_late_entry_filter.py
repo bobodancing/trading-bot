@@ -34,93 +34,102 @@ class MacdSignalTrendingUp4hStagedDeriskGivebackPartial67TransitionAwareTightene
         "transition_prior_positive_hist_min": "float",
         "transition_extension_atr_trigger": "float",
     }
+    allowed_symbols = set()
+    supports_dynamic_universe = True
+    dynamic_universe_quote = "USDT"
+    dynamic_universe_max_symbols = 20
+    max_concurrent_positions = None
 
     def generate_candidates(self, context: StrategyContext) -> list[SignalIntent]:
-        symbol = str(self.params.get("symbol") or "BTC/USDT")
         entry_timeframe = str(self.params.get("entry_timeframe") or "4h")
-        if symbol not in context.symbols:
-            return []
-
-        entry_frame = context.snapshot.get(symbol, entry_timeframe)
-        metrics = MacdSignalTrendingUp4hStagedDeriskGivebackPartial67TransitionAwareLateEntryFilterStrategy._transition_aware_metrics(  # noqa: SLF001
-            entry_frame,
-            lookback_bars=int(self.params.get("transition_lookback_bars", 12)),
-            hist_ratio_max=float(self.params.get("transition_hist_ratio_max", 0.25)),
-            prior_positive_hist_min=float(
-                self.params.get("transition_prior_positive_hist_min", 10.0)
-            ),
-        )
-        if metrics is None:
-            return []
-
+        trend_timeframe = str(self.params.get("trend_timeframe") or "1d")
         extension_cap = float(self.params.get("entry_ema_extension_atr_max", 1.25))
         extension_trigger = float(
             self.params.get("transition_extension_atr_trigger", 3.0)
         )
-        transition_context_active = bool(metrics["weak_tape_context_active"])
-        tightened_veto_active = (
-            transition_context_active
-            and metrics["entry_extension_atr"] > extension_cap
-            and metrics["entry_extension_atr"] >= extension_trigger
-        )
-        if tightened_veto_active:
-            return []
-
-        intents = super().generate_candidates(context)
-        if not intents:
-            return []
-
-        return [
-            replace(
-                intent,
-                entry_type=(
-                    "macd_signal_cross_up_transition_aware_tightened_"
-                    "late_entry_filtered"
+        intents: list[SignalIntent] = []
+        for symbol in self._target_symbols(context.symbols):
+            entry_frame = context.snapshot.get(symbol, entry_timeframe)
+            metrics = MacdSignalTrendingUp4hStagedDeriskGivebackPartial67TransitionAwareLateEntryFilterStrategy._transition_aware_metrics(  # noqa: SLF001
+                entry_frame,
+                lookback_bars=int(self.params.get("transition_lookback_bars", 12)),
+                hist_ratio_max=float(self.params.get("transition_hist_ratio_max", 0.25)),
+                prior_positive_hist_min=float(
+                    self.params.get("transition_prior_positive_hist_min", 10.0)
                 ),
-                metadata={
-                    **intent.metadata,
-                    "entry_ema_20": metrics["entry_ema_20"],
-                    "entry_extension_atr": metrics["entry_extension_atr"],
-                    "entry_ema_extension_atr_max": extension_cap,
-                    "weak_tape_gate_mode": "transition_aware_tightened",
-                    "weak_tape_context_active": tightened_veto_active,
-                    "weak_tape_context_reason": (
-                        "transition_aware_tightened" if tightened_veto_active else "none"
-                    ),
-                    "weak_tape_transition_context_active": transition_context_active,
-                    "weak_tape_transition_veto_active": tightened_veto_active,
-                    "weak_tape_transition_breakout_active": metrics[
-                        "weak_tape_transition_breakout_active"
-                    ],
-                    "weak_tape_transition_hist_exhaustion_active": metrics[
-                        "weak_tape_transition_hist_exhaustion_active"
-                    ],
-                    "weak_tape_transition_lookback_bars": metrics[
-                        "weak_tape_transition_lookback_bars"
-                    ],
-                    "weak_tape_transition_current_hist": metrics[
-                        "weak_tape_transition_current_hist"
-                    ],
-                    "weak_tape_transition_prior_positive_hist_max": metrics[
-                        "weak_tape_transition_prior_positive_hist_max"
-                    ],
-                    "weak_tape_transition_hist_ratio": metrics[
-                        "weak_tape_transition_hist_ratio"
-                    ],
-                    "weak_tape_transition_hist_ratio_max": metrics[
-                        "weak_tape_transition_hist_ratio_max"
-                    ],
-                    "weak_tape_transition_prior_positive_hist_min": metrics[
-                        "weak_tape_transition_prior_positive_hist_min"
-                    ],
-                    "weak_tape_transition_prior_high_max": metrics[
-                        "weak_tape_transition_prior_high_max"
-                    ],
-                    "weak_tape_transition_entry_high": metrics[
-                        "weak_tape_transition_entry_high"
-                    ],
-                    "weak_tape_transition_extension_atr_trigger": extension_trigger,
-                },
             )
-            for intent in intents
-        ]
+            if metrics is None:
+                continue
+
+            transition_context_active = bool(metrics["weak_tape_context_active"])
+            tightened_veto_active = (
+                transition_context_active
+                and metrics["entry_extension_atr"] > extension_cap
+                and metrics["entry_extension_atr"] >= extension_trigger
+            )
+            if tightened_veto_active:
+                continue
+
+            base_intents = self._generate_candidate_for_symbol(
+                context,
+                symbol,
+                entry_timeframe,
+                trend_timeframe,
+            )
+            for intent in base_intents:
+                intents.append(
+                    replace(
+                        intent,
+                        entry_type=(
+                            "macd_signal_cross_up_transition_aware_tightened_"
+                            "late_entry_filtered"
+                        ),
+                        metadata={
+                            **intent.metadata,
+                            "entry_ema_20": metrics["entry_ema_20"],
+                            "entry_extension_atr": metrics["entry_extension_atr"],
+                            "entry_ema_extension_atr_max": extension_cap,
+                            "weak_tape_gate_mode": "transition_aware_tightened",
+                            "weak_tape_context_active": tightened_veto_active,
+                            "weak_tape_context_reason": (
+                                "transition_aware_tightened"
+                                if tightened_veto_active
+                                else "none"
+                            ),
+                            "weak_tape_transition_context_active": transition_context_active,
+                            "weak_tape_transition_veto_active": tightened_veto_active,
+                            "weak_tape_transition_breakout_active": metrics[
+                                "weak_tape_transition_breakout_active"
+                            ],
+                            "weak_tape_transition_hist_exhaustion_active": metrics[
+                                "weak_tape_transition_hist_exhaustion_active"
+                            ],
+                            "weak_tape_transition_lookback_bars": metrics[
+                                "weak_tape_transition_lookback_bars"
+                            ],
+                            "weak_tape_transition_current_hist": metrics[
+                                "weak_tape_transition_current_hist"
+                            ],
+                            "weak_tape_transition_prior_positive_hist_max": metrics[
+                                "weak_tape_transition_prior_positive_hist_max"
+                            ],
+                            "weak_tape_transition_hist_ratio": metrics[
+                                "weak_tape_transition_hist_ratio"
+                            ],
+                            "weak_tape_transition_hist_ratio_max": metrics[
+                                "weak_tape_transition_hist_ratio_max"
+                            ],
+                            "weak_tape_transition_prior_positive_hist_min": metrics[
+                                "weak_tape_transition_prior_positive_hist_min"
+                            ],
+                            "weak_tape_transition_prior_high_max": metrics[
+                                "weak_tape_transition_prior_high_max"
+                            ],
+                            "weak_tape_transition_entry_high": metrics[
+                                "weak_tape_transition_entry_high"
+                            ],
+                            "weak_tape_transition_extension_atr_trigger": extension_trigger,
+                        },
+                    )
+                )
+        return intents

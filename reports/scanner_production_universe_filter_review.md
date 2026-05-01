@@ -41,23 +41,25 @@ The filter writes exclusion reason codes such as:
 
 Slot A:
 
-- Strategy: MACD BTC 4h continuation under 1d trend gate.
-- Current plugin scope: `BTC/USDT` only.
-- Scanner effect: BTC must be eligible in `scanner_universe.json`; scanner
-  cannot expand Slot A to other symbols.
-- Fit: good. The scanner's `4h: 200` and `1d: 260` checks match Slot A's data
-  requirements.
+- Strategy: MACD 4h continuation under 1d trend gate.
+- Current plugin scope: dynamic USDT scanner universe.
+- Scanner effect: every eligible `scanner_universe.json` symbol can be evaluated
+  by Slot A's MACD/trend/late-entry gates.
+- Fit: workable but broader than the original BTC-only promotion. The scanner's
+  `4h: 200` and `1d: 260` checks match Slot A's data requirements; production
+  behavior should be reviewed after live/dry-run observations because altcoin
+  trend behavior was not the original BTC-only assumption.
 
 Slot B:
 
 - Strategy: Donchian range fade 4h.
-- Current plugin scope: `BTC/USDT`, `ETH/USDT`.
-- Scanner effect: BTC/ETH are pre-filtered by liquidity and data readiness
-  before Slot B sees them.
-- Fit: good for current production safety. The `1d: 260` requirement is stricter
-  than Slot B needs, but acceptable for the first production universe because
-  BTC/ETH have deep daily history and the same universe contract also supports
-  Slot A diagnostics.
+- Current plugin scope: dynamic USDT scanner universe.
+- Scanner effect: every eligible `scanner_universe.json` symbol can be evaluated
+  by Slot B's range/RSI gates.
+- Fit: operationally reasonable for a range-fade strategy, with the same caveat
+  that this is a broader universe than the original BTC/ETH promotion. The
+  `1d: 260` scanner requirement is stricter than Slot B itself needs, but it
+  remains useful while Slot A shares the same universe.
 
 ## Runtime Boundary
 
@@ -70,8 +72,8 @@ Slot B:
    back to fixed `Config.SYMBOLS`.
 4. Apply plugin scope after the base universe.
 
-This means current promoted A+B runtime can be filtered by scanner eligibility
-without widening either plugin to arbitrary altcoins.
+Promoted Slot A/B now opt into dynamic universe scope, so plugin scope no longer
+narrows the scanner universe back to BTC/ETH when the scanner contract is valid.
 
 ## Review Notes
 

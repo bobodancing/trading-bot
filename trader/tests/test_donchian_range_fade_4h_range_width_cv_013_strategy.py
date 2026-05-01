@@ -31,6 +31,9 @@ def test_registry_loads_donchian_range_fade_4h_range_width_cv_013_plugin():
     assert isinstance(plugin, DonchianRangeFade4hRangeWidthCv013Strategy)
     assert plugin.params["range_width_cv_max"] == pytest.approx(0.13)
     assert "range_width_cv_013" in plugin.tags
+    assert plugin.supports_dynamic_universe is True
+    assert plugin.allowed_symbols == set()
+    assert plugin.dynamic_universe_max_symbols == 20
 
 
 def test_donchian_range_fade_4h_range_width_cv_013_emits_where_baseline_is_starved():
@@ -58,6 +61,17 @@ def test_donchian_range_fade_4h_range_width_cv_013_still_rejects_overexpanded_ra
     intents = plugin.generate_candidates(_context({"BTC/USDT": frame}))
 
     assert intents == []
+
+
+def test_donchian_range_fade_4h_range_width_cv_013_scans_dynamic_universe_symbols():
+    plugin = DonchianRangeFade4hRangeWidthCv013Strategy()
+    frame = _moderately_expanding_range_frame()
+
+    intents = plugin.generate_candidates(
+        _context({"BTC/USDT": frame, "SOL/USDT": frame.copy()})
+    )
+
+    assert [intent.symbol for intent in intents] == ["BTC/USDT", "SOL/USDT"]
 
 
 def test_donchian_range_fade_4h_range_width_cv_013_preserves_exit_logic():
