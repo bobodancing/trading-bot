@@ -22,6 +22,8 @@ below has since completed:
 - Phase 4/5 research closeout is recorded in
   `reports/phase_4_5_research_closeout.md`; RSI2 and BB Fade Squeeze are both
   parked, with no third-slot or rescue activation.
+- Trigger review is recorded in `reports/portfolio_ab_trigger_review.md` with
+  classification `NO_MATERIAL_GAP`.
 - Scanner universe runtime consumption was returned to observe-only default in
   `e5dae15`.
 

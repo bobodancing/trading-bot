@@ -20,9 +20,9 @@ candidates. They may **only** be activated after **both** conditions are
 met simultaneously:
 
 2026-05-05 closeout update: Phase 4/5 are closed and parked in
-`reports/phase_4_5_research_closeout.md`. Condition (A) is resolved as
-closeout, but Condition (B) has not fired and no trigger review memo exists, so
-this backlog remains `DO-NOT-START`.
+`reports/phase_4_5_research_closeout.md`. Trigger review is recorded in
+`reports/portfolio_ab_trigger_review.md` as `NO_MATERIAL_GAP`, so Condition (B)
+has not fired and this backlog remains `DO-NOT-START`.
 
 ### 0.1 Condition (A): Current pipeline fully resolved
 

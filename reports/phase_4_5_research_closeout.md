@@ -105,6 +105,10 @@ Read:
 The next useful document is a trigger review memo, not another Phase 4.2 or
 Phase 5 rescue run.
 
+Closeout update: the trigger review is recorded in
+`reports/portfolio_ab_trigger_review.md` with classification
+`NO_MATERIAL_GAP`.
+
 The memo should classify the remaining gap, if any, as one of:
 
 - Slot A trend/SHORT gap.
