@@ -1,7 +1,11 @@
 # rsi2_pullback_1h_sma5_gap_guard Stop-Out Attribution
 
 Date: 2026-04-30
-Status: `PHASE_4_1_DIAGNOSTIC_ONLY`
+Status: `PHASE_4_CLOSEOUT_PARKED`
+
+Closeout update (2026-05-05): this attribution closes Phase 4. RSI2 is parked;
+do not proceed to Phase 4.2 or an A+B+RSI2 combined run without fresh Ruei
+approval.
 
 ## Scope
 

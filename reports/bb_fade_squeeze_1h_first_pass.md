@@ -1,7 +1,11 @@
 # bb_fade_squeeze_1h First Pass
 
 Date: 2026-04-25  
-Status: `KEEP_RESEARCH_ONLY`
+Status: `SUPERSEDED_BY_PHASE_5_CLOSEOUT`
+
+Closeout update (2026-05-05): Phase 5 is parked in
+`reports/phase_4_5_research_closeout.md`; do not promote, runtime-enable, or
+rescue this candidate without a fresh trigger review.
 
 ## Scope
 

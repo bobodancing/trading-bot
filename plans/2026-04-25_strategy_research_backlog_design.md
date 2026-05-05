@@ -19,6 +19,11 @@ This document lists **9 mechanism units / 18 plugins** as future research
 candidates. They may **only** be activated after **both** conditions are
 met simultaneously:
 
+2026-05-05 closeout update: Phase 4/5 are closed and parked in
+`reports/phase_4_5_research_closeout.md`. Condition (A) is resolved as
+closeout, but Condition (B) has not fired and no trigger review memo exists, so
+this backlog remains `DO-NOT-START`.
+
 ### 0.1 Condition (A): Current pipeline fully resolved
 
 [plans/2026-04-25_portfolio_research_reorder_plan.md](2026-04-25_portfolio_research_reorder_plan.md)

@@ -1,7 +1,11 @@
 # rsi2_pullback_1h_sma5_gap_guard First Pass
 
 Date: 2026-04-25  
-Status: `NEEDS_ROBUSTNESS_REVIEW`
+Status: `SUPERSEDED_BY_PHASE_4_CLOSEOUT`
+
+Closeout update (2026-05-05): Phase 4 is parked in
+`reports/phase_4_5_research_closeout.md`; do not promote or runtime-enable this
+candidate from the first-pass result alone.
 
 ## Scope
 

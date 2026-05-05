@@ -1,7 +1,11 @@
 # bb_fade_squeeze_1h Gate Attribution
 
 Date: 2026-04-25  
-Status: `DIAGNOSTIC_ONLY`
+Status: `PHASE_5_CLOSEOUT_PARKED`
+
+Closeout update (2026-05-05): this attribution closes Phase 5. The squeeze
+definition is the bottleneck, but the lane is parked until a trigger review
+proves a real Slot B ranging/frequency gap.
 
 ## Scope
 

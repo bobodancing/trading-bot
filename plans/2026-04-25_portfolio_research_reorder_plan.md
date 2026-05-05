@@ -19,6 +19,11 @@ below has since completed:
 - Post-promotion control passed in `1a9725a`.
 - Scanner production universe work remains plan-only / observe-only in
   `d85012f`.
+- Phase 4/5 research closeout is recorded in
+  `reports/phase_4_5_research_closeout.md`; RSI2 and BB Fade Squeeze are both
+  parked, with no third-slot or rescue activation.
+- Scanner universe runtime consumption was returned to observe-only default in
+  `e5dae15`.
 
 Treat this document as the historical research-order rationale that led into
 the A+B promotion packet. For current runtime truth, trust code first:

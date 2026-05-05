@@ -1,7 +1,11 @@
 # rsi2_pullback_1h_sma5_gap_guard Robustness Shelf
 
 Date: 2026-04-25  
-Status: `RESEARCH_SWEEP_ONLY`
+Status: `SUPERSEDED_BY_PHASE_4_CLOSEOUT`
+
+Closeout update (2026-05-05): the `0.75` shelf remains the best RSI2 child
+cell, but Phase 4 is parked in `reports/phase_4_5_research_closeout.md` after
+residual stop-out attribution failed to identify a clean second guard.
 
 ## Scope
 
