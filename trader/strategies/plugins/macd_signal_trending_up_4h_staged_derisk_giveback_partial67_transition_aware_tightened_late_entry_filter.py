@@ -34,11 +34,6 @@ class MacdSignalTrendingUp4hStagedDeriskGivebackPartial67TransitionAwareTightene
         "transition_prior_positive_hist_min": "float",
         "transition_extension_atr_trigger": "float",
     }
-    allowed_symbols = set()
-    supports_dynamic_universe = True
-    dynamic_universe_quote = "USDT"
-    dynamic_universe_max_symbols = 20
-    max_concurrent_positions = None
 
     def generate_candidates(self, context: StrategyContext) -> list[SignalIntent]:
         entry_timeframe = str(self.params.get("entry_timeframe") or "4h")

@@ -13,10 +13,6 @@ class DonchianRangeFade4hRangeWidthCv013Strategy(DonchianRangeFade4hStrategy):
         "child_candidate",
         "second_pass",
     }
-    allowed_symbols = set()
-    supports_dynamic_universe = True
-    dynamic_universe_quote = "USDT"
-    dynamic_universe_max_symbols = 20
 
     def __init__(self, params=None):
         merged = {"range_width_cv_max": 0.13}

@@ -42,7 +42,7 @@ class Config:
     SCANNER_JSON_PATH = 'hot_symbols.json'
     RUNTIME_SCANNER_JSON_PATH = 'runtime_scanner.json'
     SCANNER_MAX_AGE_MINUTES = 30
-    SCANNER_UNIVERSE_ENABLED = True
+    SCANNER_UNIVERSE_ENABLED = False
     SCANNER_UNIVERSE_JSON_PATH = 'scanner_universe.json'
     SCANNER_UNIVERSE_MAX_AGE_MINUTES = 30
     SCANNER_UNIVERSE_TOP_N = 20

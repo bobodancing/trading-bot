@@ -407,7 +407,10 @@ class StrategyRuntime:
         return [symbol for symbol in base if symbol in allowed]
 
     def _base_symbols_for_entry_scan(self, plugins: Iterable[StrategyPlugin]) -> list[str]:
-        if getattr(Config, "SCANNER_UNIVERSE_ENABLED", False):
+        uses_dynamic_universe = any(
+            getattr(plugin, "supports_dynamic_universe", False) for plugin in plugins
+        )
+        if getattr(Config, "SCANNER_UNIVERSE_ENABLED", False) and uses_dynamic_universe:
             scanner_symbols = self._load_scanner_universe_symbols()
             if scanner_symbols is not None:
                 return scanner_symbols

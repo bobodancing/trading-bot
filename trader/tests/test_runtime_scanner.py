@@ -57,11 +57,11 @@ def test_promoted_runtime_default_does_not_use_legacy_scanner_symbols():
     assert Config.SYMBOLS == ["BTC/USDT", "ETH/USDT"]
     assert Config.USE_SCANNER_SYMBOLS is False
     assert Config.RUNTIME_SCANNER_JSON_PATH == "runtime_scanner.json"
-    assert Config.SCANNER_UNIVERSE_ENABLED is True
+    assert Config.SCANNER_UNIVERSE_ENABLED is False
     assert Config.SCANNER_UNIVERSE_JSON_PATH == "scanner_universe.json"
 
 
-def test_runtime_scanner_reports_dynamic_scope_not_legacy_bot_universe(tmp_path):
+def test_runtime_scanner_uses_fixed_plugin_scope_not_legacy_bot_universe(tmp_path):
     provider = DummyProvider()
 
     with patch.object(Config, "ENABLED_STRATEGIES", PROMOTED_STRATEGIES), patch.object(
@@ -73,17 +73,17 @@ def test_runtime_scanner_reports_dynamic_scope_not_legacy_bot_universe(tmp_path)
 
     assert report["scanner_contract_version"] == "runtime-context/v1"
     assert report["runtime_selection_feeds_trading"] is False
-    assert report["runtime_symbols"] == ["BTC/USDT", "ETH/USDT", "SOL/USDT", "DOGE/USDT"]
-    assert set(report["symbols"]) == {"BTC/USDT", "ETH/USDT", "SOL/USDT", "DOGE/USDT"}
+    assert report["runtime_symbols"] == ["BTC/USDT", "ETH/USDT"]
+    assert set(report["symbols"]) == {"BTC/USDT", "ETH/USDT"}
     assert "bot_symbols" not in report
     assert "hot_symbols" not in report
-    assert ("SOL/USDT", "1d") in {
+    assert ("ETH/USDT", "1d") not in {
         (symbol, timeframe) for symbol, timeframe, _limit in provider.calls
     }
     assert report["plugin_scopes"][PROMOTED_STRATEGIES[0]]["slot_hint"] == "slot_a"
     assert report["plugin_scopes"][PROMOTED_STRATEGIES[1]]["slot_hint"] == "slot_b"
-    assert report["plugin_scopes"][PROMOTED_STRATEGIES[0]]["supports_dynamic_universe"] is True
-    assert report["plugin_scopes"][PROMOTED_STRATEGIES[1]]["supports_dynamic_universe"] is True
+    assert report["plugin_scopes"][PROMOTED_STRATEGIES[0]]["supports_dynamic_universe"] is False
+    assert report["plugin_scopes"][PROMOTED_STRATEGIES[1]]["supports_dynamic_universe"] is False
 
 
 def test_runtime_scanner_writes_advisory_json(tmp_path):

@@ -44,11 +44,11 @@ def test_registry_loads_macd_signal_trending_up_4h_partial67_transition_aware_ti
     assert plugin.params["transition_hist_ratio_max"] == pytest.approx(0.25)
     assert plugin.params["transition_prior_positive_hist_min"] == pytest.approx(10.0)
     assert plugin.params["transition_extension_atr_trigger"] == pytest.approx(3.0)
-    assert "symbol" not in plugin.params
-    assert plugin.supports_dynamic_universe is True
-    assert plugin.allowed_symbols == set()
-    assert plugin.dynamic_universe_max_symbols == 20
-    assert plugin.max_concurrent_positions is None
+    assert plugin.params["symbol"] == "BTC/USDT"
+    assert plugin.supports_dynamic_universe is False
+    assert plugin.allowed_symbols == {"BTC/USDT"}
+    assert plugin.dynamic_universe_max_symbols is None
+    assert plugin.max_concurrent_positions == 1
 
 
 def _multi_symbol_context(entry_frames, trend_frames):
@@ -81,7 +81,7 @@ def _multi_symbol_context(entry_frames, trend_frames):
     )
 
 
-def test_transition_aware_tightened_late_entry_filter_scans_dynamic_universe_symbols():
+def test_transition_aware_tightened_late_entry_filter_keeps_btc_fixed_scope():
     plugin = (
         MacdSignalTrendingUp4hStagedDeriskGivebackPartial67TransitionAwareTightenedLateEntryFilterStrategy()
     )
@@ -97,7 +97,7 @@ def test_transition_aware_tightened_late_entry_filter_scans_dynamic_universe_sym
 
     intents = plugin.generate_candidates(context)
 
-    assert [intent.symbol for intent in intents] == ["BTC/USDT", "ETH/USDT"]
+    assert [intent.symbol for intent in intents] == ["BTC/USDT"]
 
 
 def test_transition_aware_tightened_late_entry_filter_allows_overextended_entry_when_transition_context_is_inactive():

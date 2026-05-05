@@ -9,8 +9,8 @@ The scanner package now has two separate roles:
 ## Runtime Scanner
 
 The runtime diagnostics scanner is advisory only. Promoted A+B live symbol
-selection is driven by `scanner_universe.json` when that contract is valid, and
-falls back to `trader.config.Config.SYMBOLS` when it is not.
+selection remains fixed by `trader.config.Config.SYMBOLS` plus plugin scope;
+`scanner_universe.json` is infra-ready but observe-only by default.
 
 Run a one-shot runtime diagnostics report:
 
@@ -71,12 +71,10 @@ The universe scanner filters Binance futures USDT markets by liquidity, market
 support, excluded-symbol rules, OHLCV depth, and closed-candle freshness. It
 does not calculate alpha scores or strategy expectancy.
 
-`StrategyRuntime` can consume this contract through
-`Config.SCANNER_UNIVERSE_ENABLED`. If `scanner_universe.json` is missing,
-stale, malformed, or not `status=ok`, runtime falls back to the fixed
-`Config.SYMBOLS` portfolio. Promoted Slot A/B plugins opt into the dynamic
-universe contract, so a valid scanner universe can feed all eligible USDT
-symbols into their normal strategy gates.
+`StrategyRuntime` can consume this contract only when
+`Config.SCANNER_UNIVERSE_ENABLED` is explicitly enabled and a plugin opts into
+dynamic universe scope. The current promoted Slot A/B plugins keep fixed scope,
+so Phase 4/5 research remains on the BTC/ETH fixed-symbol baseline.
 
 ## Legacy 2B Scanner
 

@@ -273,6 +273,7 @@ STRATEGY_CATALOG: dict[str, dict[str, Any]] = {
         "module": "trader.strategies.plugins.macd_signal_trending_up_4h_staged_derisk_giveback_partial67_transition_aware_tightened_late_entry_filter",
         "class": "MacdSignalTrendingUp4hStagedDeriskGivebackPartial67TransitionAwareTightenedLateEntryFilterStrategy",
         "params": {
+            "symbol": "BTC/USDT",
             "entry_timeframe": "4h",
             "trend_timeframe": "1d",
             "stop_atr_mult": 1.5,

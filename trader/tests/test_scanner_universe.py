@@ -217,7 +217,7 @@ def _write_universe(path: Path, eligible, *, expires_delta=timedelta(minutes=30)
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 
-def test_strategy_runtime_uses_scanner_universe_before_slot_scope(tmp_path):
+def test_strategy_runtime_keeps_non_dynamic_plugins_on_fixed_symbols(tmp_path):
     universe_path = tmp_path / "scanner_universe.json"
     _write_universe(
         universe_path,
@@ -241,11 +241,11 @@ def test_strategy_runtime_uses_scanner_universe_before_slot_scope(tmp_path):
         base_symbols = runtime._base_symbols_for_entry_scan([plugin])
         scoped_symbols = runtime._symbols_for_snapshot(base_symbols, [plugin])
 
-    assert base_symbols == ["ETH/USDT", "SOL/USDT"]
-    assert scoped_symbols == ["ETH/USDT"]
+    assert base_symbols == ["BTC/USDT", "ETH/USDT"]
+    assert scoped_symbols == ["BTC/USDT", "ETH/USDT"]
 
 
-def test_promoted_slots_consume_scanner_universe_symbols(tmp_path):
+def test_promoted_slots_keep_fixed_scope_when_scanner_universe_is_enabled(tmp_path):
     universe_path = tmp_path / "scanner_universe.json"
     scanner_symbols = [
         {"symbol": "BTC/USDT", "rank": 1, "quote_volume_24h": 90_000_000_000.0},
@@ -276,11 +276,10 @@ def test_promoted_slots_consume_scanner_universe_symbols(tmp_path):
             for plugin in plugins
         }
 
-    expected = ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
-    assert base_symbols == expected
-    assert snapshot_symbols == expected
-    for strategy_id in PROMOTED_STRATEGIES:
-        assert plugin_symbols[strategy_id] == expected
+    assert base_symbols == ["BTC/USDT", "ETH/USDT"]
+    assert snapshot_symbols == ["BTC/USDT", "ETH/USDT"]
+    assert plugin_symbols[PROMOTED_STRATEGIES[0]] == ["BTC/USDT"]
+    assert plugin_symbols[PROMOTED_STRATEGIES[1]] == ["BTC/USDT", "ETH/USDT"]
 
 
 def test_strategy_runtime_falls_back_to_fixed_symbols_when_universe_stale(tmp_path):

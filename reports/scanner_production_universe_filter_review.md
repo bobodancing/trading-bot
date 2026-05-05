@@ -1,12 +1,14 @@
 # Scanner Production Universe Filter Review
 
 Date: 2026-05-01
+Last updated: 2026-05-05
 Branch: codex/post-promotion-control-20260430
 
 ## Decision
 
 The production scanner filter is implemented as an eligibility universe, not
-as alpha scoring.
+as alpha scoring. Runtime consumption is parked observe-only by default so the
+promoted A+B baseline stays fixed while Phase 4/5 research is closed out.
 
 Runtime now has three separate scanner concepts:
 
@@ -42,28 +44,26 @@ The filter writes exclusion reason codes such as:
 Slot A:
 
 - Strategy: MACD 4h continuation under 1d trend gate.
-- Current plugin scope: dynamic USDT scanner universe.
-- Scanner effect: every eligible `scanner_universe.json` symbol can be evaluated
-  by Slot A's MACD/trend/late-entry gates.
-- Fit: workable but broader than the original BTC-only promotion. The scanner's
-  `4h: 200` and `1d: 260` checks match Slot A's data requirements; production
-  behavior should be reviewed after live/dry-run observations because altcoin
-  trend behavior was not the original BTC-only assumption.
+- Current plugin scope: fixed BTC-only.
+- Scanner effect: observe-only unless `SCANNER_UNIVERSE_ENABLED` and a dynamic
+  plugin opt-in are explicitly restored.
+- Fit: scanner breadth is intentionally not mixed into the current Slot A
+  promotion baseline.
 
 Slot B:
 
 - Strategy: Donchian range fade 4h.
-- Current plugin scope: dynamic USDT scanner universe.
-- Scanner effect: every eligible `scanner_universe.json` symbol can be evaluated
-  by Slot B's range/RSI gates.
-- Fit: operationally reasonable for a range-fade strategy, with the same caveat
-  that this is a broader universe than the original BTC/ETH promotion. The
-  `1d: 260` scanner requirement is stricter than Slot B itself needs, but it
-  remains useful while Slot A shares the same universe.
+- Current plugin scope: fixed BTC/ETH.
+- Scanner effect: observe-only unless `SCANNER_UNIVERSE_ENABLED` and a dynamic
+  plugin opt-in are explicitly restored.
+- Fit: scanner breadth is intentionally not mixed into the current Slot B
+  promotion baseline.
 
 ## Runtime Boundary
 
-`StrategyRuntime` now attempts this order for entry symbols:
+`StrategyRuntime` attempts this scanner-universe order only when
+`SCANNER_UNIVERSE_ENABLED=True` and at least one enabled plugin explicitly opts
+into dynamic universe scope:
 
 1. If `SCANNER_UNIVERSE_ENABLED=True`, load `scanner_universe.json`.
 2. If the scanner universe is valid, use its `eligible_symbols` as the base
@@ -72,8 +72,9 @@ Slot B:
    back to fixed `Config.SYMBOLS`.
 4. Apply plugin scope after the base universe.
 
-Promoted Slot A/B now opt into dynamic universe scope, so plugin scope no longer
-narrows the scanner universe back to BTC/ETH when the scanner contract is valid.
+The current default is `SCANNER_UNIVERSE_ENABLED=False`; promoted Slot A/B keep
+fixed plugin scope, so a valid `scanner_universe.json` does not alter the
+default A+B trading universe.
 
 ## Review Notes
 

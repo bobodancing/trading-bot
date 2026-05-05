@@ -1,8 +1,8 @@
 # Scanner Production Universe Plan
 
 Date: 2026-04-30
-Last updated: 2026-05-01
-Status: V1 implemented for runtime universe filtering; keep alpha research separate
+Last updated: 2026-05-05
+Status: V1 infra implemented; runtime consumption parked observe-only by default
 Owner: Ruei
 Branch: codex/post-promotion-control-20260430
 
@@ -18,17 +18,20 @@ closeout reports are not mixed with a new symbol-selection variable.
 Production scanner integration is a runtime-universe project, not an alpha
 research task.
 
-Implementation note (2026-05-01):
+Implementation note (2026-05-05):
 
 - `scanner/universe_scanner.py` writes `scanner_universe.json`.
-- `StrategyRuntime` can consume `scanner_universe.json` before applying plugin
-  scope.
-- Missing/stale/malformed universe files fall back to fixed `Config.SYMBOLS`.
-- Promoted Slot A/B now explicitly opt into the scanner universe.
+- `StrategyRuntime` can consume `scanner_universe.json` only when
+  `SCANNER_UNIVERSE_ENABLED=True` and at least one enabled plugin explicitly
+  opts into dynamic universe scope.
+- Default runtime keeps scanner-universe consumption disabled so promoted A+B
+  remain fixed-scope while Phase 4/5 research is closed out.
+- Promoted Slot A/B do not opt into dynamic universe scope by default.
 
 ## Locked Decisions
 
-- Phase 4/5: scanner-driven A/B runtime scope enabled by explicit Ruei request.
+- Phase 4/5: scanner-driven A/B runtime scope is parked observe-only unless
+  Ruei explicitly re-enables it after baseline review.
 - Production universe file: `scanner_universe.json`.
 - Legacy live path to avoid: `hot_symbols.json -> bot_symbols`.
 - First production universe scope: Binance futures USDT top liquid symbols.
@@ -36,8 +39,8 @@ Implementation note (2026-05-01):
 - First filter depth: eligibility only, no alpha scoring.
 - Runtime failure mode: fallback to fixed portfolio.
 - Dynamic universe contract: plugin opt-in only.
-- Promoted A+B portfolio can trade the eligible scanner universe when
-  `scanner_universe.json` is valid.
+- Promoted A+B portfolio remains fixed BTC/ETH by default while
+  `scanner_universe.json` is observe-only.
 
 ## Intended Data Flow
 
@@ -134,13 +137,13 @@ V1 explicitly does not include:
 
 ## Runtime Integration Plan
 
-Runtime integration is enabled for promoted A+B after Ruei's explicit
-scanner-universe request.
+Runtime integration is infra-ready but disabled by default for promoted A+B
+while Phase 4/5 research is closed out.
 
 Config shape:
 
 ```python
-SCANNER_UNIVERSE_ENABLED = True
+SCANNER_UNIVERSE_ENABLED = False
 SCANNER_UNIVERSE_JSON_PATH = "scanner_universe.json"
 SCANNER_UNIVERSE_MAX_AGE_MINUTES = 30
 ```
@@ -148,6 +151,8 @@ SCANNER_UNIVERSE_MAX_AGE_MINUTES = 30
 Runtime symbol behavior:
 
 - If `SCANNER_UNIVERSE_ENABLED` is false, use current fixed behavior.
+- If no enabled plugin opts into dynamic universe scope, use current fixed
+  behavior even when scanner-universe infra exists.
 - If scanner JSON is missing, stale, malformed, or has `status != "ok"`,
   fallback to fixed portfolio.
 - Non-opt-in plugins receive only their current `allowed_symbols` scope.
@@ -164,16 +169,18 @@ dynamic_universe_quote = "USDT"
 dynamic_universe_max_symbols = 20
 ```
 
-Promoted Slot A/B now use this opt-in shape. Missing or bad scanner output still
-falls back to fixed `Config.SYMBOLS`.
+Promoted Slot A/B currently do not use this opt-in shape. Missing or bad scanner
+output still falls back to fixed `Config.SYMBOLS` when scanner-universe runtime
+consumption is explicitly enabled.
 
 ## Phase Schedule
 
-### Phase 4/5 Runtime Use With Dynamic A/B Scope
+### Phase 4/5 Runtime Use With Fixed A/B Scope
 
 - Keep `runtime_scanner.json` as diagnostics-only.
 - Generate `scanner_universe.json` with `scanner/universe_scanner.py`.
-- Runtime may use `scanner_universe.json` as the Slot A/B tradable universe.
+- Runtime does not use `scanner_universe.json` as the Slot A/B tradable
+  universe by default.
 - Do not use scanner universe to alter RSI2 or BB closeout backtest symbols
   unless the specific run is testing scanner-universe behavior.
 - Reports should separate scanner filtering effects from alpha gate effects.

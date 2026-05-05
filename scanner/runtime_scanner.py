@@ -117,9 +117,9 @@ class RuntimeScanner:
         report = {
             "scanner_contract_version": self.CONTRACT_VERSION,
             "scan_time": datetime.now(timezone.utc).isoformat(),
-            "runtime_source": "Config.ENABLED_STRATEGIES + plugin dynamic universe/fallback scope",
+            "runtime_source": "Config.ENABLED_STRATEGIES + plugin fixed/dynamic scope",
             "runtime_selection_feeds_trading": False,
-            "runtime_symbol_selection": "diagnostic_config_scope_for_dynamic_plugins",
+            "runtime_symbol_selection": "diagnostic_config_scope_only",
             "config": {
                 "strategy_runtime_enabled": bool(self.config.STRATEGY_RUNTIME_ENABLED),
                 "use_scanner_symbols": bool(self.config.USE_SCANNER_SYMBOLS),
