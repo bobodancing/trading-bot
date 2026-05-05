@@ -109,6 +109,8 @@ Do not create:
 
 Recommended next work is monitoring and operational hygiene for promoted A+B:
 
+- use `reports/portfolio_ab_monitoring_handoff.md` as the current monitoring
+  handoff
 - keep `Config.validate()` and full test suite green
 - keep scanner universe observe-only unless Ruei explicitly requests a new
   scanner-universe activation review
