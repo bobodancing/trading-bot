@@ -192,6 +192,7 @@ class TradingBot:
         logger.info(f"Leverage: {Config.LEVERAGE}x")
         logger.info(f"Risk per trade: {Config.RISK_PER_TRADE*100:.1f}%")
         logger.info(f"Strategy runtime: {'enabled' if Config.STRATEGY_RUNTIME_ENABLED else 'disabled'}")
+        logger.info(f"Strategy side filter: {Config.STRATEGY_RUNTIME_SIDE_FILTER}")
         logger.info(f"Enabled strategies: {', '.join(Config.ENABLED_STRATEGIES) or 'none'}")
         logger.info(f"Dry run: {'enabled' if Config.DRY_RUN else 'disabled'}")
         logger.info(f"Active positions: {len(self.active_trades)}")

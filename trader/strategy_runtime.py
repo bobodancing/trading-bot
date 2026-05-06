@@ -157,6 +157,15 @@ class StrategyRuntime:
         if not self._symbol_in_scope(plugin, symbol, context.symbols):
             self._audit_reject(symbol, intent.strategy_id, "strategy_symbol_out_of_scope")
             return
+        if not self._side_allowed(intent.side):
+            self._audit_reject(
+                symbol,
+                intent.strategy_id,
+                "strategy_side_filter_blocked",
+                f"STRATEGY_RUNTIME_SIDE_FILTER={Config.STRATEGY_RUNTIME_SIDE_FILTER}",
+                signal_side=intent.side,
+            )
+            return
         if symbol in self.bot.active_trades:
             self._audit_reject(symbol, intent.strategy_id, "position_slot_occupied")
             return
@@ -204,6 +213,13 @@ class StrategyRuntime:
             return decision.allowed, decision.reason
         allowed, reason = self.bot.regime_arbiter.can_enter(snapshot, intent.side)
         return bool(allowed), reason
+
+    @staticmethod
+    def _side_allowed(side: str) -> bool:
+        side_filter = str(getattr(Config, "STRATEGY_RUNTIME_SIDE_FILTER", "both")).lower()
+        if side_filter == "both":
+            return True
+        return side.upper() == side_filter.upper()
 
     def _build_risk_plan(
         self,
@@ -341,6 +357,7 @@ class StrategyRuntime:
         strategy_id: str,
         reason: str,
         detail: Optional[str] = None,
+        signal_side: Optional[str] = None,
     ) -> None:
         collector = getattr(self.bot, "_signal_audit", None)
         if collector is not None:
@@ -350,6 +367,7 @@ class StrategyRuntime:
                 stage="strategy_runtime",
                 reject_reason=reason,
                 signal_type=strategy_id,
+                signal_side=signal_side,
                 detail=detail,
             )
         logger.info("strategy reject %s %s: %s %s", symbol, strategy_id, reason, detail or "")

@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
+from trader.config import Config
 from trader.positions import LEGACY_MANUAL_STRATEGY_ID, PositionManager
 from trader.routing import RegimeRouter, StrategyRoute
 from trader.strategies import (
@@ -93,11 +94,18 @@ class _ScopedStrategy(StrategyPlugin):
         return []
 
 
-def _intent(symbol="BTC/USDT", strategy_id="scoped", entry=100.0, stop=95.0):
+def _intent(
+    symbol="BTC/USDT",
+    strategy_id="scoped",
+    entry=100.0,
+    stop=None,
+    side="LONG",
+):
+    stop = stop if stop is not None else (95.0 if side == "LONG" else 105.0)
     return SignalIntent(
         strategy_id=strategy_id,
         symbol=symbol,
-        side="LONG",
+        side=side,
         timeframe="1h",
         candle_ts=datetime.now(timezone.utc),
         entry_type="test_market",
@@ -329,6 +337,57 @@ def test_allowed_symbol_mismatch_rejects_before_direct_route(monkeypatch):
 
     assert bot.executed_plans == []
     assert bot._signal_audit.rejects[-1]["reject_reason"] == "strategy_symbol_out_of_scope"
+
+
+def test_runtime_side_filter_blocks_short_intent_when_long_only(monkeypatch):
+    monkeypatch.setattr("trader.strategy_runtime.Config.STRATEGY_RUNTIME_SIDE_FILTER", "long")
+    bot = _FakeBot()
+    runtime = StrategyRuntime(bot)
+    plugin = _ScopedStrategy()
+
+    runtime._process_intent(plugin, _intent(side="SHORT"), _context(bot))
+
+    assert bot.executed_plans == []
+    reject = bot._signal_audit.rejects[-1]
+    assert reject["reject_reason"] == "strategy_side_filter_blocked"
+    assert reject["signal_side"] == "SHORT"
+    assert reject["detail"] == "STRATEGY_RUNTIME_SIDE_FILTER=long"
+
+
+def test_runtime_side_filter_blocks_long_intent_when_short_only(monkeypatch):
+    monkeypatch.setattr("trader.strategy_runtime.Config.STRATEGY_RUNTIME_SIDE_FILTER", "short")
+    bot = _FakeBot()
+    runtime = StrategyRuntime(bot)
+    plugin = _ScopedStrategy()
+
+    runtime._process_intent(plugin, _intent(side="LONG"), _context(bot))
+
+    assert bot.executed_plans == []
+    reject = bot._signal_audit.rejects[-1]
+    assert reject["reject_reason"] == "strategy_side_filter_blocked"
+    assert reject["signal_side"] == "LONG"
+    assert reject["detail"] == "STRATEGY_RUNTIME_SIDE_FILTER=short"
+
+
+def test_runtime_side_filter_allows_short_when_both(monkeypatch):
+    monkeypatch.setattr("trader.strategy_runtime.Config.STRATEGY_RUNTIME_SIDE_FILTER", "both")
+    monkeypatch.setattr("trader.strategy_runtime.Config.REGIME_ARBITER_ENABLED", False)
+    monkeypatch.setattr("trader.strategy_runtime.Config.REGIME_ROUTER_ENABLED", False)
+    bot = _FakeBot()
+    runtime = StrategyRuntime(bot)
+    plugin = _ScopedStrategy()
+
+    runtime._process_intent(plugin, _intent(side="SHORT"), _context(bot))
+
+    assert len(bot.executed_plans) == 1
+    assert bot.executed_plans[0].intent.side == "SHORT"
+
+
+def test_config_rejects_invalid_runtime_side_filter(monkeypatch):
+    monkeypatch.setattr(Config, "STRATEGY_RUNTIME_SIDE_FILTER", "sideways")
+
+    with pytest.raises(ValueError, match="STRATEGY_RUNTIME_SIDE_FILTER"):
+        Config.validate()
 
 
 def test_strategy_position_limit_rejects_second_symbol_with_audit(monkeypatch):

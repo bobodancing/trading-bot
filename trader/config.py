@@ -154,9 +154,12 @@ class Config:
     # ==================== Strategy Runtime ====================
 
     STRATEGY_RUNTIME_ENABLED = True
+    STRATEGY_RUNTIME_SIDE_FILTER = "both"  # "long" | "short" | "both"
     ENABLED_STRATEGIES: list = [
         "macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_transition_aware_tightened_late_entry_filter",
+        "macd_signal_btc_4h_trending_down_staged_derisk_giveback_partial67_transition_aware_tightened_late_entry_filter",
         "donchian_range_fade_4h_range_width_cv_013",
+        "donchian_range_fade_4h_range_width_cv_013_short",
     ]
     DEFAULT_STRATEGY_RISK_PROFILE = "central_default"
 
@@ -174,6 +177,12 @@ class Config:
         if not isinstance(cls.ENABLED_STRATEGIES, list):
             raise ValueError(
                 f"ENABLED_STRATEGIES must be a list, got {type(cls.ENABLED_STRATEGIES).__name__}"
+            )
+        side_filter = str(getattr(cls, "STRATEGY_RUNTIME_SIDE_FILTER", "")).lower()
+        if side_filter not in {"long", "short", "both"}:
+            raise ValueError(
+                "STRATEGY_RUNTIME_SIDE_FILTER must be one of: long, short, both; "
+                f"got {cls.STRATEGY_RUNTIME_SIDE_FILTER}"
             )
         if cls.STRATEGY_ROUTER_POLICY != "fail_closed":
             raise ValueError(
