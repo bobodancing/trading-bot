@@ -21,6 +21,18 @@ from trader.strategies.plugins.macd_signal_trending_up_4h import MacdSignalTrend
 from trader.strategy_runtime import MarketSnapshotBuilder, StrategyRuntime
 
 
+SLOT_A_LONG = (
+    "macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_"
+    "transition_aware_tightened_late_entry_filter"
+)
+SLOT_A_SHORT = (
+    "macd_signal_btc_4h_trending_down_staged_derisk_giveback_partial67_"
+    "transition_aware_tightened_late_entry_filter"
+)
+SLOT_B_LONG = "donchian_range_fade_4h_range_width_cv_013"
+SLOT_B_SHORT = "donchian_range_fade_4h_range_width_cv_013_short"
+
+
 def _frame(rows=80):
     idx = pd.date_range("2026-01-01", periods=rows, freq="h", tz="UTC")
     close = pd.Series(range(100, 100 + rows), index=idx, dtype=float)
@@ -388,6 +400,13 @@ def test_config_rejects_invalid_runtime_side_filter(monkeypatch):
 
     with pytest.raises(ValueError, match="STRATEGY_RUNTIME_SIDE_FILTER"):
         Config.validate()
+
+
+def test_runtime_defaults_promote_slot_b_short_overlay_without_slot_a_short():
+    assert Config.STRATEGY_RUNTIME_ENABLED is True
+    assert Config.STRATEGY_RUNTIME_SIDE_FILTER == "both"
+    assert Config.ENABLED_STRATEGIES == [SLOT_A_LONG, SLOT_B_LONG, SLOT_B_SHORT]
+    assert SLOT_A_SHORT not in Config.ENABLED_STRATEGIES
 
 
 def test_strategy_position_limit_rejects_second_symbol_with_audit(monkeypatch):

@@ -157,7 +157,6 @@ class Config:
     STRATEGY_RUNTIME_SIDE_FILTER = "both"  # "long" | "short" | "both"
     ENABLED_STRATEGIES: list = [
         "macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_transition_aware_tightened_late_entry_filter",
-        "macd_signal_btc_4h_trending_down_staged_derisk_giveback_partial67_transition_aware_tightened_late_entry_filter",
         "donchian_range_fade_4h_range_width_cv_013",
         "donchian_range_fade_4h_range_width_cv_013_short",
     ]

@@ -1,8 +1,13 @@
 # Portfolio A+B Monitoring Handoff
 
 Date: 2026-05-05
-Status: `OPS_MONITORING_HANDOFF`
+Status: `SUPERSEDED_BY_SLOT_B_SHORT_PROMOTION_PREP`
 Branch: `codex/post-promotion-control-20260430`
+
+Superseded on 2026-05-07 by
+`reports/portfolio_ab_slot_b_short_promotion_gate.md`, which prepares the
+three-leg runtime default: Slot A LONG + Slot B LONG + Slot B SHORT.
+The original handoff content below is retained as historical context only.
 
 ## Purpose
 
@@ -38,7 +43,7 @@ Report truth:
 - `reports/portfolio_ab_trigger_review.md`
 - `reports/scanner_production_universe_filter_review.md`
 
-Current runtime defaults:
+Superseded runtime defaults at original handoff:
 
 | item | expected value |
 | --- | --- |
@@ -53,7 +58,7 @@ Current runtime defaults:
 | `RISK_PER_TRADE` | `0.017` |
 | `MAX_TOTAL_RISK` | `0.0642` |
 
-Promoted scope:
+Superseded promoted scope at original handoff:
 
 | slot | strategy id | symbol scope | role |
 | --- | --- | --- | --- |
