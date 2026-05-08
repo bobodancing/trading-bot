@@ -1,8 +1,4 @@
-"""Primary trading bot runtime.
-
-Legacy V5/V6 labels may still exist in historical comments, but the live
-runtime path is StrategyRuntime plus central risk/execution handoff.
-"""
+"""Primary StrategyRuntime bot process."""
 
 import sys
 import os
@@ -32,8 +28,6 @@ from trader.infrastructure.notifier import TelegramNotifier
 from trader.infrastructure.telegram_handler import TelegramCommandHandler
 from trader.infrastructure.data_provider import MarketDataProvider
 from trader.infrastructure.performance_db import PerformanceDB
-# Indicators.
-from trader.indicators.technical import TechnicalAnalysis
 # Runtime services.
 from trader.risk.manager import PrecisionHandler, RiskManager
 from trader.arbiter import RegimeArbiter
@@ -1384,9 +1378,6 @@ class TradingBot:
                     error=str(e),
                 )
                 time.sleep(Config.CHECK_INTERVAL)
-
-
-TradingBotV6 = TradingBot
 
 def _configure_utf8_stdio() -> None:
     """Prefer UTF-8 console output so valid Unicode logs do not degrade."""

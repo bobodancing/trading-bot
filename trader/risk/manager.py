@@ -50,8 +50,13 @@ class PrecisionHandler:
 
     def load_markets(self):
         try:
-            self.markets = self.exchange.load_markets(reload=True)
-            logger.info("Precision metadata loaded from exchange markets")
+            existing_markets = getattr(self.exchange, "markets", None)
+            if existing_markets:
+                self.markets = existing_markets
+                logger.info("Precision metadata reused from exchange markets")
+            else:
+                self.markets = self.exchange.load_markets(reload=True)
+                logger.info("Precision metadata loaded from exchange markets")
             self.use_default_precision = False
         except Exception as e:
             logger.error(f"Market precision load failed: {e}")
