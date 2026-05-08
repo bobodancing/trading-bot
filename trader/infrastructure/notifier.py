@@ -14,7 +14,6 @@ logger = logging.getLogger(__name__)
 STRATEGY_LABELS = {
     "legacy_manual": "Manual/Protective",
     "manual_protective": "Manual/Protective",
-    "v8_atr_grid": "V8 ATR Grid",
 }
 
 
@@ -26,7 +25,7 @@ def format_strategy_label(strategy_name: Optional[str] = None, _compat_flag: Opt
 
 
 class TelegramNotifier:
-    """Small Telegram notifier used by runtime and grid modules."""
+    """Small Telegram notifier used by runtime modules."""
 
     @staticmethod
     def send_message(message: str):
@@ -158,39 +157,6 @@ Regime: {esc(str(details.get('market_regime', 'N/A')))}
         )
         TelegramNotifier.send_message(msg)
 
-    @staticmethod
-    def notify_grid_activated(center: float, lower: float, upper: float, levels: int):
-        msg = (
-            "<b>Grid activated</b>\n"
-            f"Center: {center:.0f}\n"
-            f"Range: {lower:.0f} - {upper:.0f}\n"
-            f"Levels: {levels * 2}"
-        )
-        TelegramNotifier.send_message(msg)
 
-    @staticmethod
-    def notify_grid_action(action_type: str, side: str, level: int, price: float, size: float):
-        msg = (
-            f"Grid L{abs(level)} {html.escape(action_type)} {html.escape(side)} "
-            f"@ {price:.0f} (size: {size:.4f} BTC)"
-        )
-        TelegramNotifier.send_message(msg)
-
-    @staticmethod
-    def notify_grid_close(level: int, side: str, price: float, pnl: float):
-        msg = (
-            f"Grid L{abs(level)} {html.escape(side)} closed "
-            f"@ {price:.0f} ({'+' if pnl >= 0 else ''}{pnl:.2f} USDT)"
-        )
-        TelegramNotifier.send_message(msg)
-
-    @staticmethod
-    def notify_grid_stopped(reason: str, details: str = ""):
-        msg = f"<b>Grid stopped:</b> {html.escape(reason)}"
-        if details:
-            msg += f"\n{html.escape(details)}"
-        TelegramNotifier.send_message(msg)
-
-
-# Alias for compatibility with grid strategy code.
+# Alias for legacy notifier imports.
 Notifier = TelegramNotifier

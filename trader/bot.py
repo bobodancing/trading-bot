@@ -33,7 +33,6 @@ from trader.risk.manager import PrecisionHandler, RiskManager
 from trader.arbiter import RegimeArbiter
 from trader.routing import RegimeRouter
 from trader.regime import RegimeEngine
-from trader.strategies.v8_grid import V8AtrGrid, PoolManager
 # Execution and runtime kernel.
 from trader.execution.order_engine import OrderExecutionEngine
 from trader.config import Config
@@ -42,7 +41,6 @@ from trader.persistence import PositionPersistence
 from trader.runtime_observability import RuntimeFunnelRecorder
 from trader.strategies import ExecutableOrderPlan
 from trader.strategy_runtime import StrategyRuntime
-from trader.grid_manager import GridManager
 from trader.btc_context import BTCContextManager, get_last_candle_time, get_last_closed_candle_time, format_candle_time
 from trader.position_monitor import PositionMonitor
 from trader.signal_scanner import SignalScanner
@@ -127,21 +125,14 @@ class TradingBot:
         # Telegram command handler.
         self.telegram_handler = TelegramCommandHandler(self)
 
-        # Grid / Regime system
+        # Regime system
         self.regime_engine = RegimeEngine()
         self.regime_arbiter = RegimeArbiter()
         self.regime_router = RegimeRouter()
-        self.pool_manager = PoolManager()
-        self.grid_engine = V8AtrGrid(
-            api_client=self.futures_client,
-            notifier=None,
-        )
-        self.grid_trades: dict = {}
         self._start_time = datetime.now(timezone.utc)
         self._btc_regime_context: Dict[str, object] = {}
         self._btc_trend_context: Dict[str, object] = {}
         self._regime_arbiter_snapshot = None
-        self.grid_manager = GridManager(self)
         self.btc_context_manager = BTCContextManager(self)
         self.position_monitor = PositionMonitor(self)
         self.signal_scanner = SignalScanner(self)
@@ -537,20 +528,6 @@ class TradingBot:
 
     # ==================== Private Helpers ====================
 
-    # -- Grid management (delegated to GridManager) --
-
-    def _scan_grid_signals(self):
-        self.grid_manager.scan_grid_signals()
-
-    def _monitor_grid_state(self):
-        self.grid_manager.monitor_grid_state()
-
-    def _execute_grid_action(self, action, current_price: float):
-        self.grid_manager.execute_grid_action(action, current_price)
-
-    def _record_grid_trade(self, action, entry_price: float, exit_price: float, pnl: float):
-        self.grid_manager.record_grid_trade(action, entry_price, exit_price, pnl)
-
     def _check_btc_trend(self) -> Optional[str]:
         return self.btc_context_manager.check_btc_trend()
 
@@ -561,14 +538,6 @@ class TradingBot:
     @staticmethod
     def _get_last_closed_candle_time(df: pd.DataFrame) -> Optional[pd.Timestamp]:
         return get_last_closed_candle_time(df)
-
-    def _get_regime_market_ts(self) -> Optional[pd.Timestamp]:
-        candle_time = (self._btc_regime_context or {}).get('candle_time')
-        if isinstance(candle_time, str) and candle_time and candle_time != "n/a":
-            return pd.Timestamp(candle_time)
-        if self.regime_engine.last_candle_time is not None:
-            return pd.Timestamp(self.regime_engine.last_candle_time)
-        return None
 
     @staticmethod
     def _symbol_to_exchange_id(symbol: str) -> str:
@@ -633,21 +602,7 @@ class TradingBot:
             key = (self._symbol_to_exchange_id(symbol), pm.side)
             internal_map[key] = internal_map.get(key, 0.0) + pm.total_size
 
-        if self.grid_engine.state:
-            for position in self.grid_engine.state.active_positions:
-                key = ('BTCUSDT', position['side'])
-                internal_map[key] = internal_map.get(key, 0.0) + float(position['size'])
-
         return internal_map
-
-    def _is_grid_exchange_flat(self) -> bool:
-        return self.grid_manager.is_exchange_flat()
-
-    def _finalize_grid_shutdown_if_flat(self):
-        self.grid_manager.finalize_grid_shutdown_if_flat()
-
-    def _restore_grid_runtime_state(self):
-        self.grid_manager.restore_runtime_state()
 
     @staticmethod
     def _format_candle_time(candle_time: Optional[pd.Timestamp]) -> str:
@@ -1322,30 +1277,6 @@ class TradingBot:
         except Exception as e:
             logger.warning(f'Could not determine hedge mode state: {e}')
 
-        # Ensure hedge mode for grid trading
-        if Config.ENABLE_GRID_TRADING:
-            is_hedge = self.futures_client.get_position_mode()
-            if is_hedge is True:
-                logger.info("Hedge mode already enabled; grid trading ready")
-            elif is_hedge is False:
-                logger.info("Grid trading enabled; switching to hedge mode")
-                if not self.futures_client.set_hedge_mode(True):
-                    # Verify: re-query actual state
-                    is_hedge = self.futures_client.get_position_mode()
-                    if is_hedge is not True:
-                        logger.error(
-                            "Failed to switch account into hedge mode; disabling grid trading"
-                        )
-                        Config.ENABLE_GRID_TRADING = False
-            else:
-                logger.warning("Unable to determine position mode; disabling grid trading")
-            if Config.ENABLE_GRID_TRADING:
-                try:
-                    self.execution_engine.hedge_mode = self.futures_client.get_position_side_dual()
-                except Exception as e:
-                    logger.warning(f"Could not refresh hedge mode state after grid check: {e}")
-                self._restore_grid_runtime_state()
-
         logger.info("Main loop started: interval=%ss", Config.CHECK_INTERVAL)
 
         # Adopt unmanaged exchange positions before normal monitoring.
@@ -1358,7 +1289,6 @@ class TradingBot:
                 logger.debug(f"[cycle #{cycle}]")
 
                 self.scan_for_signals()
-                self._monitor_grid_state()
                 self._sync_exchange_positions()
                 self.monitor_positions()
                 self.telegram_handler.poll()

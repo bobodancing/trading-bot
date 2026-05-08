@@ -8,7 +8,7 @@ This checklist defines the minimum gates for moving a plugin from research statu
 
 - `entry_stop_violations == 0` across all candidate review windows in the latest `reports/strategy_plugin_candidate_review.md` row.
 - `backtest_run_error_count == 0` across all candidate review windows.
-- Focused unit tests exist in `trader/tests/test_<plugin_id>*.py` and cover entry intent shape, stop hint math, out-of-scope symbol, no-signal path, and exit signal if the plugin has one.
+- Focused unit tests exist under `trader/tests/plugins/` and cover entry intent shape, stop hint math, out-of-scope symbol, no-signal path, and exit signal if the plugin has one.
 - Focused tests pass in the latest `python -m pytest trader/tests extensions/Backtesting/tests -q` run.
 
 ## 2.5 Regime Declaration

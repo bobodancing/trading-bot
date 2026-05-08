@@ -276,9 +276,9 @@ def test_record_regime_probe_records_unique_candles():
         _update_btc_regime_context=lambda: contexts.pop(0),
     )
 
-    _record_regime_probe(bot, "2026-01-01T00:00:00+00:00", grid_enabled=False)
-    _record_regime_probe(bot, "2026-01-01T01:00:00+00:00", grid_enabled=False)
-    _record_regime_probe(bot, "2026-01-01T04:00:00+00:00", grid_enabled=False)
+    _record_regime_probe(bot, "2026-01-01T00:00:00+00:00")
+    _record_regime_probe(bot, "2026-01-01T01:00:00+00:00")
+    _record_regime_probe(bot, "2026-01-01T04:00:00+00:00")
 
     df = audit.btc_trend_df()
     assert len(df) == 2
@@ -287,7 +287,7 @@ def test_record_regime_probe_records_unique_candles():
     assert df["trend"].tolist() == ["LONG", "RANGING"]
 
 
-def test_backtest_engine_records_regime_probe_when_grid_disabled(monkeypatch):
+def test_backtest_engine_records_regime_probe(monkeypatch):
     from data_loader import BacktestDataLoader
 
     df = make_fake_df(200)

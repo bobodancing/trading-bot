@@ -160,10 +160,7 @@ class TelegramCommandHandler:
             uptime_str = "N/A"
 
         counts = Counter(self._strategy_label(pm) for pm in trades.values())
-        label_order = [
-            "Manual/Protective",
-            "V8 ATR Grid",
-        ]
+        label_order = ["Manual/Protective"]
         parts = [f"{label}: {counts[label]}" for label in label_order if counts.get(label)]
         extra_labels = sorted(label for label in counts.keys() if label not in label_order)
         parts.extend(f"{label}: {counts[label]}" for label in extra_labels)

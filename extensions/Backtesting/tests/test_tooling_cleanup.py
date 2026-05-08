@@ -117,8 +117,8 @@ def test_regime_probe_keeps_latest_entry_snapshot():
         _update_btc_regime_context=lambda: contexts.pop(0),
     )
 
-    _record_regime_probe(bot, "2026-01-01T00:00:00+00:00", grid_enabled=False)
-    _record_regime_probe(bot, "2026-01-01T04:00:00+00:00", grid_enabled=False)
+    _record_regime_probe(bot, "2026-01-01T00:00:00+00:00")
+    _record_regime_probe(bot, "2026-01-01T04:00:00+00:00")
 
     snapshot = bot._backtest_latest_regime_probe_snapshot
     assert snapshot["entry_regime"] == "RANGING"

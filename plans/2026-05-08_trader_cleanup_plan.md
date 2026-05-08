@@ -77,7 +77,7 @@ Produce or refresh an inventory for the phase:
 
 ## Phase 1 - Low-Risk Cleanup
 
-Status: implementation complete, pending review/commit.
+Status: completed and committed on 2026-05-08.
 
 ### 1A. Local Cache Cleanup
 
@@ -139,9 +139,11 @@ Phase 1 handoff output:
 
 ## Phase 2 - Code-Aware Cleanup
 
-Status: pending.
+Status: completed and committed on 2026-05-08.
 
 ### 2A. Retire `trader/strategies/v8_grid`
+
+Status: completed on 2026-05-08.
 
 Reason:
 
@@ -180,6 +182,8 @@ python -m pytest trader/tests extensions/Backtesting/tests -q
 
 ### 2B. Reorganize `trader/tests`
 
+Status: completed on 2026-05-08.
+
 Goal:
 
 Make tests reflect current ownership instead of old strategy generations.
@@ -203,6 +207,8 @@ python -m pytest trader/tests -q
 
 ### 2C. Clean `trader/indicators`
 
+Status: completed on 2026-05-08.
+
 Scope:
 
 - `trader/indicators/technical.py`
@@ -220,10 +226,12 @@ Review gate:
 
 ```powershell
 rg -n "TechnicalAnalysis|MTFConfirmation|MarketFilter|DynamicThresholdManager" trader extensions scanner
-python -m pytest trader/tests/test_indicator_registry.py trader/tests/test_bbw.py -q
+python -m pytest trader/tests/market/test_indicator_registry.py trader/tests/market/test_bbw.py -q
 ```
 
 ### 2D. Clean `trader/risk`
+
+Status: completed on 2026-05-08.
 
 Scope:
 
@@ -244,8 +252,13 @@ Review gate:
 
 ```powershell
 rg -n "RiskManager|PrecisionHandler|SignalTierSystem|calculate_position_size|signal_tier|tier_score" trader extensions scanner
-python -m pytest trader/tests/test_risk_guard.py trader/tests/test_strategy_runtime_kernel.py -q
+python -m pytest trader/tests/persistence/test_risk_guard.py trader/tests/runtime/test_strategy_runtime_kernel.py -q
 ```
+
+Phase 2 output:
+
+- `reports/trader_cleanup_phase2_code_aware.md`
+- `trader/tests/README.md`
 
 ## Phase 3 - Infrastructure Cleanup
 
@@ -271,7 +284,7 @@ Plan:
 Review gate:
 
 ```powershell
-python -m pytest trader/tests/test_data_provider.py trader/tests/test_notifier_escape.py trader/tests/test_telegram_handler.py trader/tests/test_perf_db_quality.py -q
+python -m pytest trader/tests/infrastructure/test_data_provider.py trader/tests/infrastructure/test_notifier_escape.py trader/tests/infrastructure/test_telegram_handler.py trader/tests/infrastructure/test_perf_db_quality.py -q
 python -m pytest trader/tests extensions/Backtesting/tests -q
 ```
 

@@ -134,24 +134,6 @@ class Config:
     # Per-symbol cooldown after a realized loss (perf_db backed; survives restart).
     SYMBOL_LOSS_COOLDOWN_HOURS = 24
 
-    # ==================== Grid (dormant; non-R5 track) ====================
-
-    ENABLE_GRID_TRADING = False
-    GRID_CAPITAL_RATIO = 0.30
-    GRID_SMA_PERIOD = 20
-    GRID_ATR_PERIOD = 14
-    GRID_ATR_MULTIPLIER = 2.5
-    GRID_LEVELS = 5
-    GRID_WEIGHT_CENTER = 0.5
-    GRID_WEIGHT_EDGE = 1.5
-    GRID_MAX_TOTAL_RISK = 0.075
-    GRID_RISK_PER_TRADE = 0.025
-    GRID_MAX_DRAWDOWN = 0.05
-    GRID_MAX_NOTIONAL = 0.0
-    GRID_COOLDOWN_HOURS = 6
-    GRID_CONVERGE_TIMEOUT_HOURS = 72
-    GRID_RESET_DRIFT_RATIO = 0.5
-
     # ==================== Strategy Runtime ====================
 
     STRATEGY_RUNTIME_ENABLED = True

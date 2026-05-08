@@ -165,55 +165,11 @@ class BTCContextManager:
         )
 
     def resolve_btc_trend_context(self, log_event: bool = False) -> Dict[str, object]:
-        """Resolve BTC trend once per cycle with 4H regime priority and 1D fallback."""
+        """Resolve BTC trend once per cycle from the 1D EMA context."""
         bot = self.bot
-        if Config.ENABLE_GRID_TRADING:
-            regime_context = bot._btc_regime_context or self.make_btc_context(
-                source="none",
-                reason="regime_not_initialized",
-            )
-            regime = regime_context.get('regime')
-            direction = regime_context.get('direction')
-            detected = regime_context.get('detected')
-
-            if regime == "RANGING":
-                context = dict(regime_context)
-                context['trend'] = "RANGING"
-                context['reason'] = "regime_ranging"
-            elif regime == "SQUEEZE":
-                context = dict(regime_context)
-                context['trend'] = None
-                context['reason'] = "regime_squeeze_pause"
-            elif direction in ("LONG", "SHORT"):
-                context = dict(regime_context)
-                context['trend'] = direction
-                if detected == "UNKNOWN":
-                    context['reason'] = "ambiguous_regime_keep_direction"
-                else:
-                    context['reason'] = "regime_direction"
-            else:
-                fallback_context = self.get_daily_btc_trend_context()
-                if fallback_context.get('trend') is not None:
-                    context = fallback_context
-                    context['reason'] = (
-                        f"fallback_after_{regime_context.get('reason', 'regime_unavailable')}"
-                    )
-                else:
-                    context = self.make_btc_context(
-                        source="none",
-                        regime=regime if isinstance(regime, str) else None,
-                        detected=detected if isinstance(detected, str) else None,
-                        direction=direction if isinstance(direction, str) else None,
-                        candle_time=bot.regime_engine.last_candle_time,
-                        reason=(
-                            f"regime_unavailable_and_1d_failed:"
-                            f"{regime_context.get('reason', 'unknown')}"
-                        ),
-                    )
-        else:
-            context = self.get_daily_btc_trend_context()
-            if context.get('trend') is not None:
-                context['reason'] = "grid_disabled_daily_ema"
+        context = self.get_daily_btc_trend_context()
+        if context.get('trend') is not None:
+            context['reason'] = "daily_ema"
 
         if log_event:
             logger.info(
@@ -238,7 +194,7 @@ class BTCContextManager:
         return context
 
 
-# -- Shared utility functions (used by GridManager too) --
+# -- Shared candle-time utility functions --
 
 def get_last_candle_time(df: pd.DataFrame) -> Optional[pd.Timestamp]:
     if df is None or df.empty:

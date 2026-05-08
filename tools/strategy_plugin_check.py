@@ -80,9 +80,9 @@ def check_strategy(strategy_id: str, *, repo_root: Path | None = None) -> Plugin
 
 def _has_focused_test(repo_root: Path, strategy_id: str) -> bool:
     tests_dir = repo_root / "trader" / "tests"
-    if list(tests_dir.glob(f"test_{strategy_id}*.py")):
+    if list(tests_dir.rglob(f"test_{strategy_id}*.py")):
         return True
-    for path in tests_dir.glob("test_*.py"):
+    for path in tests_dir.rglob("test_*.py"):
         try:
             if strategy_id in path.read_text(encoding="utf-8"):
                 return True

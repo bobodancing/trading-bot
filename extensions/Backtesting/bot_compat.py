@@ -53,7 +53,6 @@ def get_datetime_patch_modules() -> list[ModuleType]:
     for module_name in (
         "trader.signal_scanner",
         "trader.position_monitor",
-        "trader.grid_manager",
         "trader.utils",
     ):
         module = import_optional(module_name)
@@ -71,7 +70,6 @@ def get_datetime_patch_module_names() -> set[str]:
         "trader.positions",
         "trader.signal_scanner",
         "trader.position_monitor",
-        "trader.grid_manager",
         "trader.utils",
         "trader.strategy_runtime",
     })

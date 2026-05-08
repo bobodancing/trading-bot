@@ -45,11 +45,14 @@ DEFAULT_REPORT = REPO_ROOT / "reports" / "portfolio_ab_promotion_gated_freeze.md
 
 
 SLOT_A_TEST = (
-    "trader/tests/"
+    "trader/tests/plugins/promoted/"
     "test_macd_signal_trending_up_4h_staged_derisk_giveback_partial67_"
     "transition_aware_tightened_late_entry_filter_strategy.py"
 )
-SLOT_B_TEST = "trader/tests/test_donchian_range_fade_4h_range_width_cv_013_strategy.py"
+SLOT_B_TEST = (
+    "trader/tests/plugins/promoted/"
+    "test_donchian_range_fade_4h_range_width_cv_013_strategy.py"
+)
 PROMOTION_COMMIT_1 = "5dee878 chore(runtime): enable frozen portfolio catalog entries"
 PROMOTION_COMMIT_2 = "1933e65 feat(runtime): promote frozen portfolio strategies"
 RECOVERY_BACKLOG_COMMIT = "827b5a7 docs(research): schedule recovery backlog after promotion"

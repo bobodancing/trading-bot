@@ -354,7 +354,7 @@ class MarketScanner:
         """獲取 K 線數據（委託 MarketDataProvider 統一處理重試邏輯）"""
         return self._data_provider.fetch_ohlcv(symbol, timeframe, limit)
     
-    # TECH_DEBT: 此函數與 trading_bot_main.py 的 TechnicalAnalysis.calculate_indicators 有重疊邏輯
+    # TECH_DEBT: overlaps with trader.indicators.technical.TechnicalAnalysis.
     # （EMA、ATR、ADX、vol_ma），但計算的指標集不同，暫不合併。
     # 若未來需修改共用指標，請兩邊同步更新。
     def calculate_indicators(self, df: pd.DataFrame) -> pd.DataFrame:

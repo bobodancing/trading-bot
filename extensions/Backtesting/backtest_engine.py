@@ -319,16 +319,13 @@ def _assign_entry_regime(active_trades: dict, regime_registry: dict, snapshot: O
             regime_registry[tid] = dict(snapshot)
 
 
-def _record_regime_probe(bot, timestamp, *, grid_enabled: bool) -> None:
+def _record_regime_probe(bot, timestamp) -> None:
     """
-    Advance BTC 4H regime state during backtest even when grid is disabled.
+    Advance BTC 4H regime state during backtest.
 
     This is an audit-only sidecar for Patch B baseline coverage. It should not
     affect scan routing under the current live config.
     """
-    if grid_enabled:
-        return
-
     audit = getattr(bot, "_signal_audit", None)
     if audit is None:
         return
@@ -599,11 +596,7 @@ class BacktestEngine:
 
                 _record_strategy_trace(bot.active_trades, pm_registry)
 
-                _record_regime_probe(
-                    bot,
-                    ts,
-                    grid_enabled=Config.ENABLE_GRID_TRADING,
-                )
+                _record_regime_probe(bot, ts)
 
                 if i < cfg.warmup_bars:
                     equity_curve.append((ts, cfg.initial_balance))

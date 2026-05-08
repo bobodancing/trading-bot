@@ -1,7 +1,7 @@
 """
 Shared utility functions -- extracted from bot.py (Phase 3, C6).
 
-Common helpers used by bot.py, position_monitor.py, grid_manager.py, etc.
+Common helpers used by bot.py, position_monitor.py, and runtime support modules.
 """
 
 import logging

@@ -69,8 +69,6 @@ ALLOWED_BACKTEST_OVERRIDES = {
     "STRATEGY_RUNTIME_SIDE_FILTER",
     "ENABLED_STRATEGIES",
     "DEFAULT_STRATEGY_RISK_PROFILE",
-    # Dormant grid lane, useful for explicit diagnostics only.
-    "ENABLE_GRID_TRADING",
 }
 
 _PLUGIN_RUNTIME_DEFAULT_KEYS = (

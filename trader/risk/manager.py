@@ -1,12 +1,10 @@
 """
-風險管理層
+風險管理層。
 
-包含：
-- PrecisionHandler：交易所精度處理（數量格式化、最小訂單驗證）
-- RiskManager：帳戶餘額獲取、倉位大小計算、止損計算、總風險檢查
-- SignalTierSystem：信號分級系統（A/B/C 等級與倉位乘數）
-
-從 v6/core.py 提取，業務邏輯不變。
+Current StrategyRuntime sizing is centralized in `StrategyRuntime`; this module
+still owns exchange precision metadata and account/position access. Older
+position sizing and signal-tier helpers are retained for compatibility with
+manual/replay surfaces and historical analytics fields.
 """
 
 import ccxt
@@ -240,7 +238,7 @@ class PrecisionHandler:
 # ==================== 風險管理 ====================
 
 class RiskManager:
-    """風險管理類"""
+    """Account risk access and legacy sizing helpers."""
 
     def __init__(self, exchange, precision_handler: PrecisionHandler):
         self.exchange = exchange
@@ -336,7 +334,7 @@ class RiskManager:
     def calculate_position_size(self, symbol: str, balance: float,
                                entry_price: float, stop_loss: float,
                                tier_multiplier: float = 1.0) -> float:
-        """計算倉位大小"""
+        """Legacy sizing helper; StrategyRuntime uses central RiskPlan sizing."""
         risk_amount = balance * Config.RISK_PER_TRADE
         stop_dist_percent = abs(entry_price - stop_loss) / entry_price
 
@@ -367,7 +365,7 @@ class RiskManager:
 
     def calculate_stop_loss(self, extreme_point: float, atr: float,
                             side: str, df=None) -> float:
-        """計算止損價位"""
+        """Legacy ATR stop helper retained for non-runtime callers."""
         atr_mult = DynamicThresholdManager.get_atr_multiplier(df) if df is not None else Config.ATR_MULTIPLIER
 
         if side == 'LONG':
@@ -376,7 +374,7 @@ class RiskManager:
             return extreme_point + (atr * atr_mult)
 
     def check_total_risk(self, active_positions: List) -> bool:
-        """計算所有持倉的實際剩餘風險"""
+        """Legacy total-risk helper; live runtime calls TradingBot._check_total_risk."""
         if not active_positions:
             return True
 
@@ -408,7 +406,7 @@ class RiskManager:
 # ==================== 信號分級系統 ====================
 
 class SignalTierSystem:
-    """信號分級系統"""
+    """Legacy signal-tier diagnostics for historical analytics fields."""
 
     @staticmethod
     def get_tier_diagnostics(

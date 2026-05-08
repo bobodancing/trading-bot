@@ -47,7 +47,13 @@ def build_scaffold(
     symbol_literal = ", ".join(repr(symbol) for symbol in symbols)
     tags = "short_only" if side == "SHORT" else "long_only"
     plugin_path = Path("trader") / "strategies" / "plugins" / f"{module_name}.py"
-    test_path = Path("trader") / "tests" / f"test_{module_name}_strategy.py"
+    test_path = (
+        Path("trader")
+        / "tests"
+        / "plugins"
+        / "research"
+        / f"test_{module_name}_strategy.py"
+    )
     spec_path = Path("plans") / f"cartridge_spec_{module_name}.md"
 
     plugin_source = dedent(

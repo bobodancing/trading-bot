@@ -1,13 +1,10 @@
 """
-技術指標層
+技術指標層。
 
-包含純數學計算函數（_ema, _sma, _atr, _adx）與所有技術分析類別：
-- TechnicalAnalysis：指標計算、趨勢判斷、信號偵測
-- DynamicThresholdManager：根據市場狀態動態調整 ADX/ATR 閾值
-- MTFConfirmation：多時間框架確認
-- MarketFilter：市場狀態過濾
-
-從 v6/core.py 提取，業務邏輯不變。
+`_ema`, `_sma`, `_atr`, `_adx`, and `_bbw` are shared by StrategyRuntime,
+backtests, and research plugins. `TechnicalAnalysis` remains the current
+runtime/backtest indicator adapter. The other classes are retained as legacy
+compatibility helpers for risk sizing or older analysis surfaces.
 """
 
 import logging
@@ -179,7 +176,7 @@ class TechnicalAnalysis:
 # ==================== 動態閾值管理器 ====================
 
 class DynamicThresholdManager:
-    """動態閾值管理器"""
+    """Dynamic ADX/ATR threshold helper retained by risk sizing."""
 
     @staticmethod
     def get_adx_threshold(df: pd.DataFrame) -> float:
@@ -232,7 +229,7 @@ class DynamicThresholdManager:
 # ==================== 多時間框架確認器 ====================
 
 class MTFConfirmation:
-    """多時間框架確認系統"""
+    """Legacy multi-timeframe confirmation helper."""
 
     @staticmethod
     def get_alignment_snapshot(df_mtf: pd.DataFrame, side: str) -> Dict[str, Optional[float]]:
@@ -332,7 +329,7 @@ class MTFConfirmation:
 # ==================== 市場過濾器 ====================
 
 class MarketFilter:
-    """市場狀態過濾器"""
+    """Legacy market-condition filter helper."""
 
     @staticmethod
     def check_market_condition(df_trend: pd.DataFrame, symbol: str) -> Tuple[bool, str, bool]:
