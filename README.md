@@ -74,6 +74,7 @@ python -m pytest trader/tests extensions/Backtesting/tests -q
 - `extensions/Backtesting/`: mocked StrategyRuntime backtest workspace.
 - `extensions/Backtesting/README.md`: backtest commands and artifact contract.
 - `plans/`: locked specs and planning notes.
+- `plans/2026-05-08_trader_cleanup_plan.md`: staged `trader/` cleanup plan.
 - `reports/`: promotion, closeout, and research reports.
 - `docs/codex_handoff.md`: current tracked agent context.
 
