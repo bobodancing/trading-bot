@@ -1,14 +1,16 @@
 ﻿"""Debug script: run one bar through scan_for_signals with verbose output"""
-import sys
 import logging
-from pathlib import Path
 
 # Show ALL log output
 logging.basicConfig(level=logging.DEBUG, format='%(levelname)s %(name)s: %(message)s')
 
-sys.path.insert(0, str(Path(__file__).parent))
-TRADING_BOT_ROOT = Path(__file__).resolve().parent.parent.parent / "projects" / "trading_bot"
-sys.path.insert(0, str(TRADING_BOT_ROOT))
+try:
+    from .paths import ensure_backtest_root_on_path, ensure_repo_root_on_path
+except ImportError:
+    from paths import ensure_backtest_root_on_path, ensure_repo_root_on_path
+
+ensure_backtest_root_on_path()
+TRADING_BOT_ROOT = ensure_repo_root_on_path()
 
 import pandas as pd
 from data_loader import BacktestDataLoader

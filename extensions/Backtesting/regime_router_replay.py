@@ -8,33 +8,29 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
-import sys
 from pathlib import Path
 from typing import Optional
 
 import pandas as pd
 
-
-WORKSPACE_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_BOT_ROOT = WORKSPACE_ROOT / "projects" / "trading_bot" / ".worktrees" / "feat-regime-router"
-FALLBACK_BOT_ROOT = WORKSPACE_ROOT / "projects" / "trading_bot" / ".worktrees" / "feat-grid"
+try:
+    from .paths import ensure_on_path, resolve_repo_root
+except ImportError:
+    from paths import ensure_on_path, resolve_repo_root
 
 
 def _resolve_bot_root(cli_value: Optional[str]) -> Path:
     if cli_value:
         return Path(cli_value).resolve()
-    env = os.environ.get("TRADING_BOT_ROOT")
-    if env:
-        return Path(env).resolve()
-    if (DEFAULT_BOT_ROOT / "trader" / "bot.py").exists():
-        return DEFAULT_BOT_ROOT.resolve()
-    return FALLBACK_BOT_ROOT.resolve()
+    return resolve_repo_root()
 
 
 def _bootstrap_bot_root(bot_root: Path) -> None:
-    os.environ["TRADING_BOT_ROOT"] = str(bot_root)
-    sys.path.insert(0, str(bot_root))
+    ensure_on_path(bot_root)
+
+
+PROBE_STRATEGY_ID = "regime_router_replay_probe"
+PROBE_SIGNAL_TYPE = "2B"
 
 
 def _prepare_btc_features(df: pd.DataFrame) -> pd.DataFrame:
@@ -93,7 +89,7 @@ def run_replay(
     from data_loader import BacktestDataLoader
     from trader.arbiter import RegimeArbiter
     from trader.regime import RegimeEngine
-    from trader.routing import RegimeRouter
+    from trader.routing import RegimeRouter, StrategyRoute
 
     backtest_engine_module.TRADING_BOT_ROOT = bot_root
     cfg = backtest_engine_module.BacktestConfig(symbols=symbols, start=start, end=end)
@@ -108,7 +104,16 @@ def run_replay(
     with backtest_engine_module._backtest_context({}) as Config:
         regime_engine = RegimeEngine()
         arbiter = RegimeArbiter()
-        router = RegimeRouter(policy=policy or getattr(Config, "REGIME_ROUTER_POLICY", None))
+        router = RegimeRouter(
+            routes=[
+                StrategyRoute(
+                    strategy_ids=frozenset({PROBE_STRATEGY_ID}),
+                    allowed_labels=frozenset({"TRENDING_UP", "TRENDING_DOWN", "RANGING"}),
+                    allowed_sides=frozenset({"LONG", "SHORT"}),
+                )
+            ],
+            policy=policy or getattr(Config, "REGIME_ROUTER_POLICY", None),
+        )
 
         for i, candle_time in enumerate(btc_df.index):
             if i < warmup_bars:
@@ -128,10 +133,15 @@ def run_replay(
                 continue
 
             for signal_side in ("LONG", "SHORT"):
-                decision = router.route(snapshot, signal_type="2B", signal_side=signal_side)
+                decision = router.route(
+                    snapshot,
+                    strategy_id=PROBE_STRATEGY_ID,
+                    signal_side=signal_side,
+                )
                 rows.append({
                     "timestamp": pd.Timestamp(candle_time).isoformat(),
-                    "signal_type": "2B",
+                    "strategy_id": PROBE_STRATEGY_ID,
+                    "signal_type": PROBE_SIGNAL_TYPE,
                     "signal_side": signal_side,
                     "raw_regime": context.get("regime"),
                     "detected_regime": context.get("detected"),

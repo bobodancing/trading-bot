@@ -395,10 +395,131 @@ def test_runtime_side_filter_allows_short_when_both(monkeypatch):
     assert bot.executed_plans[0].intent.side == "SHORT"
 
 
+def test_btc_trend_filter_diagnostic_mode_does_not_block_counter_trend(monkeypatch):
+    monkeypatch.setattr("trader.strategy_runtime.Config.BTC_TREND_FILTER_ENABLED", True)
+    monkeypatch.setattr("trader.strategy_runtime.Config.BTC_TREND_FILTER_RUNTIME_MODE", "diagnostic")
+    monkeypatch.setattr("trader.strategy_runtime.Config.REGIME_ARBITER_ENABLED", False)
+    monkeypatch.setattr("trader.strategy_runtime.Config.REGIME_ROUTER_ENABLED", False)
+    bot = _FakeBot()
+    bot._resolve_btc_trend_context = lambda log_event=False: {
+        "source": "test",
+        "trend": "SHORT",
+        "reason": "unit_test",
+    }
+    runtime = StrategyRuntime(bot)
+    plugin = _ScopedStrategy()
+
+    runtime._process_intent(plugin, _intent(side="LONG"), _context(bot))
+
+    assert len(bot.executed_plans) == 1
+
+
+def test_btc_trend_filter_skips_resolve_for_position_slot_reject(monkeypatch):
+    monkeypatch.setattr("trader.strategy_runtime.Config.BTC_TREND_FILTER_ENABLED", True)
+    monkeypatch.setattr("trader.strategy_runtime.Config.BTC_TREND_FILTER_RUNTIME_MODE", "diagnostic")
+    monkeypatch.setattr("trader.strategy_runtime.Config.REGIME_ARBITER_ENABLED", False)
+    monkeypatch.setattr("trader.strategy_runtime.Config.REGIME_ROUTER_ENABLED", False)
+    bot = _FakeBot()
+    bot.active_trades["BTC/USDT"] = SimpleNamespace(strategy_id="other", is_closed=False)
+    bot._resolve_btc_trend_context = lambda log_event=False: pytest.fail(
+        "BTC trend context should not resolve after a cheap slot reject"
+    )
+    runtime = StrategyRuntime(bot)
+    plugin = _ScopedStrategy()
+
+    runtime._process_intent(plugin, _intent(side="LONG"), _context(bot))
+
+    assert bot.executed_plans == []
+    assert bot._signal_audit.rejects[-1]["reject_reason"] == "position_slot_occupied"
+
+
+def test_btc_trend_filter_skips_resolve_for_router_reject(monkeypatch):
+    monkeypatch.setattr("trader.strategy_runtime.Config.BTC_TREND_FILTER_ENABLED", True)
+    monkeypatch.setattr("trader.strategy_runtime.Config.BTC_TREND_FILTER_RUNTIME_MODE", "diagnostic")
+    monkeypatch.setattr("trader.strategy_runtime.Config.REGIME_ARBITER_ENABLED", True)
+    monkeypatch.setattr("trader.strategy_runtime.Config.REGIME_ROUTER_ENABLED", False)
+    bot = _FakeBot()
+    bot._regime_arbiter_snapshot = SimpleNamespace(label="RANGING")
+    bot.regime_arbiter = SimpleNamespace(can_enter=lambda snapshot, side: (False, "unit_router_block"))
+    bot._resolve_btc_trend_context = lambda log_event=False: pytest.fail(
+        "BTC trend context should not resolve after a router reject"
+    )
+    runtime = StrategyRuntime(bot)
+    plugin = _ScopedStrategy()
+
+    runtime._process_intent(plugin, _intent(side="LONG"), _context(bot))
+
+    assert bot.executed_plans == []
+    reject = bot._signal_audit.rejects[-1]
+    assert reject["reject_reason"] == "strategy_router_blocked"
+    assert reject["detail"] == "unit_router_block"
+
+
+def test_btc_trend_context_resolves_once_across_intents(monkeypatch):
+    monkeypatch.setattr("trader.strategy_runtime.Config.BTC_TREND_FILTER_ENABLED", True)
+    monkeypatch.setattr("trader.strategy_runtime.Config.BTC_TREND_FILTER_RUNTIME_MODE", "diagnostic")
+    monkeypatch.setattr("trader.strategy_runtime.Config.REGIME_ARBITER_ENABLED", False)
+    monkeypatch.setattr("trader.strategy_runtime.Config.REGIME_ROUTER_ENABLED", False)
+    bot = _FakeBot()
+    calls = 0
+
+    def resolver(log_event=False):
+        nonlocal calls
+        calls += 1
+        return {"source": "test", "trend": "LONG", "reason": "unit_test"}
+
+    bot._resolve_btc_trend_context = resolver
+    runtime = StrategyRuntime(bot)
+    plugin = _ScopedStrategy()
+
+    runtime._process_intent(plugin, _intent(side="LONG"), _context(bot))
+    runtime._process_intent(plugin, _intent(side="LONG"), _context(bot))
+
+    assert calls == 1
+    assert len(bot.executed_plans) == 2
+
+
+def test_btc_trend_filter_enforce_mode_blocks_zero_mult_counter_trend(monkeypatch):
+    monkeypatch.setattr("trader.strategy_runtime.Config.BTC_TREND_FILTER_ENABLED", True)
+    monkeypatch.setattr("trader.strategy_runtime.Config.BTC_TREND_FILTER_RUNTIME_MODE", "enforce")
+    monkeypatch.setattr("trader.strategy_runtime.Config.BTC_COUNTER_TREND_MULT", 0.0)
+    bot = _FakeBot()
+    bot._resolve_btc_trend_context = lambda log_event=False: {
+        "source": "test",
+        "trend": "SHORT",
+        "reason": "unit_test",
+    }
+    runtime = StrategyRuntime(bot)
+    plugin = _ScopedStrategy()
+
+    runtime._process_intent(plugin, _intent(side="LONG"), _context(bot))
+
+    assert bot.executed_plans == []
+    reject = bot._signal_audit.rejects[-1]
+    assert reject["reject_reason"] == "btc_trend_filter_blocked"
+    assert reject["signal_side"] == "LONG"
+    assert "mode=enforce" in reject["detail"]
+    assert "trend=SHORT" in reject["detail"]
+
+
 def test_config_rejects_invalid_runtime_side_filter(monkeypatch):
     monkeypatch.setattr(Config, "STRATEGY_RUNTIME_SIDE_FILTER", "sideways")
 
     with pytest.raises(ValueError, match="STRATEGY_RUNTIME_SIDE_FILTER"):
+        Config.validate()
+
+
+def test_config_rejects_invalid_btc_trend_filter_mode(monkeypatch):
+    monkeypatch.setattr(Config, "BTC_TREND_FILTER_RUNTIME_MODE", "surprise")
+
+    with pytest.raises(ValueError, match="BTC_TREND_FILTER_RUNTIME_MODE"):
+        Config.validate()
+
+
+def test_config_rejects_invalid_btc_counter_trend_mult(monkeypatch):
+    monkeypatch.setattr(Config, "BTC_COUNTER_TREND_MULT", 1.5)
+
+    with pytest.raises(ValueError, match="BTC_COUNTER_TREND_MULT"):
         Config.validate()
 
 
@@ -463,3 +584,25 @@ def test_fixed_risk_profile_still_shrinks_to_total_risk_budget(monkeypatch):
     assert plan.position_size == pytest.approx(1.0)
     assert plan.max_loss_usdt == pytest.approx(10.0)
     assert plan.risk_pct == pytest.approx(0.001)
+
+
+def test_btc_trend_filter_risk_multiplier_scales_fixed_risk(monkeypatch):
+    monkeypatch.setattr("trader.strategy_runtime.Config.MAX_SL_DISTANCE_PCT", 0.20)
+    monkeypatch.setattr("trader.strategy_runtime.Config.MAX_TOTAL_RISK", 0.50)
+    monkeypatch.setattr("trader.strategy_runtime.Config.MAX_POSITION_PERCENT", 1.0)
+    monkeypatch.setattr("trader.strategy_runtime.Config.LEVERAGE", 1)
+    bot = _FakeBot()
+    runtime = StrategyRuntime(bot)
+    plugin = _ScopedStrategy()
+
+    plan = runtime._build_risk_plan(
+        plugin,
+        _intent(entry=100.0, stop=95.0),
+        _context(bot),
+        risk_multiplier=0.5,
+    )
+
+    assert plan.allowed
+    assert plan.position_size == pytest.approx(10.0)
+    assert plan.max_loss_usdt == pytest.approx(50.0)
+    assert plan.risk_pct == pytest.approx(0.005)

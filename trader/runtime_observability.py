@@ -42,6 +42,7 @@ class RuntimeFunnelRecorder:
         "REGIME_ROUTER_ENABLED",
         "STRATEGY_ROUTER_POLICY",
         "BTC_TREND_FILTER_ENABLED",
+        "BTC_TREND_FILTER_RUNTIME_MODE",
         "BTC_COUNTER_TREND_MULT",
         "USE_SCANNER_SYMBOLS",
         "SCANNER_JSON_PATH",

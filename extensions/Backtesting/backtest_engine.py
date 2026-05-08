@@ -1,6 +1,4 @@
 """StrategyRuntime backtest engine with mocked execution."""
-import os
-import sys
 import logging
 import datetime as _real_datetime_module
 import statistics
@@ -11,30 +9,18 @@ from pathlib import Path
 from typing import List, Tuple, Optional
 
 
+try:
+    from .paths import ensure_repo_root_on_path, resolve_repo_root
+except ImportError:
+    from paths import ensure_repo_root_on_path, resolve_repo_root
+
+
 def _resolve_bot_root() -> Path:
-    """Resolve the trading bot root for both isolated repos and legacy worktrees."""
-    env = os.environ.get("TRADING_BOT_ROOT")
-    if env:
-        return Path(env).resolve()
-
-    local_repo = Path(__file__).resolve().parents[2]
-    if (local_repo / "trader" / "bot.py").exists():
-        return local_repo
-
-    workspace = local_repo.parent
-    for candidate in (
-        workspace / "projects" / "trading_bot" / ".worktrees" / "feat-regime-router",
-        workspace / "projects" / "trading_bot" / ".worktrees" / "feat-grid",
-        workspace / "projects" / "trading_bot",
-    ):
-        if (candidate / "trader" / "bot.py").exists():
-            return candidate.resolve()
-
-    return local_repo
+    """Compatibility wrapper for older tests and scripts."""
+    return resolve_repo_root()
 
 
-TRADING_BOT_ROOT = _resolve_bot_root()
-sys.path.insert(0, str(TRADING_BOT_ROOT))
+TRADING_BOT_ROOT = ensure_repo_root_on_path()
 
 try:
     from tqdm import tqdm

@@ -7,6 +7,8 @@ import pandas as pd
 import pytest
 from backtest_engine import BacktestConfig, BacktestEngine
 
+pytestmark = [pytest.mark.slow, pytest.mark.backtest_engine]
+
 
 def make_fake_df(n=720, start_price=40000.0):
     idx = pd.date_range("2026-01-01", periods=n, freq="1h", tz="UTC")

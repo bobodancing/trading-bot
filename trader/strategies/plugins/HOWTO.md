@@ -25,6 +25,16 @@ Catalog note: add catalog entries to `trader/strategies/plugins/_catalog.py`.
 Catalog presence is not promotion; runtime activation still requires
 `STRATEGY_RUNTIME_ENABLED=True` and an explicit `ENABLED_STRATEGIES` list.
 
+Tooling:
+
+```bash
+python -m tools.strategy_plugin_check --strategy-id <plugin_id>
+python -m tools.new_strategy_plugin --id <plugin_id>
+```
+
+`new_strategy_plugin` is dry-run by default. It writes files only with
+`--write`; catalog changes remain manual review work.
+
 ## Plugin Contract
 
 Subclass `StrategyPlugin` and set these class attributes:

@@ -114,6 +114,7 @@ class Config:
 
     # BTC 1D EMA20/50 trend gate; 0.0 blocks counter-trend entries entirely.
     BTC_TREND_FILTER_ENABLED = True
+    BTC_TREND_FILTER_RUNTIME_MODE = "diagnostic"  # "diagnostic" | "enforce"
     BTC_COUNTER_TREND_MULT = 0.0
     BTC_EMA_RANGING_THRESHOLD = 0.005
 
@@ -199,6 +200,16 @@ class Config:
         if cls.STRATEGY_ROUTER_POLICY != "fail_closed":
             raise ValueError(
                 f"STRATEGY_ROUTER_POLICY must be fail_closed, got {cls.STRATEGY_ROUTER_POLICY}"
+            )
+        btc_filter_mode = str(getattr(cls, "BTC_TREND_FILTER_RUNTIME_MODE", "")).lower()
+        if btc_filter_mode not in {"diagnostic", "enforce"}:
+            raise ValueError(
+                "BTC_TREND_FILTER_RUNTIME_MODE must be one of: diagnostic, enforce; "
+                f"got {cls.BTC_TREND_FILTER_RUNTIME_MODE}"
+            )
+        if not 0.0 <= float(cls.BTC_COUNTER_TREND_MULT) <= 1.0:
+            raise ValueError(
+                f"BTC_COUNTER_TREND_MULT must be within [0.0, 1.0], got {cls.BTC_COUNTER_TREND_MULT}"
             )
         for attr in ("ARBITER_NEUTRAL_THRESHOLD", "ARBITER_NEUTRAL_EXIT_THRESHOLD"):
             value = getattr(cls, attr)

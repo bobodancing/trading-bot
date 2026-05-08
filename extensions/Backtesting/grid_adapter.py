@@ -7,8 +7,6 @@ GridBacktestAdapter — V8 ATR Grid 策略獨立回測
     python grid_adapter.py --symbols BTC/USDT ETH/USDT --start 2023-01-01 --end 2023-04-30
     python grid_adapter.py --symbols BTC/USDT SOL/USDT --start 2024-06-01 --end 2025-01-01 --balance 5000 --output results_v8
 """
-import sys
-import os
 import json
 import argparse
 import logging
@@ -16,19 +14,12 @@ from pathlib import Path
 from dataclasses import dataclass, field
 from typing import List, Tuple, Optional
 
-# ── import 路徑 ──────────────────────────────────────────────────────────────
-_BOT_ROOT = os.environ.get("TRADING_BOT_ROOT") or str(
-    Path(__file__).resolve().parent.parent.parent / "projects" / "trading_bot"
-)
-_WORKTREE = str(
-    Path(__file__).resolve().parent.parent.parent / "projects" / "trading_bot" /
-    ".worktrees" / "feat-grid"
-)
-# 優先用 worktree（feat/btc-atr-grid 分支），沒有再用 main
-for _p in [_WORKTREE, _BOT_ROOT]:
-    if Path(_p).exists():
-        sys.path.insert(0, _p)
-        break
+try:
+    from .paths import ensure_repo_root_on_path
+except ImportError:
+    from paths import ensure_repo_root_on_path
+
+ensure_repo_root_on_path()
 
 import pandas as pd
 import numpy as np

@@ -8,6 +8,7 @@ catalog source.
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import re
 from collections.abc import Iterable, Mapping
@@ -25,6 +26,17 @@ def slugify(value: str) -> str:
     """Return a stable filesystem/report slug."""
     slug = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(value).strip()).strip("_")
     return slug or "sweep"
+
+
+def artifact_slug(value: str, *, max_len: int = 48) -> str:
+    """Return a bounded slug for nested artifact directories."""
+    slug = slugify(value)
+    if len(slug) <= max_len:
+        return slug
+    digest = hashlib.sha1(slug.encode("utf-8")).hexdigest()[:10]
+    prefix_len = max(1, max_len - len(digest) - 1)
+    prefix = slug[:prefix_len].rstrip("._-") or slug[:prefix_len]
+    return f"{prefix}_{digest}"
 
 
 def normalize_sweep_grid(grid: Mapping[str, Iterable[Any]]) -> dict[str, list[Any]]:

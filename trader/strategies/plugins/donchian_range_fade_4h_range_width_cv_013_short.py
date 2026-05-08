@@ -1,4 +1,4 @@
-"""Research-only upper-bound SHORT mirror for the promoted Slot B cartridge."""
+"""Promoted Slot B upper-bound SHORT overlay for 4h Donchian range fades."""
 
 from __future__ import annotations
 

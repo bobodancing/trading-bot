@@ -8,7 +8,7 @@ BACKTEST_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKTEST_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKTEST_ROOT))
 
-from plugin_parameter_sweep import build_sweep_cells
+from plugin_parameter_sweep import artifact_slug, build_sweep_cells
 from plugin_parameter_sweep import write_parameter_sweep_report
 from scripts import run_parameter_sweep as sweep
 
@@ -19,6 +19,16 @@ def test_build_sweep_cells_is_small_and_deterministic():
     assert [cell["cell_id"] for cell in cells] == ["cell_001", "cell_002", "cell_003", "cell_004"]
     assert cells[0]["params"] == {"atr_mult": 1.0, "fast_len": 7}
     assert cells[-1]["params"] == {"atr_mult": 1.5, "fast_len": 9}
+
+
+def test_artifact_slug_shortens_long_ids_with_digest():
+    value = "macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_transition_decay_filter_slope_bars_min3"
+    slug = artifact_slug(value, max_len=48)
+
+    assert len(slug) <= 48
+    assert slug.startswith("macd_signal_btc_4h_trending_up_staged")
+    assert slug != artifact_slug(value + "_other", max_len=48)
+    assert artifact_slug("fixture_stop_sweep", max_len=48) == "fixture_stop_sweep"
 
 
 def test_parameter_sweep_writes_separate_artifacts_without_touching_baseline(tmp_path, monkeypatch):
@@ -74,6 +84,8 @@ def test_parameter_sweep_writes_separate_artifacts_without_touching_baseline(tmp
     assert baseline.read_text(encoding="utf-8") == "locked baseline\n"
     assert report_path.name == "strategy_plugin_parameter_sweep_fixture_stop_sweep.md"
     assert manifest_path.exists()
+    assert manifest_path.parent.name == "fixture_stop_sweep"
+    assert manifest_path.parent.parent.name == "fixture_long"
     assert "`cell_001`" in report_path.read_text(encoding="utf-8")
     assert "`cell_002`" in report_path.read_text(encoding="utf-8")
     assert "RESEARCH_SWEEP_ONLY" in report_path.read_text(encoding="utf-8")

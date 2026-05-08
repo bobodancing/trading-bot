@@ -74,6 +74,7 @@ class StrategyRuntime:
         self.snapshot_builder = MarketSnapshotBuilder(bot)
         self._scan_cycle_seq = 0
         self._current_cycle_id: Optional[str] = None
+        self._btc_trend_context_cache: Optional[dict[str, Any]] = None
         self.refresh_registry()
 
     def refresh_registry(self) -> None:
@@ -103,6 +104,7 @@ class StrategyRuntime:
         cycle_id = self._next_cycle_id()
         previous_cycle_id = self._current_cycle_id
         self._current_cycle_id = cycle_id
+        self._btc_trend_context_cache = None
         stats: dict[str, Any] = {
             "plugins": 0,
             "base_symbols": 0,
@@ -208,6 +210,7 @@ class StrategyRuntime:
             raise
         finally:
             self._current_cycle_id = previous_cycle_id
+            self._btc_trend_context_cache = None
 
     def _next_cycle_id(self) -> str:
         self._scan_cycle_seq += 1
@@ -310,7 +313,23 @@ class StrategyRuntime:
             self._audit_reject(symbol, intent.strategy_id, "strategy_router_blocked", route_reason)
             return
 
-        risk_plan = self._build_risk_plan(plugin, intent, context)
+        btc_trend_decision = self._btc_trend_filter_decision(intent)
+        if not btc_trend_decision["allowed"]:
+            self._audit_reject(
+                symbol,
+                intent.strategy_id,
+                "btc_trend_filter_blocked",
+                str(btc_trend_decision["detail"]),
+                signal_side=intent.side,
+            )
+            return
+
+        risk_plan = self._build_risk_plan(
+            plugin,
+            intent,
+            context,
+            risk_multiplier=float(btc_trend_decision["risk_multiplier"]),
+        )
         if not risk_plan.allowed:
             self._audit_reject(symbol, intent.strategy_id, "central_risk_blocked", risk_plan.reject_reason)
             return
@@ -352,6 +371,8 @@ class StrategyRuntime:
         plugin: StrategyPlugin,
         intent: SignalIntent,
         context: StrategyContext,
+        *,
+        risk_multiplier: float = 1.0,
     ) -> RiskPlan:
         if intent.stop_hint is None:
             return self._reject_risk("missing_stop_hint")
@@ -384,6 +405,11 @@ class StrategyRuntime:
         risk_pct = float(risk_pct)
         if risk_pct <= 0:
             return self._reject_risk("invalid_risk_pct")
+        risk_multiplier = float(risk_multiplier)
+        if risk_multiplier <= 0:
+            return self._reject_risk("btc_trend_filter_size_zero")
+        if risk_multiplier < 1.0:
+            risk_pct *= risk_multiplier
 
         position_size = self._calculate_fixed_risk_position_size(
             intent.symbol,
@@ -462,6 +488,82 @@ class StrategyRuntime:
             hard_stop_required=False,
             reject_reason=reason,
         )
+
+    def _btc_trend_filter_decision(self, intent: SignalIntent) -> dict[str, Any]:
+        if not getattr(Config, "BTC_TREND_FILTER_ENABLED", False):
+            return {
+                "allowed": True,
+                "risk_multiplier": 1.0,
+                "detail": "btc_trend_filter_disabled",
+            }
+
+        mode = str(getattr(Config, "BTC_TREND_FILTER_RUNTIME_MODE", "diagnostic")).lower()
+        context = self._resolve_btc_trend_context()
+        trend = context.get("trend")
+        detail_parts = [
+            f"mode={mode}",
+            f"trend={trend or 'UNKNOWN'}",
+            f"side={intent.side}",
+            f"source={context.get('source', 'unknown')}",
+            f"reason={context.get('reason', 'unknown')}",
+        ]
+        counter_trend = trend in {"LONG", "SHORT"} and intent.side != trend
+        risk_multiplier = 1.0
+        allowed = True
+        if mode == "enforce" and counter_trend:
+            risk_multiplier = float(getattr(Config, "BTC_COUNTER_TREND_MULT", 0.0))
+            allowed = risk_multiplier > 0.0
+            detail_parts.append(f"counter_trend_mult={risk_multiplier:g}")
+
+        detail = " ".join(detail_parts)
+        self._record_runtime_event(
+            "btc_trend_filter",
+            cycle_id=self._current_cycle_id,
+            symbol=intent.symbol,
+            strategy_id=intent.strategy_id,
+            side=intent.side,
+            mode=mode,
+            trend=trend,
+            counter_trend=counter_trend,
+            allowed=allowed,
+            risk_multiplier=risk_multiplier,
+            source=context.get("source"),
+            reason=context.get("reason"),
+        )
+        return {
+            "allowed": allowed,
+            "risk_multiplier": risk_multiplier,
+            "detail": detail,
+        }
+
+    def _resolve_btc_trend_context(self) -> dict[str, Any]:
+        if self._btc_trend_context_cache is not None:
+            return dict(self._btc_trend_context_cache)
+
+        resolver = getattr(self.bot, "_resolve_btc_trend_context", None)
+        if callable(resolver):
+            try:
+                context = resolver(log_event=False)
+                if isinstance(context, dict):
+                    return self._cache_btc_trend_context(context)
+            except Exception as exc:
+                return self._cache_btc_trend_context({
+                    "source": "none",
+                    "trend": None,
+                    "reason": f"runtime_resolve_failed:{exc}",
+                })
+        cached = getattr(self.bot, "_btc_trend_context", None)
+        if isinstance(cached, dict):
+            return self._cache_btc_trend_context(cached)
+        return self._cache_btc_trend_context({
+            "source": "none",
+            "trend": None,
+            "reason": "btc_trend_context_unavailable",
+        })
+
+    def _cache_btc_trend_context(self, context: dict[str, Any]) -> dict[str, Any]:
+        self._btc_trend_context_cache = dict(context)
+        return dict(self._btc_trend_context_cache)
 
     def _refresh_regime_context(self) -> None:
         uses_regime = (

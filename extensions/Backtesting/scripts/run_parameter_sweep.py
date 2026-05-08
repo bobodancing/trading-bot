@@ -21,6 +21,7 @@ from backtest_engine import BacktestConfig, BacktestEngine
 from config_presets import apply_strategy_params_override, explicit_symbol_universe, plugin_runtime_defaults
 from plugin_candidate_review import DEFAULT_WINDOWS
 from plugin_parameter_sweep import (
+    artifact_slug,
     build_sweep_cells,
     slugify,
     write_parameter_sweep_report,
@@ -118,7 +119,7 @@ def run_parameter_sweep(
     for cell in cells:
         apply_strategy_params_override(base_catalog, {candidate_id: cell["params"]})
 
-    sweep_dir = Path(results_root) / slugify(candidate_id) / slugify(sweep_id)
+    sweep_dir = Path(results_root) / artifact_slug(candidate_id) / artifact_slug(sweep_id)
     manifest_path = write_sweep_manifest(
         sweep_dir,
         sweep_id=sweep_id,

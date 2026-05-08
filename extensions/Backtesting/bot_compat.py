@@ -1,4 +1,4 @@
-"""Compatibility helpers for trading_bot main vs feat-grid layouts."""
+"""Compatibility helpers for importing runtime modules from Backtesting."""
 
 from importlib import import_module
 from types import ModuleType

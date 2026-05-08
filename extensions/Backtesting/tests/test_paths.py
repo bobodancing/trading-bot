@@ -1,33 +1,32 @@
-"""驗證路徑解析邏輯"""
+"""Validate Backtesting path resolution."""
 import sys
-import os
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
 from backtest_engine import _resolve_bot_root
+from paths import resolve_repo_root
 
 
-def test_trading_bot_root_from_env(monkeypatch):
-    """TRADING_BOT_ROOT 環境變數優先"""
-    monkeypatch.setenv("TRADING_BOT_ROOT", "/custom/path")
+def test_trading_bot_root_from_env(monkeypatch, tmp_path):
+    repo = tmp_path / "repo"
+    (repo / "trader").mkdir(parents=True)
+    (repo / "trader" / "bot.py").write_text("# fake bot\n", encoding="utf-8")
+
+    monkeypatch.setenv("TRADING_BOT_ROOT", str(repo))
     result = _resolve_bot_root()
-    assert result == Path("/custom/path").resolve()
+    assert result == repo.resolve()
+
+
+def test_trading_bot_root_from_env_rejects_wrong_layout(monkeypatch, tmp_path):
+    monkeypatch.setenv("TRADING_BOT_ROOT", str(tmp_path))
+
+    with pytest.raises(RuntimeError, match="TRADING_BOT_ROOT"):
+        resolve_repo_root()
 
 
 def test_trading_bot_root_fallback(monkeypatch):
-    """沒有環境變數時優先解析目前獨立 repo，再 fallback 到舊 worktree。"""
     monkeypatch.delenv("TRADING_BOT_ROOT", raising=False)
     local_repo = Path(__file__).resolve().parents[3]
-    if (local_repo / "trader" / "bot.py").exists():
-        expected = local_repo
-    else:
-        workspace = local_repo.parent
-        candidates = (
-            workspace / "projects" / "trading_bot" / ".worktrees" / "feat-regime-router",
-            workspace / "projects" / "trading_bot" / ".worktrees" / "feat-grid",
-            workspace / "projects" / "trading_bot",
-        )
-        expected = next((p for p in candidates if (p / "trader" / "bot.py").exists()), local_repo)
     result = _resolve_bot_root()
-    assert result == expected.resolve()
+    assert result == local_repo.resolve()

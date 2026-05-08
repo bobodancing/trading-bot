@@ -8,14 +8,16 @@ Trade Replayer — 從 performance.db 讀取歷史交易，逐根 K 線重播 Po
   python trade_replayer.py --db performance.db --limit 20
   python trade_replayer.py --db performance.db --trade-id abc123 --what_if MIN_MFE_R_FOR_PULLBACK=0.5
 """
-import sys
 import sqlite3
-from pathlib import Path
 from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
 
-TRADING_BOT_ROOT = Path(__file__).resolve().parent.parent.parent / "projects" / "trading_bot"
-sys.path.insert(0, str(TRADING_BOT_ROOT))
+try:
+    from .paths import ensure_repo_root_on_path
+except ImportError:
+    from paths import ensure_repo_root_on_path
+
+TRADING_BOT_ROOT = ensure_repo_root_on_path()
 
 from data_loader import BacktestDataLoader
 from time_series_engine import TimeSeriesEngine

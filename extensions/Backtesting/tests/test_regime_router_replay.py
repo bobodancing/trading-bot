@@ -1,5 +1,6 @@
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
@@ -11,11 +12,7 @@ import regime_router_replay
 
 
 def _bot_root() -> Path:
-    root = Path(__file__).resolve().parents[3]
-    candidate = root / "projects" / "trading_bot" / ".worktrees" / "feat-regime-router"
-    if not (candidate / "trader" / "bot.py").exists():
-        pytest.skip("feat-regime-router worktree is not available")
-    return candidate
+    return Path(__file__).resolve().parents[3]
 
 
 def _btc_4h(rows: int = 90) -> pd.DataFrame:
@@ -64,6 +61,39 @@ def test_replay_outputs_router_schema(tmp_path, monkeypatch):
     assert (tmp_path / "regime_router_replay.csv").exists()
     assert (tmp_path / "regime_router_replay_summary.json").exists()
     assert summary["rows"] == len(rows)
+
+
+def test_replay_probe_route_allows_entry_allowed_snapshots(tmp_path, monkeypatch):
+    bot_root = _bot_root()
+    regime_router_replay._bootstrap_bot_root(bot_root)
+
+    from data_loader import BacktestDataLoader
+    from trader.arbiter import RegimeArbiter
+
+    monkeypatch.setattr(BacktestDataLoader, "get_data", lambda *args, **kwargs: _btc_4h())
+    monkeypatch.setattr(
+        RegimeArbiter,
+        "evaluate",
+        lambda self, context, df_4h: SimpleNamespace(
+            label="RANGING",
+            confidence=1.0,
+            entry_allowed=True,
+            reason="unit_entry_allowed",
+            components={},
+        ),
+    )
+
+    rows, _ = regime_router_replay.run_replay(
+        symbols=["BTC/USDT"],
+        start="2025-01-01",
+        end="2025-01-20",
+        output_dir=tmp_path,
+        bot_root=bot_root,
+        warmup_bars=60,
+    )
+
+    assert rows["router_allowed"].all()
+    assert not rows["router_block_reason"].astype(str).str.contains("no_route").any()
 
 
 def test_backtest_context_restores_config(monkeypatch):

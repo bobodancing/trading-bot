@@ -215,12 +215,13 @@ class TradingBot:
             Config.LEVERAGE,
         )
         logger.info(
-            "  runtime: enabled=%s side=%s arbiter=%s router=%s btc_trend_filter=%s",
+            "  runtime: enabled=%s side=%s arbiter=%s router=%s btc_trend_filter=%s mode=%s",
             Config.STRATEGY_RUNTIME_ENABLED,
             Config.STRATEGY_RUNTIME_SIDE_FILTER,
             Config.REGIME_ARBITER_ENABLED,
             Config.REGIME_ROUTER_ENABLED,
             Config.BTC_TREND_FILTER_ENABLED,
+            Config.BTC_TREND_FILTER_RUNTIME_MODE,
         )
         logger.info(
             "  risk: per_trade=%.2f%% max_total=%.2f%% max_position=%.2f%% max_sl=%.2f%%",
