@@ -52,7 +52,11 @@ Observed during the 2026-05-08 audit:
 
 ## Phase 0 - Preflight
 
-Status: pending.
+Status: completed on 2026-05-08.
+
+Phase 0 output:
+
+- `reports/trader_cleanup_phase0_preflight.md`
 
 Before each cleanup phase:
 
