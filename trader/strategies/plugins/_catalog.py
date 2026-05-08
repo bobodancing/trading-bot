@@ -11,6 +11,23 @@ from collections.abc import Iterable
 from typing import Any
 
 
+CATALOG_CLASS_RUNTIME = "runtime"
+CATALOG_CLASS_FIXTURE = "fixture"
+CATALOG_CLASS_ACTIVE_RESEARCH = "active_research"
+CATALOG_CLASS_SUPERSEDED_RESEARCH = "superseded_research"
+CATALOG_CLASS_RETIRE_CANDIDATE = "retire_candidate"
+
+VALID_CATALOG_CLASSIFICATIONS = frozenset(
+    {
+        CATALOG_CLASS_RUNTIME,
+        CATALOG_CLASS_FIXTURE,
+        CATALOG_CLASS_ACTIVE_RESEARCH,
+        CATALOG_CLASS_SUPERSEDED_RESEARCH,
+        CATALOG_CLASS_RETIRE_CANDIDATE,
+    }
+)
+
+
 STRATEGY_CATALOG: dict[str, dict[str, Any]] = {
     "fixture_long": {
         "enabled": False,
@@ -720,6 +737,98 @@ STRATEGY_CATALOG: dict[str, dict[str, Any]] = {
 }
 
 
+STRATEGY_CATALOG_CLASSIFICATION: dict[str, str] = {
+    "fixture_long": CATALOG_CLASS_FIXTURE,
+    "fixture_exit": CATALOG_CLASS_FIXTURE,
+    "macd_zero_line_btc_1d": CATALOG_CLASS_SUPERSEDED_RESEARCH,
+    "macd_zero_line_btc_1d_trending_up": CATALOG_CLASS_SUPERSEDED_RESEARCH,
+    "macd_signal_btc_4h_trending_up": CATALOG_CLASS_SUPERSEDED_RESEARCH,
+    "macd_signal_btc_4h_trending_up_confirmed": CATALOG_CLASS_SUPERSEDED_RESEARCH,
+    "macd_signal_btc_4h_trending_up_confirmed_failfast": CATALOG_CLASS_SUPERSEDED_RESEARCH,
+    "macd_signal_btc_4h_trending_up_underwater_ema_exit": CATALOG_CLASS_SUPERSEDED_RESEARCH,
+    "macd_signal_btc_4h_trending_up_staged_derisk_giveback": CATALOG_CLASS_SUPERSEDED_RESEARCH,
+    "macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67": CATALOG_CLASS_SUPERSEDED_RESEARCH,
+    "macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_late_entry_filter": CATALOG_CLASS_SUPERSEDED_RESEARCH,
+    "macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_context_gated_late_entry_filter": CATALOG_CLASS_SUPERSEDED_RESEARCH,
+    "macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_trend_decay_only_late_entry_filter": CATALOG_CLASS_SUPERSEDED_RESEARCH,
+    "macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_chop_trend_only_late_entry_filter": CATALOG_CLASS_SUPERSEDED_RESEARCH,
+    "macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_chop_trend_tightened_late_entry_filter": CATALOG_CLASS_SUPERSEDED_RESEARCH,
+    "macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_transition_aware_late_entry_filter": CATALOG_CLASS_SUPERSEDED_RESEARCH,
+    "macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_transition_aware_tightened_late_entry_filter": CATALOG_CLASS_RUNTIME,
+    "macd_signal_btc_4h_trending_down_staged_derisk_giveback_partial67_transition_aware_tightened_late_entry_filter": CATALOG_CLASS_RETIRE_CANDIDATE,
+    "macd_signal_btc_4h_trending_down_staged_derisk_giveback_partial67_snapback_guard": CATALOG_CLASS_RETIRE_CANDIDATE,
+    "macd_signal_btc_4h_trending_down_staged_derisk_giveback_partial67_snapback_followthrough_guard": CATALOG_CLASS_RETIRE_CANDIDATE,
+    "macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_squeeze_release_unconfirmed_late_entry_filter": CATALOG_CLASS_SUPERSEDED_RESEARCH,
+    "macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_chop_filter": CATALOG_CLASS_SUPERSEDED_RESEARCH,
+    "macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_local_spread_filter": CATALOG_CLASS_SUPERSEDED_RESEARCH,
+    "macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_chop_trend_filter": CATALOG_CLASS_SUPERSEDED_RESEARCH,
+    "macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_remainder_ratchet": CATALOG_CLASS_SUPERSEDED_RESEARCH,
+    "macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_transition_buffer": CATALOG_CLASS_SUPERSEDED_RESEARCH,
+    "macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_transition_decay_filter": CATALOG_CLASS_SUPERSEDED_RESEARCH,
+    "ema_cross_7_19_long_only": CATALOG_CLASS_FIXTURE,
+    "bb_fade_squeeze_1h": CATALOG_CLASS_ACTIVE_RESEARCH,
+    "rsi2_pullback_1h": CATALOG_CLASS_SUPERSEDED_RESEARCH,
+    "rsi2_pullback_1h_sma5_gap_guard": CATALOG_CLASS_ACTIVE_RESEARCH,
+    "donchian_range_fade_4h": CATALOG_CLASS_SUPERSEDED_RESEARCH,
+    "donchian_range_fade_4h_range_width_cv_013": CATALOG_CLASS_RUNTIME,
+    "donchian_range_fade_4h_range_width_cv_013_short": CATALOG_CLASS_RUNTIME,
+    "donchian_range_fade_4h_range_width_cv_013_mid_drift_guard": CATALOG_CLASS_RETIRE_CANDIDATE,
+    "donchian_range_fade_4h_range_width_cv_013_touch_imbalance_guard": CATALOG_CLASS_RETIRE_CANDIDATE,
+    "rsi_mean_reversion_15m": CATALOG_CLASS_SUPERSEDED_RESEARCH,
+    "rsi_mean_reversion_1h": CATALOG_CLASS_ACTIVE_RESEARCH,
+}
+
+
+STRATEGY_CATALOG_CLASSIFICATION_NOTES: dict[str, str] = {
+    "fixture_long": "Tooling fixture for plugin registry checks.",
+    "fixture_exit": "Tooling fixture for plugin exit-intent checks.",
+    "ema_cross_7_19_long_only": "Research fixture/checklist gate; not on a promotion track.",
+    "bb_fade_squeeze_1h": "Parked RANGING research candidate; not promoted.",
+    "rsi2_pullback_1h_sma5_gap_guard": "Current RSI2 pullback research branch.",
+    "rsi_mean_reversion_1h": "Current RSI mean-reversion research branch.",
+    "macd_signal_btc_4h_trending_down_staged_derisk_giveback_partial67_transition_aware_tightened_late_entry_filter": "Slot A SHORT freeze read says do not promote.",
+    "macd_signal_btc_4h_trending_down_staged_derisk_giveback_partial67_snapback_guard": "Slot A SHORT snapback guard branch is frozen.",
+    "macd_signal_btc_4h_trending_down_staged_derisk_giveback_partial67_snapback_followthrough_guard": "Slot A SHORT snapback follow-through branch is frozen.",
+    "donchian_range_fade_4h_range_width_cv_013_mid_drift_guard": "Guard experiment did not improve the promoted Donchian runtime branch.",
+    "donchian_range_fade_4h_range_width_cv_013_touch_imbalance_guard": "Guard experiment did not improve the promoted Donchian runtime branch.",
+}
+
+
+def _validate_catalog_classification() -> None:
+    catalog_ids = set(STRATEGY_CATALOG)
+    classified_ids = set(STRATEGY_CATALOG_CLASSIFICATION)
+    note_ids = set(STRATEGY_CATALOG_CLASSIFICATION_NOTES)
+    missing_ids = sorted(catalog_ids - classified_ids)
+    extra_ids = sorted(classified_ids - catalog_ids)
+    extra_note_ids = sorted(note_ids - catalog_ids)
+    invalid = sorted(
+        strategy_id
+        for strategy_id, classification in STRATEGY_CATALOG_CLASSIFICATION.items()
+        if classification not in VALID_CATALOG_CLASSIFICATIONS
+    )
+    if missing_ids or extra_ids or extra_note_ids or invalid:
+        problems = []
+        if missing_ids:
+            problems.append(f"missing classifications: {missing_ids}")
+        if extra_ids:
+            problems.append(f"unknown classification ids: {extra_ids}")
+        if extra_note_ids:
+            problems.append(f"unknown classification note ids: {extra_note_ids}")
+        if invalid:
+            problems.append(f"invalid classifications: {invalid}")
+        raise ValueError("; ".join(problems))
+
+
+def get_strategy_classification(strategy_id: str) -> str | None:
+    """Return the research/runtime classification for a catalog strategy id."""
+    return STRATEGY_CATALOG_CLASSIFICATION.get(str(strategy_id))
+
+
+def get_strategy_classification_note(strategy_id: str) -> str | None:
+    """Return the classification note for a catalog strategy id, when present."""
+    return STRATEGY_CATALOG_CLASSIFICATION_NOTES.get(str(strategy_id))
+
+
 def get_strategy_catalog(enabled: Iterable[str] | None = None) -> dict[str, dict[str, Any]]:
     """Return a per-call catalog copy with selected plugin ids enabled."""
     catalog = copy.deepcopy(STRATEGY_CATALOG)
@@ -728,3 +837,6 @@ def get_strategy_catalog(enabled: Iterable[str] | None = None) -> dict[str, dict
         if entry is not None:
             entry["enabled"] = True
     return catalog
+
+
+_validate_catalog_classification()

@@ -77,9 +77,12 @@ Produce or refresh an inventory for the phase:
 
 ## Phase 1 - Low-Risk Cleanup
 
-Status: pending.
+Status: implementation complete, pending review/commit.
 
 ### 1A. Local Cache Cleanup
+
+Status: completed on 2026-05-08; local-only cleanup produced no tracked file
+changes.
 
 Scope:
 
@@ -98,6 +101,8 @@ Review gate:
 - confirm no tracked source files were removed.
 
 ### 1B. Plugin Classification
+
+Status: completed on 2026-05-08.
 
 Scope:
 
@@ -130,6 +135,7 @@ Phase 1 handoff output:
 - plugin classification summary
 - retire-candidate list
 - files safe to remove in a later phase
+- `reports/trader_cleanup_phase1b_plugin_classification.md`
 
 ## Phase 2 - Code-Aware Cleanup
 

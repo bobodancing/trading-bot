@@ -9,7 +9,11 @@ from typing import Iterable
 
 from trader.config import Config
 from trader.strategies import StrategyRegistry
-from trader.strategies.plugins._catalog import STRATEGY_CATALOG, get_strategy_catalog
+from trader.strategies.plugins._catalog import (
+    STRATEGY_CATALOG,
+    get_strategy_catalog,
+    get_strategy_classification,
+)
 
 
 @dataclass
@@ -19,6 +23,7 @@ class PluginCheckResult:
     warnings: list[str] = field(default_factory=list)
     plugin_class: str | None = None
     plugin_version: str | None = None
+    classification: str | None = None
 
     @property
     def ok(self) -> bool:
@@ -36,6 +41,11 @@ def check_strategy(strategy_id: str, *, repo_root: Path | None = None) -> Plugin
 
     if strategy_id not in STRATEGY_CATALOG:
         result.errors.append(f"missing catalog entry: {strategy_id}")
+        return result
+
+    result.classification = get_strategy_classification(strategy_id)
+    if result.classification is None:
+        result.errors.append(f"missing plugin classification: {strategy_id}")
         return result
 
     catalog = get_strategy_catalog([strategy_id])
@@ -59,7 +69,7 @@ def check_strategy(strategy_id: str, *, repo_root: Path | None = None) -> Plugin
         result.errors.append("required_indicators must be a set/list, not a string")
 
     if not _has_focused_test(repo_root, strategy_id):
-        result.warnings.append(f"no focused test file matched trader/tests/test_{strategy_id}*.py")
+        result.warnings.append(f"no focused test coverage found for {strategy_id}")
 
     spec_path = repo_root / "plans" / f"cartridge_spec_{strategy_id}.md"
     if not spec_path.exists():
@@ -72,7 +82,7 @@ def _has_focused_test(repo_root: Path, strategy_id: str) -> bool:
     tests_dir = repo_root / "trader" / "tests"
     if list(tests_dir.glob(f"test_{strategy_id}*.py")):
         return True
-    for path in tests_dir.glob("test_*strategy.py"):
+    for path in tests_dir.glob("test_*.py"):
         try:
             if strategy_id in path.read_text(encoding="utf-8"):
                 return True
@@ -88,6 +98,8 @@ def check_many(strategy_ids: Iterable[str], *, repo_root: Path | None = None) ->
 def _print_result(result: PluginCheckResult) -> None:
     status = "PASS" if result.ok else "FAIL"
     details = []
+    if result.classification:
+        details.append(result.classification)
     if result.plugin_class:
         details.append(result.plugin_class)
     if result.plugin_version:

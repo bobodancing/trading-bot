@@ -73,6 +73,9 @@ class FixtureExitStrategy(StrategyPlugin):
     required_indicators = set()
     params_schema = {"close_after_updates": "int"}
 
+    def generate_candidates(self, context: StrategyContext) -> list[SignalIntent]:
+        return []
+
     def update_position(self, context: StrategyContext, position) -> PositionDecision:
         close_after = int(self.params.get("close_after_updates", 1))
         state = dict(getattr(position, "plugin_state", {}) or {})
