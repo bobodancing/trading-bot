@@ -51,11 +51,11 @@ class PrecisionHandler:
     def load_markets(self):
         try:
             self.markets = self.exchange.load_markets(reload=True)
-            logger.info("✅ 市場精度資訊已載入")
+            logger.info("Precision metadata loaded from exchange markets")
             self.use_default_precision = False
         except Exception as e:
-            logger.error(f"載入市場失敗: {e}")
-            logger.warning("⚠️ 使用默認精度設置")
+            logger.error(f"Market precision load failed: {e}")
+            logger.warning("Using default precision settings")
             self.use_default_precision = True
             self.markets = {}
 
@@ -94,13 +94,13 @@ class PrecisionHandler:
                     }
                     count += 1
 
-                logger.info(f"✅ exchangeInfo 載入 {count} 個交易對精度")
+                logger.info("exchangeInfo precision loaded: %s symbols", count)
                 return
             except Exception as e:
-                logger.warning(f"exchangeInfo 載入失敗 (attempt {attempt + 1}/3): {e}")
+                logger.warning(f"exchangeInfo precision load failed (attempt {attempt + 1}/3): {e}")
                 time.sleep(2)
 
-        logger.error("❌ exchangeInfo 3 次都失敗，將依賴 ccxt/DEFAULT_PRECISIONS")
+        logger.error("exchangeInfo precision load failed after 3 attempts; using ccxt/default precision")
 
     @staticmethod
     def _step_to_decimals(step) -> int:
@@ -131,7 +131,7 @@ class PrecisionHandler:
             return self.DEFAULT_PRECISIONS[symbol]['amount']
 
         # 全部失敗
-        logger.warning(f"⚠️ {symbol} 無法取得精度，使用預設值 3")
+        logger.warning(f"{symbol} precision unavailable; using default amount precision 3")
         return 3
 
     def get_price_precision(self, symbol: str) -> int:
@@ -149,7 +149,7 @@ class PrecisionHandler:
         if symbol in self.DEFAULT_PRECISIONS:
             return self.DEFAULT_PRECISIONS[symbol]['price']
 
-        logger.warning(f"⚠️ {symbol} 無法取得價格精度，使用預設值 2")
+        logger.warning(f"{symbol} price precision unavailable; using default price precision 2")
         return 2
 
     def format_quantity(self, symbol: str, quantity: float) -> str:
@@ -175,7 +175,7 @@ class PrecisionHandler:
         if order_value < min_notional:
             min_quantity = min_notional / price
             rounded = math.ceil(min_quantity * multiplier) / multiplier
-            logger.debug(f"⚠️ 調整數量以滿足最小訂單價值 ${min_notional}")
+            logger.debug(f"{symbol} quantity adjusted to satisfy min notional ${min_notional}")
 
         return rounded
 
@@ -342,7 +342,10 @@ class RiskManager:
 
         max_position_value = balance * Config.MAX_POSITION_PERCENT * Config.LEVERAGE
         if position_value > max_position_value:
-            logger.warning(f"⚠️ {symbol} 倉位超過上限，從 ${position_value:.2f} 調整為 ${max_position_value:.2f}")
+            logger.warning(
+                f"{symbol} position value capped: requested=${position_value:.2f} "
+                f"max=${max_position_value:.2f}"
+            )
             position_value = max_position_value
 
         raw_position = position_value / entry_price

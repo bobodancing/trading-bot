@@ -12,7 +12,7 @@ from trader.config import Config
 from trader.infrastructure.notifier import TelegramNotifier
 from trader.positions import PositionManager
 from trader.strategies.base import Action
-from trader.utils import trade_log as _trade_log, calculate_pnl, build_log_base
+from trader.utils import RUNTIME_LABEL, trade_log as _trade_log, calculate_pnl, build_log_base
 
 logger = logging.getLogger(__name__)
 
@@ -197,7 +197,7 @@ class PositionMonitor:
         _trade_log({
             'event': 'CYCLE_SUMMARY',
             'ts': datetime.now(timezone.utc).isoformat(),
-            'bot': 'v7.0',
+            'bot': RUNTIME_LABEL,
             'cycle': getattr(bot, 'cycle_count', 0),
             'active': len(bot.active_trades),
             'active_trades_count': len(bot.active_trades),

@@ -120,7 +120,7 @@ class PerformanceDB:
                     except sqlite3.OperationalError:
                         pass  # 欄位已存在，正常跳過
                 conn.commit()
-            logger.info(f"PerformanceDB initialized: {self.db_path}")
+            logger.info(f"Performance DB ready: {self.db_path}")
         except Exception as e:
             # Non-fatal: DB failure must not crash the bot
             logger.error(f"PerformanceDB init failed: {e}")

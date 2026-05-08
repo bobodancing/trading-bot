@@ -167,6 +167,19 @@ class Config:
     POSITIONS_JSON_PATH = str(Path(__file__).resolve().parent.parent / '.log' / 'positions.json')
     DB_PATH = "performance.db"
     DRY_RUN = False
+    STRATEGY_RUNTIME_OBSERVABILITY_ENABLED = True
+    STRATEGY_RUNTIME_OBSERVABILITY_DIR = str(
+        Path(__file__).resolve().parent.parent / '.log' / 'runtime_observability'
+    )
+    STRATEGY_RUNTIME_OBSERVABILITY_JSONL = "strategy_runtime_funnel.jsonl"
+    STRATEGY_RUNTIME_OBSERVABILITY_LATEST = "strategy_runtime_latest.json"
+
+    SECRET_KEYS = frozenset({
+        "API_KEY",
+        "API_SECRET",
+        "TELEGRAM_BOT_TOKEN",
+        "TELEGRAM_CHAT_ID",
+    })
 
     # ==================== Validation & Secrets ====================
 
@@ -207,6 +220,14 @@ class Config:
                 f"SCANNER_UNIVERSE_MIN_QUOTE_VOLUME_USD must be non-negative, "
                 f"got {cls.SCANNER_UNIVERSE_MIN_QUOTE_VOLUME_USD}"
             )
+        if cls.STRATEGY_RUNTIME_OBSERVABILITY_ENABLED:
+            for attr in (
+                "STRATEGY_RUNTIME_OBSERVABILITY_DIR",
+                "STRATEGY_RUNTIME_OBSERVABILITY_JSONL",
+                "STRATEGY_RUNTIME_OBSERVABILITY_LATEST",
+            ):
+                if not str(getattr(cls, attr, "")).strip():
+                    raise ValueError(f"{attr} must not be empty when runtime observability is enabled")
         return True
 
     @classmethod
@@ -221,9 +242,21 @@ class Config:
         try:
             with open(secrets_path, 'r', encoding='utf-8') as f:
                 secrets_data = json.load(f)
+            loaded_keys = []
+            ignored_keys = []
             for key, value in secrets_data.items():
-                setattr(cls, key.upper(), value)
-            logger.info(f"Loaded {len(secrets_data)} secret key(s) from {secrets_path}")
+                key_upper = str(key).upper()
+                if key_upper not in cls.SECRET_KEYS:
+                    ignored_keys.append(key_upper)
+                    continue
+                setattr(cls, key_upper, value)
+                loaded_keys.append(key_upper)
+            if ignored_keys:
+                logger.warning(
+                    "Ignored non-secret key(s) in secrets file: %s",
+                    ", ".join(sorted(ignored_keys)),
+                )
+            logger.info(f"Loaded {len(loaded_keys)} secret key(s) from {secrets_path}")
         except Exception as e:
             logger.error(f"Failed to load secrets: {e}")
 

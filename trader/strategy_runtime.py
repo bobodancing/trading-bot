@@ -72,6 +72,8 @@ class StrategyRuntime:
         self.bot = bot
         self.registry = StrategyRegistry()
         self.snapshot_builder = MarketSnapshotBuilder(bot)
+        self._scan_cycle_seq = 0
+        self._current_cycle_id: Optional[str] = None
         self.refresh_registry()
 
     def refresh_registry(self) -> None:
@@ -98,39 +100,163 @@ class StrategyRuntime:
         )
 
     def scan_for_entries(self) -> None:
-        if not getattr(Config, "STRATEGY_RUNTIME_ENABLED", False):
-            logger.info("Strategy runtime disabled; no entries will be generated")
-            return
+        cycle_id = self._next_cycle_id()
+        previous_cycle_id = self._current_cycle_id
+        self._current_cycle_id = cycle_id
+        stats: dict[str, Any] = {
+            "plugins": 0,
+            "base_symbols": 0,
+            "snapshot_symbols": 0,
+            "candidates": 0,
+        }
+        self._record_runtime_event(
+            "scan_cycle_start",
+            cycle_id=cycle_id,
+            runtime_enabled=bool(getattr(Config, "STRATEGY_RUNTIME_ENABLED", False)),
+            enabled_strategies=list(getattr(Config, "ENABLED_STRATEGIES", [])),
+            side_filter=getattr(Config, "STRATEGY_RUNTIME_SIDE_FILTER", None),
+            active_positions=sorted(getattr(self.bot, "active_trades", {}).keys()),
+            use_scanner_symbols=bool(getattr(Config, "USE_SCANNER_SYMBOLS", False)),
+            scanner_universe_enabled=bool(getattr(Config, "SCANNER_UNIVERSE_ENABLED", False)),
+        )
+        try:
+            if not getattr(Config, "STRATEGY_RUNTIME_ENABLED", False):
+                logger.info("Strategy runtime disabled; no entries will be generated")
+                self._end_scan_cycle(cycle_id, "runtime_disabled", stats)
+                return
 
-        self.refresh_registry()
-        plugins = self.enabled_plugins()
-        if not plugins:
-            logger.info("No enabled strategies; fail-closed no-trade cycle")
-            return
+            self.refresh_registry()
+            plugins = self.enabled_plugins()
+            stats["plugins"] = len(plugins)
+            if not plugins:
+                logger.info("No enabled strategies; fail-closed no-trade cycle")
+                self._end_scan_cycle(cycle_id, "no_enabled_strategies", stats)
+                return
 
-        base_symbols = self._base_symbols_for_entry_scan(plugins)
-        if not base_symbols:
-            logger.info("No symbols available for strategy runtime")
-            return
+            base_symbols, symbol_source = self._base_symbols_for_entry_scan_with_meta(plugins)
+            stats["base_symbols"] = len(base_symbols)
+            self._record_runtime_event(
+                "symbol_universe",
+                cycle_id=cycle_id,
+                symbols=base_symbols,
+                symbol_count=len(base_symbols),
+                **symbol_source,
+            )
+            if not base_symbols:
+                logger.info("No symbols available for strategy runtime")
+                self._end_scan_cycle(cycle_id, "no_base_symbols", stats)
+                return
 
-        symbols = self._symbols_for_snapshot(base_symbols, plugins)
-        if not symbols:
-            logger.info("No symbols in scope for enabled strategies; fail-closed no-trade cycle")
-            return
+            symbols = self._symbols_for_snapshot(base_symbols, plugins)
+            stats["snapshot_symbols"] = len(symbols)
+            self._record_runtime_event(
+                "snapshot_symbol_scope",
+                cycle_id=cycle_id,
+                symbols=symbols,
+                symbol_count=len(symbols),
+                plugin_symbols={
+                    plugin.id: self._plugin_symbols(plugin, base_symbols)
+                    for plugin in plugins
+                },
+            )
+            if not symbols:
+                logger.info("No symbols in scope for enabled strategies; fail-closed no-trade cycle")
+                self._end_scan_cycle(cycle_id, "no_symbols_in_scope", stats)
+                return
 
-        self._refresh_regime_context()
-        context = self.build_context(symbols)
+            self._refresh_regime_context()
+            context = self.build_context(symbols)
+            self._record_runtime_event(
+                "snapshot_built",
+                cycle_id=cycle_id,
+                generated_at=context.snapshot.generated_at,
+                frames=self._snapshot_summary(context.snapshot, plugins, symbols),
+            )
+            for plugin in plugins:
+                plugin_context = self._context_for_plugin(context, plugin)
+                try:
+                    candidates = list(plugin.generate_candidates(plugin_context) or [])
+                except Exception as exc:
+                    logger.exception("strategy %s candidate generation failed", plugin.id)
+                    self._audit_reject("*", plugin.id, "candidate_generation_error", str(exc))
+                    continue
+
+                candidate_count = len(candidates)
+                stats["candidates"] += candidate_count
+                self._record_runtime_event(
+                    "plugin_candidates",
+                    cycle_id=cycle_id,
+                    plugin_id=plugin.id,
+                    strategy_version=getattr(plugin, "version", None),
+                    symbols=list(plugin_context.symbols),
+                    candidate_count=candidate_count,
+                    requirements=self._plugin_requirement_summary(plugin),
+                )
+
+                for intent in candidates:
+                    self._process_intent(plugin, intent, plugin_context)
+
+            self._end_scan_cycle(cycle_id, "completed", stats)
+        except Exception as exc:
+            self._record_runtime_event(
+                "scan_cycle_error",
+                cycle_id=cycle_id,
+                error_type=type(exc).__name__,
+                error=str(exc),
+            )
+            self._end_scan_cycle(cycle_id, "failed", stats)
+            raise
+        finally:
+            self._current_cycle_id = previous_cycle_id
+
+    def _next_cycle_id(self) -> str:
+        self._scan_cycle_seq += 1
+        return f"scan-{self._scan_cycle_seq}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')}"
+
+    def _record_runtime_event(self, event: str, **fields: Any) -> None:
+        recorder = getattr(self.bot, "runtime_observer", None)
+        if recorder is not None:
+            recorder.record_event(event, **fields)
+
+    def _end_scan_cycle(self, cycle_id: str, status: str, stats: dict[str, Any]) -> None:
+        self._record_runtime_event(
+            "scan_cycle_end",
+            cycle_id=cycle_id,
+            status=status,
+            **stats,
+        )
+
+    @staticmethod
+    def _plugin_requirement_summary(plugin: StrategyPlugin) -> dict[str, Any]:
+        return {
+            "required_timeframes": dict(getattr(plugin, "required_timeframes", {}) or {}),
+            "required_indicators": sorted(getattr(plugin, "required_indicators", set()) or set()),
+        }
+
+    def _snapshot_summary(
+        self,
+        snapshot: MarketSnapshot,
+        plugins: Iterable[StrategyPlugin],
+        symbols: Iterable[str],
+    ) -> dict[str, dict[str, dict[str, Any]]]:
+        timeframes: set[str] = set()
         for plugin in plugins:
-            plugin_context = self._context_for_plugin(context, plugin)
-            try:
-                candidates = plugin.generate_candidates(plugin_context)
-            except Exception as exc:
-                logger.error("strategy %s candidate generation failed: %s", plugin.id, exc)
-                self._audit_reject("*", plugin.id, "candidate_generation_error", str(exc))
-                continue
-
-            for intent in candidates:
-                self._process_intent(plugin, intent, plugin_context)
+            timeframes.update((getattr(plugin, "required_timeframes", {}) or {}).keys())
+        summary: dict[str, dict[str, dict[str, Any]]] = {}
+        for symbol in symbols:
+            summary[symbol] = {}
+            for timeframe in sorted(timeframes):
+                frame = snapshot.get(symbol, timeframe)
+                rows = 0 if frame is None or frame.empty else int(len(frame))
+                latest_ts = snapshot.latest_timestamp(symbol, timeframe) if rows else None
+                latest_close = snapshot.latest_close(symbol, timeframe) if rows else None
+                summary[symbol][timeframe] = {
+                    "rows": rows,
+                    "latest_ts": latest_ts.isoformat() if latest_ts else None,
+                    "latest_close": latest_close,
+                    "empty": rows == 0,
+                }
+        return summary
 
     def update_position(self, position, current_price: float) -> PositionDecision:
         plugin = self.registry.get(getattr(position, "strategy_id", ""))
@@ -370,6 +496,15 @@ class StrategyRuntime:
                 signal_side=signal_side,
                 detail=detail,
             )
+        self._record_runtime_event(
+            "strategy_reject",
+            cycle_id=self._current_cycle_id,
+            symbol=symbol,
+            strategy_id=strategy_id,
+            reason=reason,
+            detail=detail,
+            signal_side=signal_side,
+        )
         logger.info("strategy reject %s %s: %s %s", symbol, strategy_id, reason, detail or "")
 
     def _audit_entry(self, order_plan: ExecutableOrderPlan) -> None:
@@ -385,6 +520,19 @@ class StrategyRuntime:
                 tier_multiplier=1.0,
                 tier_score=None,
             )
+        self._record_runtime_event(
+            "strategy_entry_ready",
+            cycle_id=self._current_cycle_id,
+            symbol=intent.symbol,
+            strategy_id=intent.strategy_id,
+            side=intent.side,
+            timeframe=intent.timeframe,
+            candle_ts=intent.candle_ts,
+            entry_type=intent.entry_type,
+            strategy_version=order_plan.strategy_version,
+            router_reason=order_plan.router_reason,
+            risk_plan=asdict(order_plan.risk_plan),
+        )
         logger.info(
             "strategy entry ready %s %s %s size=%.6f risk=%.4f",
             intent.symbol,
@@ -425,16 +573,36 @@ class StrategyRuntime:
         return [symbol for symbol in base if symbol in allowed]
 
     def _base_symbols_for_entry_scan(self, plugins: Iterable[StrategyPlugin]) -> list[str]:
+        symbols, _meta = self._base_symbols_for_entry_scan_with_meta(plugins)
+        return symbols
+
+    def _base_symbols_for_entry_scan_with_meta(
+        self,
+        plugins: Iterable[StrategyPlugin],
+    ) -> tuple[list[str], dict[str, Any]]:
+        plugin_list = list(plugins)
         uses_dynamic_universe = any(
-            getattr(plugin, "supports_dynamic_universe", False) for plugin in plugins
+            getattr(plugin, "supports_dynamic_universe", False) for plugin in plugin_list
         )
         if getattr(Config, "SCANNER_UNIVERSE_ENABLED", False) and uses_dynamic_universe:
             scanner_symbols = self._load_scanner_universe_symbols()
             if scanner_symbols is not None:
-                return scanner_symbols
+                return scanner_symbols, {
+                    "source": "scanner_universe",
+                    "fallback_reason": None,
+                    "uses_dynamic_universe": True,
+                }
         if Config.USE_SCANNER_SYMBOLS:
-            return self.bot.load_scanner_results()
-        return list(Config.SYMBOLS)
+            symbols = self.bot.load_scanner_results()
+            source_meta = dict(getattr(self.bot, "_scanner_symbol_source", {}) or {})
+            source_meta.setdefault("source", "scanner_json")
+            source_meta.setdefault("uses_dynamic_universe", uses_dynamic_universe)
+            return symbols, source_meta
+        return list(Config.SYMBOLS), {
+            "source": "config_symbols",
+            "fallback_reason": None,
+            "uses_dynamic_universe": uses_dynamic_universe,
+        }
 
     def _load_scanner_universe_symbols(self) -> Optional[list[str]]:
         try:
@@ -484,6 +652,13 @@ class StrategyRuntime:
 
             if hasattr(self.bot, "_scanner_symbol_meta"):
                 self.bot._scanner_symbol_meta = metadata
+            if hasattr(self.bot, "_scanner_symbol_source"):
+                self.bot._scanner_symbol_source = {
+                    "source": "scanner_universe",
+                    "fallback_reason": None,
+                    "symbol_count": len(symbols),
+                    "unsupported_filtered": unsupported_count,
+                }
             logger.info(
                 "Scanner universe loaded %s symbol(s) (unsupported_filtered=%s): %s",
                 len(symbols),

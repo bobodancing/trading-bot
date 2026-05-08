@@ -8,6 +8,7 @@ import logging
 from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
+RUNTIME_LABEL = "strategy-runtime"
 
 
 def trade_log(fields: dict):
@@ -45,7 +46,7 @@ def build_log_base(event: str, trade_id: str, symbol: str, side: str) -> dict:
         'event': event,
         'trade_id': trade_id,
         'ts': datetime.now(timezone.utc).isoformat(),
-        'bot': 'v7.0',
+        'bot': RUNTIME_LABEL,
         'symbol': symbol,
         'side': side,
     }

@@ -11,12 +11,17 @@ import json
 import signal
 import logging
 import logging.handlers
+import warnings
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
 # Make repo-root imports work when this file is executed directly.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+# pyzt emits a SyntaxWarning on Python 3.12 through a third-party import path.
+# Keep bot startup output focused on runtime state.
+warnings.filterwarnings("ignore", category=SyntaxWarning, module=r"pyzt(\.|$)")
 
 import ccxt
 import pandas as pd
@@ -40,15 +45,25 @@ from trader.execution.order_engine import OrderExecutionEngine
 from trader.config import Config
 from trader.positions import PositionManager
 from trader.persistence import PositionPersistence
+from trader.runtime_observability import RuntimeFunnelRecorder
 from trader.strategies import ExecutableOrderPlan
 from trader.strategy_runtime import StrategyRuntime
 from trader.grid_manager import GridManager
 from trader.btc_context import BTCContextManager, get_last_candle_time, get_last_closed_candle_time, format_candle_time
 from trader.position_monitor import PositionMonitor
 from trader.signal_scanner import SignalScanner
-from trader.utils import trade_log, calculate_pnl, get_close_side, build_log_base
+from trader.utils import RUNTIME_LABEL, trade_log, calculate_pnl, get_close_side, build_log_base
 
 logger = logging.getLogger(__name__)
+
+STRATEGY_DISPLAY_NAMES = {
+    (
+        "macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_"
+        "transition_aware_tightened_late_entry_filter"
+    ): "Slot A LONG / BTC 4h MACD",
+    "donchian_range_fade_4h_range_width_cv_013": "Slot B LONG / Donchian range fade",
+    "donchian_range_fade_4h_range_width_cv_013_short": "Slot B SHORT / Donchian range fade",
+}
 
 
 # Backward-compat alias
@@ -81,6 +96,7 @@ class TradingBot:
         # Active PositionManager records keyed by symbol.
         self.active_trades: Dict[str, PositionManager] = {}
         self._scanner_symbol_meta: Dict[str, Dict[str, object]] = {}
+        self._scanner_symbol_source: Dict[str, object] = {}
 
         # Local cooldown state.
         self.recently_exited: Dict[str, datetime] = {}
@@ -104,7 +120,15 @@ class TradingBot:
         db_path = getattr(Config, 'DB_PATH', 'performance.db')
         self.perf_db = PerformanceDB(db_path=db_path)
 
+        self.runtime_observer = RuntimeFunnelRecorder.from_config(Config)
         self._log_startup()
+        if self.runtime_observer is not None:
+            self.runtime_observer.record_config_snapshot(
+                Config,
+                active_positions=len(self.active_trades),
+                positions_json_path=pos_path,
+                db_path=db_path,
+            )
 
         # Telegram command handler.
         self.telegram_handler = TelegramCommandHandler(self)
@@ -157,7 +181,7 @@ class TradingBot:
                                 )
                     exchange.options['sandboxMode'] = True
                     exchange.options['defaultType'] = 'future'
-                    logger.info("Using Binance Demo Trading")
+                    logger.info("Exchange sandbox: Binance Demo Trading")
                 else:
                     try:
                         exchange.set_sandbox_mode(True)
@@ -166,7 +190,7 @@ class TradingBot:
 
             try:
                 exchange.load_markets()
-                logger.info(f"Loaded {len(exchange.markets)} markets")
+                logger.info("Exchange markets loaded: %s", len(exchange.markets))
             except Exception as e:
                 logger.warning(f"Market loading failed: {e}")
 
@@ -184,20 +208,72 @@ class TradingBot:
             raise
 
     def _log_startup(self):
-        """Log reset-runtime startup context."""
-        logger.info("=" * 60)
-        logger.info("TradingBot started")
-        logger.info("=" * 60)
-        logger.info(f"Mode: {Config.TRADING_MODE} ({Config.TRADING_DIRECTION})")
-        logger.info(f"Leverage: {Config.LEVERAGE}x")
-        logger.info(f"Risk per trade: {Config.RISK_PER_TRADE*100:.1f}%")
-        logger.info(f"Strategy runtime: {'enabled' if Config.STRATEGY_RUNTIME_ENABLED else 'disabled'}")
-        logger.info(f"Strategy side filter: {Config.STRATEGY_RUNTIME_SIDE_FILTER}")
-        logger.info(f"Enabled strategies: {', '.join(Config.ENABLED_STRATEGIES) or 'none'}")
-        logger.info(f"Dry run: {'enabled' if Config.DRY_RUN else 'disabled'}")
-        logger.info(f"Active positions: {len(self.active_trades)}")
-        logger.info(f"Symbols: {', '.join(Config.SYMBOLS)}")
-        logger.info("=" * 60)
+        """Log concise StrategyRuntime startup context."""
+        observer = getattr(self, "runtime_observer", None)
+        latest_path = self._short_path(observer.latest_path) if observer is not None else "off"
+        logger.info("%s starting", RUNTIME_LABEL)
+        logger.info(
+            "  account: mode=%s direction=%s sandbox=%s dry_run=%s leverage=%sx",
+            Config.TRADING_MODE,
+            Config.TRADING_DIRECTION,
+            Config.SANDBOX_MODE,
+            Config.DRY_RUN,
+            Config.LEVERAGE,
+        )
+        logger.info(
+            "  runtime: enabled=%s side=%s arbiter=%s router=%s btc_trend_filter=%s",
+            Config.STRATEGY_RUNTIME_ENABLED,
+            Config.STRATEGY_RUNTIME_SIDE_FILTER,
+            Config.REGIME_ARBITER_ENABLED,
+            Config.REGIME_ROUTER_ENABLED,
+            Config.BTC_TREND_FILTER_ENABLED,
+        )
+        logger.info(
+            "  risk: per_trade=%.2f%% max_total=%.2f%% max_position=%.2f%% max_sl=%.2f%%",
+            Config.RISK_PER_TRADE * 100,
+            Config.MAX_TOTAL_RISK * 100,
+            Config.MAX_POSITION_PERCENT * 100,
+            Config.MAX_SL_DISTANCE_PCT * 100,
+        )
+        logger.info(
+            "  universe: fixed=%s scanner=%s scanner_universe=%s",
+            ", ".join(Config.SYMBOLS) or "none",
+            Config.USE_SCANNER_SYMBOLS,
+            Config.SCANNER_UNIVERSE_ENABLED,
+        )
+        logger.info(
+            "  state: positions=%s performance_db=%s observability=%s",
+            len(self.active_trades),
+            self._short_path(getattr(Config, "DB_PATH", "performance.db")),
+            latest_path,
+        )
+        strategy_names = self._strategy_display_names(Config.ENABLED_STRATEGIES)
+        logger.info("  portfolio: %s", ", ".join(strategy_names) if strategy_names else "none")
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug("  strategy_ids: %s", ", ".join(Config.ENABLED_STRATEGIES) or "none")
+
+    @staticmethod
+    def _strategy_display_names(strategy_ids: List[str]) -> List[str]:
+        names = []
+        for strategy_id in strategy_ids:
+            label = STRATEGY_DISPLAY_NAMES.get(strategy_id, strategy_id)
+            if len(label) > 88:
+                label = f"{label[:85]}..."
+            names.append(label)
+        return names
+
+    @staticmethod
+    def _short_path(path_value) -> str:
+        path = Path(str(path_value))
+        try:
+            return str(path.resolve().relative_to(Path(__file__).resolve().parent.parent))
+        except Exception:
+            return str(path)
+
+    def _record_runtime_event(self, event: str, **fields):
+        observer = getattr(self, "runtime_observer", None)
+        if observer is not None:
+            observer.record_event(event, **fields)
 
     def _restore_positions(self):
         """Restore positions from positions.json."""
@@ -317,12 +393,18 @@ class TradingBot:
     def load_scanner_results(self) -> List[str]:
         """Load scanner symbols with Config.SYMBOLS as the safe fallback."""
         self._scanner_symbol_meta = {}
+        self._scanner_symbol_source = {}
         try:
             scanner_path = os.path.expanduser(Config.SCANNER_JSON_PATH)
             # Relative scanner paths are resolved from the project root.
             if not os.path.isabs(scanner_path):
                 scanner_path = str(Path(__file__).parent.parent / scanner_path)
             if not os.path.exists(scanner_path):
+                self._scanner_symbol_source = {
+                    'source': 'config_symbols',
+                    'fallback_reason': 'scanner_json_missing',
+                    'scanner_path': scanner_path,
+                }
                 logger.warning(f"Scanner JSON not found at {scanner_path}; using default symbols")
                 return Config.SYMBOLS
 
@@ -335,6 +417,13 @@ class TradingBot:
                     scan_time = datetime.fromisoformat(scan_time_str.replace('Z', '+00:00'))
                     age_minutes = (datetime.now(timezone.utc) - scan_time).total_seconds() / 60
                     if age_minutes > Config.SCANNER_MAX_AGE_MINUTES:
+                        self._scanner_symbol_source = {
+                            'source': 'config_symbols',
+                            'fallback_reason': 'scanner_json_stale',
+                            'scanner_path': scanner_path,
+                            'age_minutes': round(age_minutes, 2),
+                            'max_age_minutes': Config.SCANNER_MAX_AGE_MINUTES,
+                        }
                         logger.warning(
                             "Scanner JSON stale "
                             f"({age_minutes:.0f} min > {Config.SCANNER_MAX_AGE_MINUTES} min); "
@@ -361,6 +450,13 @@ class TradingBot:
                 )
                 if scanner_symbols:
                     self._scanner_symbol_meta = metadata
+                    self._scanner_symbol_source = {
+                        'source': field_name,
+                        'fallback_reason': None,
+                        'scanner_path': scanner_path,
+                        'symbol_count': len(scanner_symbols),
+                        'unsupported_filtered': unsupported_count,
+                    }
                     logger.info(
                         "Scanner loaded %s symbol(s) from %s "
                         "(unsupported_filtered=%s): %s",
@@ -379,9 +475,19 @@ class TradingBot:
                     )
 
             self._scanner_symbol_meta = {}
+            self._scanner_symbol_source = {
+                'source': 'config_symbols',
+                'fallback_reason': 'scanner_json_no_usable_symbols',
+                'scanner_path': scanner_path,
+            }
             logger.warning("Scanner JSON had no usable bot_symbols/hot_symbols, using default symbols")
             return Config.SYMBOLS
         except Exception as e:
+            self._scanner_symbol_source = {
+                'source': 'config_symbols',
+                'fallback_reason': 'scanner_json_load_failed',
+                'error': str(e),
+            }
             logger.warning(f"Scanner JSON load failed: {e}; using default symbols")
             return Config.SYMBOLS
 
@@ -696,6 +802,16 @@ class TradingBot:
             stop_loss,
             reason,
         )
+        self._record_runtime_event(
+            "execution_failure",
+            symbol=symbol,
+            strategy_id=intent.strategy_id,
+            side=side,
+            reason="post_fill_stop_violation",
+            detail=reason,
+            fill_price=fill_price,
+            stop_loss=stop_loss,
+        )
 
         log_fields = {
             **self._build_log_base("POST_FILL_STOP_VIOLATION", "post_fill_abort", symbol, side),
@@ -741,6 +857,13 @@ class TradingBot:
         try:
             if symbol in self.active_trades:
                 logger.info("%s: skip execution, position already active", symbol)
+                self._record_runtime_event(
+                    "execution_skipped",
+                    symbol=symbol,
+                    strategy_id=intent.strategy_id,
+                    side=side,
+                    reason="position_already_active",
+                )
                 return
 
             entry_price = risk_plan.entry_price
@@ -757,6 +880,16 @@ class TradingBot:
                     position_size,
                     entry_price,
                     stop_loss,
+                )
+                self._record_runtime_event(
+                    "execution_skipped",
+                    symbol=symbol,
+                    strategy_id=intent.strategy_id,
+                    side=side,
+                    reason="dry_run",
+                    entry_price=entry_price,
+                    stop_loss=stop_loss,
+                    position_size=position_size,
                 )
                 return
 
@@ -839,6 +972,17 @@ class TradingBot:
             pm.stop_order_id = self._place_hard_stop_loss(symbol, side, position_size, stop_loss)
             self.active_trades[symbol] = pm
             self._save_positions()
+            self._record_runtime_event(
+                "execution_filled",
+                symbol=symbol,
+                strategy_id=intent.strategy_id,
+                side=side,
+                entry_price=entry_price,
+                stop_loss=stop_loss,
+                position_size=position_size,
+                risk_usdt=initial_r,
+                router_reason=order_plan.router_reason,
+            )
 
             TelegramNotifier.notify_signal(symbol, {
                 "side": side,
@@ -851,7 +995,16 @@ class TradingBot:
             })
 
         except Exception as e:
-            logger.error("%s strategy execution failed: %s", symbol, e)
+            logger.exception("%s strategy execution failed", symbol)
+            self._record_runtime_event(
+                "execution_failure",
+                symbol=symbol,
+                strategy_id=intent.strategy_id,
+                side=side,
+                reason="order_execution_exception",
+                error_type=type(e).__name__,
+                error=str(e),
+            )
             self.order_failed_symbols[symbol] = datetime.now(timezone.utc)
 
     def _legacy_entry_removed(self, *_args, **_kwargs):
@@ -1117,43 +1270,43 @@ class TradingBot:
 
     def startup_diagnostics(self) -> bool:
         """Run startup checks before entering the main loop."""
-        logger.info("Running startup diagnostics...")
+        logger.info("Startup checks running")
 
         try:
             if Config.DRY_RUN:
                 balance = 10000.0
-                logger.info(f"[DRY_RUN] balance: ${balance:.2f} USDT")
+                logger.info("Balance OK: %.2f USDT (dry_run)", balance)
             else:
                 balance = self.risk_manager.get_balance()
-                logger.info(f"API balance check passed: ${balance:.2f} USDT")
+                logger.info("Balance OK: %.2f USDT", balance)
             self.initial_balance = balance
         except Exception as e:
-            logger.error(f"API balance check failed: {e}")
+            logger.error(f"Balance check failed: {e}")
             return False
 
         test_symbol = Config.SYMBOLS[0] if Config.SYMBOLS else 'BTC/USDT'
         df = self.fetch_ohlcv(test_symbol, Config.TIMEFRAME_SIGNAL, limit=50)
         if df.empty:
-            logger.error(f"Data check failed for {test_symbol}")
+            logger.error("Market data check failed: %s %s", test_symbol, Config.TIMEFRAME_SIGNAL)
             return False
-        logger.info(f"Data check passed for {test_symbol}: {len(df)} rows")
+        logger.info("Market data OK: %s %s rows=%s", test_symbol, Config.TIMEFRAME_SIGNAL, len(df))
 
         # Check higher-timeframe data availability.
         df_4h = self.fetch_ohlcv(test_symbol, '4h', limit=20)
         if df_4h.empty:
-            logger.warning("4h data unavailable")
+            logger.warning("Market data unavailable: %s 4h", test_symbol)
         else:
-            logger.info(f"4h data check passed: {len(df_4h)} rows")
+            logger.info("Market data OK: %s 4h rows=%s", test_symbol, len(df_4h))
 
         # Validate config.
         try:
             Config.validate()
-            logger.info("Config validation passed")
+            logger.info("Config validation OK")
         except ValueError as e:
             logger.error(f"Config validation failed: {e}")
             return False
 
-        logger.info("Startup diagnostics passed")
+        logger.info("Startup checks OK")
         return True
 
     # ==================== Main Loop ====================
@@ -1161,14 +1314,16 @@ class TradingBot:
     def run(self):
         """Run the bot main loop."""
         if not self.startup_diagnostics():
-            logger.error("Startup diagnostics failed")
+            logger.error("Startup checks failed")
             return
 
         try:
             dual_mode = self.futures_client.get_position_side_dual()
             self.execution_engine.hedge_mode = dual_mode
             if dual_mode:
-                logger.info('Account is in Hedge Mode, execution_engine.hedge_mode=True')
+                logger.info("Account mode: hedge")
+            else:
+                logger.info("Account mode: one-way")
         except Exception as e:
             logger.warning(f'Could not determine hedge mode state: {e}')
 
@@ -1196,7 +1351,7 @@ class TradingBot:
                     logger.warning(f"Could not refresh hedge mode state after grid check: {e}")
                 self._restore_grid_runtime_state()
 
-        logger.info("Entering main loop...\n")
+        logger.info("Main loop started: interval=%ss", Config.CHECK_INTERVAL)
 
         # Adopt unmanaged exchange positions before normal monitoring.
         self._adopt_ghost_positions()
@@ -1221,7 +1376,13 @@ class TradingBot:
                 self._save_positions()
                 break
             except Exception as e:
-                logger.error(f"Cycle #{cycle} failed: {e}")
+                logger.exception("Cycle #%s failed", cycle)
+                self._record_runtime_event(
+                    "cycle_failure",
+                    cycle=cycle,
+                    error_type=type(e).__name__,
+                    error=str(e),
+                )
                 time.sleep(Config.CHECK_INTERVAL)
 
 

@@ -102,11 +102,11 @@ class PositionPersistence:
             # Atomic rename（same directory, so it's atomic on all OS）
             os.replace(tmp_path, self.file_path)
 
-            logger.debug(f"✅ Positions saved: {len(positions_data)} active")
+            logger.debug(f"Positions saved: {len(positions_data)} active")
             return True
 
         except Exception as e:
-            logger.error(f"❌ Failed to save positions: {e}")
+            logger.error(f"Failed to save positions: {e}")
             # Clean up temp file if exists
             if 'tmp_path' in locals() and os.path.exists(tmp_path):
                 try:
@@ -123,7 +123,7 @@ class PositionPersistence:
             positions_data dict，如果檔案不存在或讀取失敗則回傳空 dict
         """
         if not os.path.exists(self.file_path):
-            logger.info(f"ℹ️ positions.json not found, starting fresh")
+            logger.info("Positions file not found; starting fresh")
             return {}
 
         try:
@@ -136,30 +136,30 @@ class PositionPersistence:
                 positions_data = raw.get('positions', {})
                 if version > 2:
                     logger.warning(
-                        f"⚠️ positions.json schema_version={version} > expected 2, "
+                        f"positions.json schema_version={version} > expected 2, "
                         f"attempting to load (may have compatibility issues)"
                     )
-                logger.info(f"✅ Loaded {len(positions_data)} positions from disk (schema v{version})")
+                logger.info(f"Positions loaded: {len(positions_data)} active (schema v{version})")
             else:
                 # v1（無版本號）：raw 就是 positions dict
                 positions_data = raw
-                logger.info(f"✅ Loaded {len(positions_data)} positions from disk (schema v1, legacy)")
+                logger.info(f"Positions loaded: {len(positions_data)} active (legacy schema v1)")
 
             return positions_data
 
         except json.JSONDecodeError as e:
-            logger.error(f"❌ positions.json corrupted: {e}")
+            logger.error(f"positions.json corrupted: {e}")
             # Backup corrupted file
             backup_path = f"{self.file_path}.corrupted.{int(datetime.now().timestamp())}"
             try:
                 os.rename(self.file_path, backup_path)
-                logger.warning(f"⚠️ Corrupted file backed up to {backup_path}")
+                logger.warning(f"Corrupted positions file backed up to {backup_path}")
             except:
                 pass
             return {}
 
         except Exception as e:
-            logger.error(f"❌ Failed to load positions: {e}")
+            logger.error(f"Failed to load positions: {e}")
             return {}
 
     def reconcile_with_exchange(
@@ -196,7 +196,7 @@ class PositionPersistence:
         # Check 1: positions.json 有但交易所沒有 → 移除
         for symbol in positions_data.keys():
             if symbol not in exchange_positions or exchange_positions[symbol]['contracts'] == 0:
-                logger.warning(f"⚠️ Position {symbol} in JSON but not on exchange, removing")
+                logger.warning(f"Position {symbol} in JSON but not on exchange; removing")
                 symbols_to_remove.append(symbol)
 
         for symbol in symbols_to_remove:
@@ -206,7 +206,7 @@ class PositionPersistence:
         for symbol, exch_pos in exchange_positions.items():
             if exch_pos['contracts'] > 0 and symbol not in reconciled:
                 logger.error(
-                    f"❌ CRITICAL: Position {symbol} exists on exchange but not in positions.json. "
+                    f"CRITICAL: Position {symbol} exists on exchange but not in positions.json. "
                     f"This may be a manual trade or data loss. Size: {exch_pos['contracts']}"
                 )
 
@@ -218,7 +218,7 @@ class PositionPersistence:
 
                 if abs(json_size - exch_size) > 0.0001:  # Float 精度容差
                     logger.warning(
-                        f"⚠️ Size mismatch {symbol}: JSON={json_size} vs Exchange={exch_size}, "
+                        f"Size mismatch {symbol}: JSON={json_size} vs Exchange={exch_size}, "
                         f"updating to exchange value"
                     )
                     reconciled[symbol]['total_size'] = exch_size
@@ -245,11 +245,11 @@ class PositionPersistence:
             with open(backup_path, 'w', encoding=self.encoding) as dst:
                 dst.write(content)
 
-            logger.info(f"✅ Backup created: {backup_path}")
+            logger.info(f"Positions backup created: {backup_path}")
             return backup_path
 
         except Exception as e:
-            logger.error(f"❌ Failed to backup positions: {e}")
+            logger.error(f"Failed to backup positions: {e}")
             return None
 
     def clear_positions(self) -> bool:
@@ -267,7 +267,7 @@ class PositionPersistence:
             return self.save_positions({})
 
         except Exception as e:
-            logger.error(f"❌ Failed to clear positions: {e}")
+            logger.error(f"Failed to clear positions: {e}")
             return False
 
 

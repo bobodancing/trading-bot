@@ -44,6 +44,14 @@ class _ExecutionEngine:
         }
 
 
+class _RuntimeObserver:
+    def __init__(self):
+        self.events = []
+
+    def record_event(self, event: str, **fields):
+        self.events.append({"event": event, **fields})
+
+
 def _plan(*, side: str, entry: float, stop: float) -> ExecutableOrderPlan:
     return ExecutableOrderPlan(
         intent=SignalIntent(
@@ -143,3 +151,26 @@ def test_post_fill_stop_violation_flattens_live_exchange_without_perfdb(monkeypa
     assert bot._extract_fill_price.call_count == 2
     assert bot._signal_audit.rejects[-1]["reject_reason"] == "post_fill_stop_violation"
     assert bot._signal_audit.rejects[-1]["stage"] == "execution"
+
+
+def test_order_execution_exception_records_runtime_event(monkeypatch):
+    monkeypatch.setattr(Config, "DRY_RUN", False)
+    monkeypatch.setattr("trader.bot.BinanceFuturesClient.is_enabled", staticmethod(lambda: False))
+
+    exchange = MagicMock()
+    exchange.create_order.side_effect = RuntimeError("exchange unavailable")
+    bot = _bot(exchange=exchange)
+    bot.runtime_observer = _RuntimeObserver()
+
+    bot._execute_order_plan(_plan(side="LONG", entry=100.0, stop=95.0))
+
+    assert "BTC/USDT" in bot.order_failed_symbols
+    assert bot.runtime_observer.events[-1] == {
+        "event": "execution_failure",
+        "symbol": "BTC/USDT",
+        "strategy_id": "fixture_long",
+        "side": "LONG",
+        "reason": "order_execution_exception",
+        "error_type": "RuntimeError",
+        "error": "exchange unavailable",
+    }
