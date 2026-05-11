@@ -15,13 +15,16 @@ STRATEGY_LABELS = {
     "legacy_manual": "Manual/Protective",
     "manual_protective": "Manual/Protective",
 }
+UNKNOWN_STRATEGY_LABEL = "Unknown"
 
 
 def format_strategy_label(strategy_name: Optional[str] = None, _compat_flag: Optional[bool] = None) -> str:
-    """Resolve strategy identifiers to stable Telegram labels."""
+    """Resolve StrategyRuntime identifiers to stable Telegram labels."""
     if strategy_name:
-        return STRATEGY_LABELS.get(strategy_name, strategy_name)
-    return "Unknown"
+        key = str(strategy_name).strip()
+        if key:
+            return STRATEGY_LABELS.get(key, key)
+    return UNKNOWN_STRATEGY_LABEL
 
 
 class TelegramNotifier:
@@ -158,5 +161,5 @@ Regime: {esc(str(details.get('market_regime', 'N/A')))}
         TelegramNotifier.send_message(msg)
 
 
-# Alias for legacy notifier imports.
+# Backward-compatible alias for existing notifier imports.
 Notifier = TelegramNotifier

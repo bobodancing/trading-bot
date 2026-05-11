@@ -114,6 +114,12 @@ class TelegramCommandHandler:
             strategy_id = None
         return format_strategy_label(strategy_id)
 
+    @staticmethod
+    def _field(value, default: str = "N/A") -> str:
+        if value is None:
+            return default
+        return str(value)
+
     def _cmd_positions(self) -> str:
         """Render open positions."""
         trades = self.bot.active_trades
@@ -128,19 +134,29 @@ class TelegramCommandHandler:
             strategy = self._strategy_label(pm)
 
             # Approximate MFE from the local position manager highs/lows.
-            if pm.side == 'LONG':
-                pnl_pct = (pm.highest_price - pm.avg_entry) / pm.avg_entry * 100
+            side = self._field(getattr(pm, 'side', None))
+            avg_entry = float(getattr(pm, 'avg_entry', 0) or 0)
+            current_sl = float(getattr(pm, 'current_sl', 0) or 0)
+            total_size = float(getattr(pm, 'total_size', 0) or 0)
+            highest_price = float(getattr(pm, 'highest_price', avg_entry) or avg_entry)
+            lowest_price = float(getattr(pm, 'lowest_price', avg_entry) or avg_entry)
+
+            if side == 'LONG' and avg_entry > 0:
+                pnl_pct = (highest_price - avg_entry) / avg_entry * 100
+            elif avg_entry > 0:
+                pnl_pct = (avg_entry - lowest_price) / avg_entry * 100
             else:
-                pnl_pct = (pm.avg_entry - pm.lowest_price) / pm.avg_entry * 100
+                pnl_pct = 0.0
             pnl_prefix = '+' if pnl_pct >= 0 else ''
 
             lines.append(
-                f"\n<b>{html.escape(symbol)}</b> {pm.side} ({strategy})\n"
-                f"  Entry: ${pm.avg_entry:.4f}\n"
-                f"  Stop: ${pm.current_sl:.4f}\n"
-                f"  Size: {pm.total_size:.6f}\n"
-                f"  Stage: {pm.stage}\n"
-                f"  Tier: {pm.signal_tier}\n"
+                f"\n<b>{html.escape(str(symbol))}</b> {html.escape(side)} "
+                f"({html.escape(strategy)})\n"
+                f"  Entry: ${avg_entry:.4f}\n"
+                f"  Stop: ${current_sl:.4f}\n"
+                f"  Size: {total_size:.6f}\n"
+                f"  Stage: {html.escape(self._field(getattr(pm, 'stage', None)))}\n"
+                f"  Tier: {html.escape(self._field(getattr(pm, 'signal_tier', None)))}\n"
                 f"  Hold: {hold_hours:.1f}h\n"
                 f"  MFE: {pnl_prefix}{pnl_pct:.2f}%"
             )

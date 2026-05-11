@@ -1,6 +1,4 @@
-"""
-Binance Futures API client helpers.
-"""
+"""Binance Futures API client helpers."""
 
 import logging
 import time
@@ -11,17 +9,22 @@ from trader.config import Config
 
 logger = logging.getLogger(__name__)
 
+DEMO_FUTURES_BASE_URL = "https://demo-fapi.binance.com"
+LIVE_FUTURES_BASE_URL = "https://fapi.binance.com"
+RECV_WINDOW_MS = 10000
+
 
 class BinanceFuturesClient:
-    """Thin wrapper around Binance Futures signed REST endpoints."""
+    """Thin wrapper around Binance Futures signed REST endpoints.
+
+    Credentials are injected by the caller after Config.load_secrets(); this
+    helper does not read secrets or mutate Config defaults.
+    """
 
     def __init__(self, api_key: str, api_secret: str, sandbox: bool = True):
         self.api_key = api_key
         self.api_secret = api_secret
-        self.base_url = (
-            "https://demo-fapi.binance.com" if sandbox
-            else "https://fapi.binance.com"
-        )
+        self.base_url = DEMO_FUTURES_BASE_URL if sandbox else LIVE_FUTURES_BASE_URL
         self._current_weight = 0
         self._weight_limit = 2000
 
@@ -41,59 +44,75 @@ class BinanceFuturesClient:
         params: dict = None,
     ) -> requests.Response:
         """Send a signed Binance request and return the raw response."""
+        signed_params = self._signed_params(params)
+        headers = {'X-MBX-APIKEY': self.api_key}
+        url = f"{self.base_url}{endpoint}"
+
+        self._throttle_if_needed()
+        response = self._send(method, url, signed_params, headers)
+        self._update_weight(response)
+        self._log_timestamp_hint(response, endpoint)
+        return response
+
+    def _signed_params(self, params: dict = None) -> dict:
+        """Return a signed copy of params without mutating caller input."""
         import hashlib
         import hmac as hmac_mod
         from urllib.parse import urlencode
 
-        if params is None:
-            params = {}
-
-        params['timestamp'] = int(time.time() * 1000)
-        params['recvWindow'] = 10000
-        query_string = urlencode(params)
+        signed_params = dict(params or {})
+        signed_params['timestamp'] = int(time.time() * 1000)
+        signed_params['recvWindow'] = RECV_WINDOW_MS
+        query_string = urlencode(signed_params)
         signature = hmac_mod.new(
-            self.api_secret.strip().encode('utf-8'),
+            (self.api_secret or '').strip().encode('utf-8'),
             query_string.encode('utf-8'),
             hashlib.sha256,
         ).hexdigest()
-        params['signature'] = signature
+        signed_params['signature'] = signature
+        return signed_params
 
-        headers = {'X-MBX-APIKEY': self.api_key}
-        url = f"{self.base_url}{endpoint}"
-
+    def _throttle_if_needed(self) -> None:
         if self._current_weight > self._weight_limit:
             logger.warning(
-                f"API weight {self._current_weight} exceeds limit "
-                f"{self._weight_limit}, sleeping 1s"
+                "API weight %s exceeds limit %s, sleeping 1s",
+                self._current_weight,
+                self._weight_limit,
             )
             time.sleep(1.0)
 
-        if method.upper() == 'POST':
+    @staticmethod
+    def _send(method: str, url: str, params: dict, headers: dict) -> requests.Response:
+        method = method.upper()
+        if method == 'POST':
             response = requests.post(url, data=params, headers=headers, timeout=30)
-        elif method.upper() == 'DELETE':
+        elif method == 'DELETE':
             response = requests.delete(url, params=params, headers=headers, timeout=30)
         else:
             response = requests.get(url, params=params, headers=headers, timeout=30)
+        return response
 
+    def _update_weight(self, response: requests.Response) -> None:
         weight_header = response.headers.get('X-MBX-USED-WEIGHT-1M')
         if weight_header:
             try:
                 self._current_weight = int(weight_header)
-                logger.debug(f"API weight: {self._current_weight}/2400")
+                logger.debug("API weight: %s/%s", self._current_weight, self._weight_limit)
             except ValueError:
                 pass
 
+    @staticmethod
+    def _log_timestamp_hint(response: requests.Response, endpoint: str) -> None:
         if response.status_code == 400:
             try:
                 error_body = response.json()
                 if error_body.get('code') == -1021:
                     logger.warning(
-                        f"[TIMESTAMP] Check local time/NTP drift for endpoint: {endpoint}"
+                        "[TIMESTAMP] Check local time/NTP drift for endpoint: %s",
+                        endpoint,
                     )
             except Exception:
                 pass
-
-        return response
 
     def signed_request_json(
         self,

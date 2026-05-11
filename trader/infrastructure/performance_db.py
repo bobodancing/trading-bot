@@ -1,12 +1,11 @@
 """
 Performance database for recording trade outcomes.
 Writes to SQLite on every position close.
-Why: Provides raw data for Phase 1 decision quality analysis (EV, MFE/MAE, capture ratio).
+Why: Provides raw data for StrategyRuntime review, dashboard readers, and
+historical decision-quality analysis.
 """
 import sqlite3
 import logging
-from datetime import datetime
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +83,57 @@ INSERT OR IGNORE INTO trades (
 );
 """
 
+IDEMPOTENT_MIGRATIONS = (
+    "ALTER TABLE trades ADD COLUMN signal_type TEXT",
+    "ALTER TABLE trades ADD COLUMN exit_price_source TEXT",
+    "ALTER TABLE trades ADD COLUMN entry_adx REAL",
+    "ALTER TABLE trades ADD COLUMN fakeout_depth_atr REAL",
+    "ALTER TABLE trades ADD COLUMN reverse_2b_depth_atr REAL",
+    "ALTER TABLE trades ADD COLUMN original_size REAL",
+    "ALTER TABLE trades ADD COLUMN partial_pnl_usdt REAL",
+    "ALTER TABLE trades ADD COLUMN btc_trend_aligned INTEGER",
+    "ALTER TABLE trades ADD COLUMN trend_adx REAL",
+    "ALTER TABLE trades ADD COLUMN mtf_aligned INTEGER",
+    "ALTER TABLE trades ADD COLUMN volume_grade TEXT",
+    "ALTER TABLE trades ADD COLUMN tier_score INTEGER",
+    "ALTER TABLE trades ADD COLUMN strategy_name TEXT",
+    "ALTER TABLE trades ADD COLUMN grid_level INTEGER",
+    "ALTER TABLE trades ADD COLUMN grid_round INTEGER",
+    "ALTER TABLE trades ADD COLUMN max_r_reached REAL",
+    "ALTER TABLE trades ADD COLUMN protection_state TEXT",
+    "ALTER TABLE trades ADD COLUMN protected_exit INTEGER",
+)
+
+OPTIONAL_TRADE_FIELDS = (
+    'original_size',
+    'partial_pnl_usdt',
+    'signal_type',
+    'exit_price_source',
+    'btc_trend_aligned',
+    'reverse_2b_depth_atr',
+    'trend_adx',
+    'mtf_aligned',
+    'volume_grade',
+    'tier_score',
+    'strategy_name',
+    'grid_level',
+    'grid_round',
+    'max_r_reached',
+    'protection_state',
+    'protected_exit',
+)
+
+# Kept only for existing performance.db/dashboard/backtest readers. New
+# StrategyRuntime code writes strategy_name from the plugin id and does not use
+# retired grid or lane-specific runtime state.
+HISTORICAL_COMPAT_COLUMNS = (
+    'is_v6_pyramid',
+    'grid_level',
+    'grid_round',
+    'signal_tier',
+    'tier_score',
+)
+
 
 class PerformanceDB:
     def __init__(self, db_path: str = "performance.db"):
@@ -94,31 +144,11 @@ class PerformanceDB:
         try:
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute(CREATE_TABLE_SQL)
-                # Migration: 新增 Phase 1 分析欄位（idempotent，欄位已存在會靜默跳過）
-                for col_sql in [
-                    "ALTER TABLE trades ADD COLUMN signal_type TEXT",
-                    "ALTER TABLE trades ADD COLUMN exit_price_source TEXT",
-                    "ALTER TABLE trades ADD COLUMN entry_adx REAL",
-                    "ALTER TABLE trades ADD COLUMN fakeout_depth_atr REAL",
-                    "ALTER TABLE trades ADD COLUMN reverse_2b_depth_atr REAL",
-                    "ALTER TABLE trades ADD COLUMN original_size REAL",
-                    "ALTER TABLE trades ADD COLUMN partial_pnl_usdt REAL",
-                    "ALTER TABLE trades ADD COLUMN btc_trend_aligned INTEGER",
-                    "ALTER TABLE trades ADD COLUMN trend_adx REAL",
-                    "ALTER TABLE trades ADD COLUMN mtf_aligned INTEGER",
-                    "ALTER TABLE trades ADD COLUMN volume_grade TEXT",
-                    "ALTER TABLE trades ADD COLUMN tier_score INTEGER",
-                    "ALTER TABLE trades ADD COLUMN strategy_name TEXT",
-                    "ALTER TABLE trades ADD COLUMN grid_level INTEGER",
-                    "ALTER TABLE trades ADD COLUMN grid_round INTEGER",
-                    "ALTER TABLE trades ADD COLUMN max_r_reached REAL",
-                    "ALTER TABLE trades ADD COLUMN protection_state TEXT",
-                    "ALTER TABLE trades ADD COLUMN protected_exit INTEGER",
-                ]:
+                for col_sql in IDEMPOTENT_MIGRATIONS:
                     try:
                         conn.execute(col_sql)
                     except sqlite3.OperationalError:
-                        pass  # 欄位已存在，正常跳過
+                        pass  # Column already exists; migrations stay idempotent.
                 conn.commit()
             logger.info(f"Performance DB ready: {self.db_path}")
         except Exception as e:
@@ -131,23 +161,9 @@ class PerformanceDB:
         Non-fatal: logs error and returns False on failure.
         """
         try:
-            data = dict(data)  # 不改動呼叫方的 dict
-            data.setdefault('original_size', None)
-            data.setdefault('partial_pnl_usdt', None)
-            data.setdefault('signal_type', None)
-            data.setdefault('exit_price_source', None)
-            data.setdefault('btc_trend_aligned', None)
-            data.setdefault('reverse_2b_depth_atr', None)
-            data.setdefault('trend_adx', None)
-            data.setdefault('mtf_aligned', None)
-            data.setdefault('volume_grade', None)
-            data.setdefault('tier_score', None)
-            data.setdefault('strategy_name', None)
-            data.setdefault('grid_level', None)
-            data.setdefault('grid_round', None)
-            data.setdefault('max_r_reached', None)
-            data.setdefault('protection_state', None)
-            data.setdefault('protected_exit', None)
+            data = dict(data)
+            for field in OPTIONAL_TRADE_FIELDS:
+                data.setdefault(field, None)
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute(CREATE_TABLE_SQL)
                 conn.execute(INSERT_SQL, data)
