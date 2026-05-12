@@ -15,6 +15,7 @@ from trader.strategy_runtime import StrategyRuntime
 PROMOTED_STRATEGIES = [
     "macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_transition_aware_tightened_late_entry_filter",
     "donchian_range_fade_4h_range_width_cv_013",
+    "donchian_range_fade_4h_range_width_cv_013_short",
 ]
 
 
@@ -280,6 +281,7 @@ def test_promoted_slots_keep_fixed_scope_when_scanner_universe_is_enabled(tmp_pa
     assert snapshot_symbols == ["BTC/USDT", "ETH/USDT"]
     assert plugin_symbols[PROMOTED_STRATEGIES[0]] == ["BTC/USDT"]
     assert plugin_symbols[PROMOTED_STRATEGIES[1]] == ["BTC/USDT", "ETH/USDT"]
+    assert plugin_symbols[PROMOTED_STRATEGIES[2]] == ["BTC/USDT", "ETH/USDT"]
 
 
 def test_strategy_runtime_falls_back_to_fixed_symbols_when_universe_stale(tmp_path):

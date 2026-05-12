@@ -8,7 +8,8 @@ Branch: `codex/post-promotion-control-20260430`
 
 This memo classifies whether the completed A+B promotion, Phase 4 RSI2
 closeout, and Phase 5 BB Fade Squeeze closeout justify activating any recovery
-backlog mechanism pair.
+backlog mechanism pair. It is a historical trigger review written before the
+later Slot B SHORT promotion.
 
 Decision boundary:
 
@@ -33,8 +34,12 @@ Decision boundary:
 
 Trigger classification: `NO_MATERIAL_GAP`.
 
-Action: no recovery backlog activation. Monitor promoted A+B on the fixed
-runtime baseline.
+Action at this review point: no recovery backlog activation. Monitor promoted
+A+B on the fixed runtime baseline.
+
+Current code truth later advanced to the three-leg runtime portfolio:
+Slot A LONG + Slot B LONG + Slot B SHORT. This memo remains useful as the
+pre-Slot-B-SHORT trigger decision, not as the latest portfolio state.
 
 This does not mean the portfolio is complete forever. It means the current
 evidence does not justify starting a new mechanism pair now.
@@ -76,7 +81,7 @@ Scanner evidence:
 
 - Scanner universe infrastructure remains available, but runtime consumption is
   observe-only by default.
-- Promoted A+B remains fixed-scope after
+- Promoted A+B remained fixed-scope after
   `e5dae15 fix(runtime): restore promoted slot fixed universe`.
 - Scanner output must not be used as a hidden new selection variable for this
   trigger decision.
@@ -116,3 +121,9 @@ Recommended next work is monitoring and operational hygiene for promoted A+B:
   scanner-universe activation review
 - review post-promotion dry-run/live observations when available
 - revisit trigger classification only when new evidence shows a concrete gap
+
+Supersession note:
+
+- the runtime later promoted Slot B SHORT
+- current weekly-profit planning should start from the three-leg baseline, not
+  this A+B-only trigger review

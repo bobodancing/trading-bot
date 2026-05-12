@@ -1,6 +1,6 @@
 # Trader Cleanup Plan
 
-Last updated: 2026-05-08.
+Last updated: 2026-05-12.
 
 This plan tracks the staged cleanup of `trader/` after the StrategyRuntime
 reset. Code remains the source of truth. If this plan conflicts with current
@@ -262,7 +262,7 @@ Phase 2 output:
 
 ## Phase 3 - Infrastructure Cleanup
 
-Status: pending.
+Status: completed on 2026-05-11.
 
 Scope:
 
@@ -287,6 +287,10 @@ Review gate:
 python -m pytest trader/tests/infrastructure/test_data_provider.py trader/tests/infrastructure/test_notifier_escape.py trader/tests/infrastructure/test_telegram_handler.py trader/tests/infrastructure/test_perf_db_quality.py -q
 python -m pytest trader/tests extensions/Backtesting/tests -q
 ```
+
+Phase 3 output:
+
+- `reports/trader_cleanup_phase3_infrastructure.md`
 
 ## Final Handoff Checklist
 

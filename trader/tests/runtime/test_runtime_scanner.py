@@ -11,6 +11,7 @@ from trader.config import Config
 PROMOTED_STRATEGIES = [
     "macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_transition_aware_tightened_late_entry_filter",
     "donchian_range_fade_4h_range_width_cv_013",
+    "donchian_range_fade_4h_range_width_cv_013_short",
 ]
 
 
@@ -82,8 +83,10 @@ def test_runtime_scanner_uses_fixed_plugin_scope_not_legacy_bot_universe(tmp_pat
     }
     assert report["plugin_scopes"][PROMOTED_STRATEGIES[0]]["slot_hint"] == "slot_a"
     assert report["plugin_scopes"][PROMOTED_STRATEGIES[1]]["slot_hint"] == "slot_b"
+    assert report["plugin_scopes"][PROMOTED_STRATEGIES[2]]["slot_hint"] == "slot_b"
     assert report["plugin_scopes"][PROMOTED_STRATEGIES[0]]["supports_dynamic_universe"] is False
     assert report["plugin_scopes"][PROMOTED_STRATEGIES[1]]["supports_dynamic_universe"] is False
+    assert report["plugin_scopes"][PROMOTED_STRATEGIES[2]]["supports_dynamic_universe"] is False
 
 
 def test_runtime_scanner_writes_advisory_json(tmp_path):

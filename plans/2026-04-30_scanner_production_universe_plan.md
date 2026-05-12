@@ -1,7 +1,7 @@
 # Scanner Production Universe Plan
 
 Date: 2026-04-30
-Last updated: 2026-05-05
+Last updated: 2026-05-12
 Status: V1 infra implemented; runtime consumption parked observe-only by default
 Owner: Ruei
 Branch: codex/post-promotion-control-20260430
@@ -9,7 +9,7 @@ Branch: codex/post-promotion-control-20260430
 ## Summary
 
 This plan defines how the scanner can later become a production trading-pair
-filter again without disturbing the current promoted A+B runtime.
+filter again without disturbing the current promoted three-leg runtime.
 
 The current scanner v2 remains diagnostics-only for testnet runtime. During
 Phase 4/5, scanner output must stay observe-only so RSI2 and BB Fade Squeeze
@@ -24,9 +24,11 @@ Implementation note (2026-05-05):
 - `StrategyRuntime` can consume `scanner_universe.json` only when
   `SCANNER_UNIVERSE_ENABLED=True` and at least one enabled plugin explicitly
   opts into dynamic universe scope.
-- Default runtime keeps scanner-universe consumption disabled so promoted A+B
-  remain fixed-scope while Phase 4/5 research is closed out.
-- Promoted Slot A/B do not opt into dynamic universe scope by default.
+- Default runtime keeps scanner-universe consumption disabled so the promoted
+  three-leg portfolio remains fixed-scope while weekly-profit readiness work
+  stays on the approved BTC/ETH baseline.
+- Promoted Slot A plus both Slot B legs do not opt into dynamic universe scope
+  by default.
 
 ## Locked Decisions
 
@@ -39,7 +41,7 @@ Implementation note (2026-05-05):
 - First filter depth: eligibility only, no alpha scoring.
 - Runtime failure mode: fallback to fixed portfolio.
 - Dynamic universe contract: plugin opt-in only.
-- Promoted A+B portfolio remains fixed BTC/ETH by default while
+- Promoted three-leg portfolio remains fixed BTC/ETH by default while
   `scanner_universe.json` is observe-only.
 
 ## Intended Data Flow
@@ -137,8 +139,8 @@ V1 explicitly does not include:
 
 ## Runtime Integration Plan
 
-Runtime integration is infra-ready but disabled by default for promoted A+B
-while Phase 4/5 research is closed out.
+Runtime integration is infra-ready but disabled by default for the promoted
+three-leg portfolio while weekly-profit readiness stays on the fixed baseline.
 
 Config shape:
 
@@ -169,18 +171,18 @@ dynamic_universe_quote = "USDT"
 dynamic_universe_max_symbols = 20
 ```
 
-Promoted Slot A/B currently do not use this opt-in shape. Missing or bad scanner
-output still falls back to fixed `Config.SYMBOLS` when scanner-universe runtime
-consumption is explicitly enabled.
+Promoted Slot A plus both Slot B legs currently do not use this opt-in shape.
+Missing or bad scanner output still falls back to fixed `Config.SYMBOLS` when
+scanner-universe runtime consumption is explicitly enabled.
 
 ## Phase Schedule
 
-### Phase 4/5 Runtime Use With Fixed A/B Scope
+### Fixed Promoted Scope While Scanner Consumption Stays Parked
 
 - Keep `runtime_scanner.json` as diagnostics-only.
 - Generate `scanner_universe.json` with `scanner/universe_scanner.py`.
-- Runtime does not use `scanner_universe.json` as the Slot A/B tradable
-  universe by default.
+- Runtime does not use `scanner_universe.json` as the promoted tradable universe
+  by default.
 - Do not use scanner universe to alter RSI2 or BB closeout backtest symbols
   unless the specific run is testing scanner-universe behavior.
 - Reports should separate scanner filtering effects from alpha gate effects.
@@ -195,7 +197,7 @@ consumption is explicitly enabled.
 ### Production Enablement
 
 - Enable only after Ruei approval.
-- Start with promoted A+B dynamic-universe scope.
+- Start only after an explicit dynamic-universe review for the promoted scope.
 - Keep fixed BTC/ETH as fallback baseline when scanner output is unavailable.
 - Monitor eligible/excluded reason-code distribution before relying on it for
   capital deployment.
@@ -205,7 +207,7 @@ consumption is explicitly enabled.
 The future implementation is acceptable only if:
 
 - Missing or bad scanner JSON falls back to fixed BTC/ETH behavior.
-- Promoted A/B consume scanner symbols only while they explicitly opt in.
+- Promoted legs consume scanner symbols only while they explicitly opt in.
 - Dynamic scanner symbols cannot reach non-opt-in plugins.
 - `hot_symbols.json` is not used as the production runtime universe source.
 - Tests cover stale JSON, malformed JSON, empty eligible list, non-opt-in

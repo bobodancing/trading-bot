@@ -1,8 +1,4 @@
-"""
-Trading Bot — 策略拔插平台
-
-支援多策略架構：V7 Structure / V53 SOP / legacy V6 Pyramid。
-"""
+"""StrategyRuntime trading package plus retained compatibility exports."""
 
 __version__ = "7.0.0"
 

@@ -8,7 +8,8 @@ Branch: codex/post-promotion-control-20260430
 
 The production scanner filter is implemented as an eligibility universe, not
 as alpha scoring. Runtime consumption is parked observe-only by default so the
-promoted A+B baseline stays fixed while Phase 4/5 research is closed out.
+promoted fixed three-leg baseline stays fixed while weekly-profit readiness is
+being defined.
 
 Runtime now has three separate scanner concepts:
 
@@ -39,7 +40,7 @@ The filter writes exclusion reason codes such as:
 - `insufficient_data:<timeframe>`
 - `stale_data:<timeframe>`
 
-## Slot A/B Fit
+## Current Promoted Slot Fit
 
 Slot A:
 
@@ -53,11 +54,11 @@ Slot A:
 Slot B:
 
 - Strategy: Donchian range fade 4h.
-- Current plugin scope: fixed BTC/ETH.
+- Current plugin scope: fixed BTC/ETH for both LONG and SHORT variants.
 - Scanner effect: observe-only unless `SCANNER_UNIVERSE_ENABLED` and a dynamic
   plugin opt-in are explicitly restored.
-- Fit: scanner breadth is intentionally not mixed into the current Slot B
-  promotion baseline.
+- Fit: scanner breadth is intentionally not mixed into the current Slot B LONG
+  or Slot B SHORT promotion baseline.
 
 ## Runtime Boundary
 
@@ -72,16 +73,16 @@ into dynamic universe scope:
    back to fixed `Config.SYMBOLS`.
 4. Apply plugin scope after the base universe.
 
-The current default is `SCANNER_UNIVERSE_ENABLED=False`; promoted Slot A/B keep
-fixed plugin scope, so a valid `scanner_universe.json` does not alter the
-default A+B trading universe.
+The current default is `SCANNER_UNIVERSE_ENABLED=False`; promoted Slot A and
+both Slot B legs keep fixed plugin scope, so a valid `scanner_universe.json`
+does not alter the default three-leg trading universe.
 
 ## Review Notes
 
 The current filter is deliberately conservative:
 
 - It does not score strategy profitability.
-- It does not loosen Slot A or Slot B gates.
+- It does not loosen Slot A or either Slot B gate.
 - It does not bypass router, arbiter, cooldown, risk, or execution handoff.
 - It keeps legacy `hot_symbols.json` out of the promoted runtime path.
 

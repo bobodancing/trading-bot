@@ -7,7 +7,8 @@ Branch: codex/post-promotion-control-20260430
 
 The scanner is split into two lanes:
 
-- `scanner/runtime_scanner.py` is the current runtime diagnostics lane for the promoted A+B portfolio.
+- `scanner/runtime_scanner.py` is the current runtime diagnostics lane for the
+  promoted three-leg portfolio.
 - `scanner/market_scanner.py` remains the legacy 2B research scanner.
 
 The promoted runtime no longer consumes scanner output as its live tradable
@@ -20,15 +21,16 @@ universe. `Config.USE_SCANNER_SYMBOLS` is now `False`; `StrategyRuntime` uses
 Enabled strategies:
 
 - Slot A: `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_transition_aware_tightened_late_entry_filter`
-- Slot B: `donchian_range_fade_4h_range_width_cv_013`
+- Slot B LONG: `donchian_range_fade_4h_range_width_cv_013`
+- Slot B SHORT: `donchian_range_fade_4h_range_width_cv_013_short`
 
 Runtime default symbol scope:
 
 - `BTC/USDT`
 - `ETH/USDT`
 
-`SOL/USDT` and `DOGE/USDT` are no longer runtime defaults for the promoted A+B
-portfolio.
+`SOL/USDT` and `DOGE/USDT` are no longer runtime defaults for the promoted
+three-leg portfolio.
 
 ## Runtime Scanner Contract
 
@@ -51,7 +53,7 @@ The runtime scanner report includes:
 - OHLCV data readiness by required timeframe
 - 4h regime feature diagnostics aligned with `RegimeArbiter`
 - Slot A MACD/trend telemetry
-- Slot B Donchian/range telemetry
+- Slot B LONG/SHORT Donchian/range telemetry
 
 The runtime scanner intentionally does not write `bot_symbols` or
 `hot_symbols`.

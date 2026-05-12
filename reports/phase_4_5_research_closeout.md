@@ -7,9 +7,11 @@ Branch: `codex/post-promotion-control-20260430`
 ## Scope
 
 This closeout resolves the remaining Phase 4/5 research lanes after the A+B
-runtime promotion and scanner scope repair.
+runtime promotion and scanner scope repair. It is a historical closeout written
+before the later Slot B SHORT runtime promotion.
 
-- Runtime baseline: promoted fixed A+B portfolio.
+- Historical runtime baseline at this closeout point: promoted fixed A+B
+  portfolio.
 - Slot A:
   `macd_signal_btc_4h_trending_up_staged_derisk_giveback_partial67_transition_aware_tightened_late_entry_filter`
   on fixed `BTC/USDT`.
@@ -94,7 +96,10 @@ Read:
 
 - The 3-slot ideal path `A+B+RSI2` is closed for now.
 - BB Fade Squeeze does not become the next ranging slot.
-- Promoted A+B remains the only runtime portfolio.
+- At this closeout date, promoted A+B was the only runtime portfolio.
+- Current code truth has since advanced to the three-leg runtime portfolio:
+  Slot A LONG + Slot B LONG + Slot B SHORT. See
+  `reports/portfolio_ab_slot_b_short_promotion_gate.md` and `trader/config.py`.
 - Scanner universe stays observe-only by default so Phase 4/5 evidence remains
   on the fixed BTC/ETH baseline.
 - Recovery backlog remains `DO-NOT-START` until Ruei explicitly approves a new

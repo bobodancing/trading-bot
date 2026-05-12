@@ -8,9 +8,9 @@ The scanner package now has two separate roles:
 
 ## Runtime Scanner
 
-The runtime diagnostics scanner is advisory only. Promoted A+B live symbol
-selection remains fixed by `trader.config.Config.SYMBOLS` plus plugin scope;
-`scanner_universe.json` is infra-ready but observe-only by default.
+The runtime diagnostics scanner is advisory only. Promoted three-leg live
+symbol selection remains fixed by `trader.config.Config.SYMBOLS` plus plugin
+scope; `scanner_universe.json` is infra-ready but observe-only by default.
 
 Run a one-shot runtime diagnostics report:
 
@@ -32,7 +32,7 @@ It reports:
 - OHLCV data depth and freshness by timeframe
 - 4h regime feature diagnostics aligned with `RegimeArbiter`
 - Slot A MACD trend/readiness telemetry
-- Slot B Donchian range/readiness telemetry
+- Slot B LONG/SHORT Donchian range/readiness telemetry
 
 This report is advisory only. It does not size orders, place orders, mutate
 `Config`, or feed `StrategyRuntime.scan_for_entries()`.
@@ -73,8 +73,9 @@ does not calculate alpha scores or strategy expectancy.
 
 `StrategyRuntime` can consume this contract only when
 `Config.SCANNER_UNIVERSE_ENABLED` is explicitly enabled and a plugin opts into
-dynamic universe scope. The current promoted Slot A/B plugins keep fixed scope,
-so Phase 4/5 research remains on the BTC/ETH fixed-symbol baseline.
+dynamic universe scope. The current promoted Slot A plus both Slot B legs keep
+fixed scope, so weekly-profit readiness work remains on the BTC/ETH fixed-symbol
+baseline.
 
 ## Legacy 2B Scanner
 
@@ -86,4 +87,4 @@ python -m scanner.market_scanner --once
 
 It writes the legacy `hot_symbols.json` contract with `hot_symbols` and
 `bot_symbols`. That output is no longer the default live runtime universe for
-the promoted A+B portfolio.
+the promoted three-leg portfolio.

@@ -3,6 +3,11 @@
 Date: 2026-04-30
 Status: `POST_PROMOTION_CONTROL_PASS`
 
+This is the historical control report for the original A+B promotion. Current
+code truth later advanced to the three-leg runtime portfolio:
+Slot A LONG + Slot B LONG + Slot B SHORT. See
+`reports/portfolio_ab_slot_b_short_promotion_gate.md`.
+
 ## Scope
 
 - Ruei approval: `APPROVED` on 2026-04-29.
