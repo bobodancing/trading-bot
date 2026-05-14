@@ -169,10 +169,12 @@ def _build_week_rows(
     start: str,
     end: str,
     fee_rate: float,
+    slot_labels: dict[str, str] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
     weeks = _week_keys(start, end)
     buckets = {week: _new_week_row(week) for week in weeks}
     overflow = {"entry_outside_window": 0, "exit_outside_window": 0}
+    resolved_slot_labels = SLOT_LABELS if slot_labels is None else dict(slot_labels)
 
     for row in rows:
         entry_week = _week_start_for_ts(row.get("entry_time"))
@@ -189,7 +191,7 @@ def _build_week_rows(
         pnl = _safe_float(row.get("pnl_usdt"))
         fees_est = _fee_estimate(row, fee_rate=fee_rate)
         net_after_fee = pnl - fees_est
-        slot = SLOT_LABELS.get(str(row.get("strategy_id") or ""), "Unknown")
+        slot = resolved_slot_labels.get(str(row.get("strategy_id") or ""), "Unknown")
         symbol = str(row.get("symbol") or "UNKNOWN")
         bucket = buckets[exit_week]
 
@@ -329,6 +331,7 @@ def _window_payload(
     cell: dict[str, Any],
     *,
     fee_rate: float,
+    slot_labels: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     window = cell.get("window") or {}
     start = str(window.get("start") or "")
@@ -339,7 +342,13 @@ def _window_payload(
     artifacts = cell.get("artifacts") or {}
     trade_path = _repo_path(str(artifacts.get("trades") or ""))
     rows = _read_csv(trade_path)
-    weekly_rows, overflow = _build_week_rows(rows, start=start, end=end, fee_rate=fee_rate)
+    weekly_rows, overflow = _build_week_rows(
+        rows,
+        start=start,
+        end=end,
+        fee_rate=fee_rate,
+        slot_labels=slot_labels,
+    )
 
     return {
         "matrix": matrix,
