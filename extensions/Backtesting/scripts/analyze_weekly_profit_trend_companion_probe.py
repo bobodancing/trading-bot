@@ -105,6 +105,26 @@ def _load_market_frame(symbol: str, *, start: str, end: str) -> pd.DataFrame:
     return frame
 
 
+def _cache_symbol(symbol: str) -> str:
+    return symbol.replace("/", "")
+
+
+def _load_daily_frame(symbol: str, *, start: str, end: str) -> pd.DataFrame:
+    trend_start = (
+        datetime.strptime(start, "%Y%m%d") - pd.Timedelta(days=300)
+    ).strftime("%Y%m%d")
+    cache_name = f"{_cache_symbol(symbol)}_1d_{trend_start}_{end}.parquet"
+    path = CACHE_DIR / cache_name
+    if not path.exists():
+        raise FileNotFoundError(f"missing runtime-parity 1d cache for {symbol}: {path}")
+    frame = pd.read_parquet(path).sort_index()
+    if frame.index.tz is None:
+        frame.index = frame.index.tz_localize("UTC")
+    else:
+        frame.index = frame.index.tz_convert("UTC")
+    return frame
+
+
 def _filter_candidates_to_window(
     candidates: list[dict[str, Any]], *, start: str, end: str
 ) -> list[dict[str, Any]]:
@@ -134,16 +154,67 @@ def _completed_daily_gate(frame: pd.DataFrame) -> pd.DataFrame:
     return gate
 
 
+def _runtime_completed_daily_gate(
+    daily_frame: pd.DataFrame,
+    entry_index: pd.DatetimeIndex,
+    *,
+    trend_warmup_bars: int = 260,
+    scan_lag_hours: int = 1,
+) -> pd.DataFrame:
+    """Mirror StrategyRuntime's backtest 1d snapshot and completed-row choice."""
+
+    rows = []
+    for ts in entry_index:
+        candle_ts = pd.Timestamp(ts)
+        if candle_ts.tzinfo is None:
+            candle_ts = candle_ts.tz_localize("UTC")
+        else:
+            candle_ts = candle_ts.tz_convert("UTC")
+        now_ts = candle_ts + pd.Timedelta(hours=scan_lag_hours)
+        end = daily_frame.index.searchsorted(now_ts, side="left")
+        start = max(0, end - trend_warmup_bars)
+        visible = daily_frame.iloc[start:end]
+        if len(visible) < 2:
+            rows.append({"timestamp": candle_ts, "ema_20": None, "ema_50": None})
+            continue
+        enriched = IndicatorRegistry.apply(visible, {"ema"})
+        latest_ts = pd.Timestamp(enriched.index[-1])
+        if latest_ts.tzinfo is None:
+            latest_ts = latest_ts.tz_localize("UTC")
+        else:
+            latest_ts = latest_ts.tz_convert("UTC")
+        if latest_ts + pd.Timedelta(days=1) <= now_ts:
+            trend_row = enriched.iloc[-1]
+        else:
+            trend_row = enriched.iloc[-2]
+        rows.append(
+            {
+                "timestamp": candle_ts,
+                "ema_20": float(trend_row["ema_20"]),
+                "ema_50": float(trend_row["ema_50"]),
+            }
+        )
+    if not rows:
+        return pd.DataFrame(columns=["ema_20", "ema_50"]).rename_axis("timestamp")
+    return pd.DataFrame(rows).set_index("timestamp")
+
+
 def generate_supertrend_flip_candidates(
     market_frames: dict[str, pd.DataFrame],
     *,
+    daily_frames: dict[str, pd.DataFrame] | None = None,
     trend_spread_min: float = 0.005,
     require_trend_gate: bool = True,
 ) -> list[dict[str, Any]]:
     candidates: list[dict[str, Any]] = []
     for symbol, raw in sorted(market_frames.items()):
         frame = IndicatorRegistry.apply(raw, {"supertrend", "atr"}).sort_index()
-        daily_gate = _completed_daily_gate(raw)
+        if daily_frames and symbol in daily_frames:
+            daily_gate = _runtime_completed_daily_gate(daily_frames[symbol], frame.index)
+            daily_feature_source = "runtime_rolling_1d_snapshot"
+        else:
+            daily_gate = _completed_daily_gate(raw)
+            daily_feature_source = "resampled_4h_completed_daily"
         aligned_gate = daily_gate.reindex(frame.index, method="ffill")
         enriched = frame.join(aligned_gate, rsuffix="_1d")
         prev_direction = enriched["supertrend_direction"].shift(1)
@@ -177,6 +248,7 @@ def generate_supertrend_flip_candidates(
                     ),
                     "trend_gate_pass": bool(trend_gate.loc[ts]),
                     "ema_spread_1d": _float_or_none(ema_spread.loc[ts]),
+                    "daily_feature_source": daily_feature_source,
                 }
             )
     return candidates
@@ -203,6 +275,7 @@ def _aroon(frame: pd.DataFrame, period: int = 14) -> tuple[pd.Series, pd.Series]
 def generate_aroon_break_candidates(
     market_frames: dict[str, pd.DataFrame],
     *,
+    daily_frames: dict[str, pd.DataFrame] | None = None,
     trend_spread_min: float = 0.005,
     aroon_period: int = 14,
     swing_lookback: int = 20,
@@ -212,7 +285,12 @@ def generate_aroon_break_candidates(
     for symbol, raw in sorted(market_frames.items()):
         frame = IndicatorRegistry.apply(raw, {"atr"}).sort_index()
         aroon_up, aroon_down = _aroon(frame, period=aroon_period)
-        daily_gate = _completed_daily_gate(raw)
+        if daily_frames and symbol in daily_frames:
+            daily_gate = _runtime_completed_daily_gate(daily_frames[symbol], frame.index)
+            daily_feature_source = "runtime_rolling_1d_snapshot"
+        else:
+            daily_gate = _completed_daily_gate(raw)
+            daily_feature_source = "resampled_4h_completed_daily"
         aligned_gate = daily_gate.reindex(frame.index, method="ffill")
         enriched = frame.join(aligned_gate, rsuffix="_1d")
         enriched["aroon_up"] = aroon_up
@@ -251,6 +329,7 @@ def generate_aroon_break_candidates(
                     ),
                     "trend_gate_pass": bool(trend_gate.loc[ts]),
                     "ema_spread_1d": _float_or_none(ema_spread.loc[ts]),
+                    "daily_feature_source": daily_feature_source,
                 }
             )
     return candidates
@@ -397,6 +476,11 @@ def evaluate_trend_companion_probe(
         "source_lane_schema": lane_payload.get("schema"),
         "source_feasibility_schema": feasibility_payload.get("schema"),
         "source_artifacts": artifacts,
+        "method": {
+            "daily_feature_source": "runtime_rolling_1d_snapshot",
+            "daily_snapshot_limit": 260,
+            "scan_lag_hours": 1,
+        },
         "metrics": {
             "candidate_count": total,
             "silent_zero_entry_week_hit_count": len(silent_hit_weeks),
@@ -512,16 +596,24 @@ def write_trend_companion_probe(
         "BTC/USDT": _load_market_frame("BTC/USDT", start="20260101", end="20260430"),
         "ETH/USDT": _load_market_frame("ETH/USDT", start="20260101", end="20260430"),
     }
+    daily_frames = {
+        "BTC/USDT": _load_daily_frame("BTC/USDT", start="20260101", end="20260430"),
+        "ETH/USDT": _load_daily_frame("ETH/USDT", start="20260101", end="20260430"),
+    }
     require_trend_gate = trend_gate_mode == "strict_1d_ema"
     implementation_eligible = require_trend_gate
     if mechanism == "aroon":
         candidates = generate_aroon_break_candidates(
-            market_frames, require_trend_gate=require_trend_gate
+            market_frames,
+            daily_frames=daily_frames,
+            require_trend_gate=require_trend_gate,
         )
         mechanism_id = "aroon_break_hh_4h_trending_up_frequency_companion"
     elif mechanism == "supertrend":
         candidates = generate_supertrend_flip_candidates(
-            market_frames, require_trend_gate=require_trend_gate
+            market_frames,
+            daily_frames=daily_frames,
+            require_trend_gate=require_trend_gate,
         )
         mechanism_id = "supertrend_flip_4h_trending_up_frequency_companion"
     else:

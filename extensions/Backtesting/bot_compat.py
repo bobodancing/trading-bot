@@ -48,6 +48,7 @@ def get_datetime_patch_modules() -> list[ModuleType]:
     modules: list[ModuleType] = [
         import_module("trader.bot"),
         import_module("trader.positions"),
+        import_module("trader.strategy_runtime"),
     ]
 
     for module_name in (

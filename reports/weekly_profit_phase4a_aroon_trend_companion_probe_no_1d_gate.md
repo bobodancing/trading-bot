@@ -1,6 +1,6 @@
 # Weekly Profit Phase 4A Trend Companion Probe
 
-Date: 2026-05-12
+Date: 2026-05-14
 Branch: `codex/post-promotion-control-20260430`
 Verdict: `AROON_PROBE_FAIL_PIVOT_OR_REVIEW`
 Trend gate mode: `diagnostic_no_1d_ema`

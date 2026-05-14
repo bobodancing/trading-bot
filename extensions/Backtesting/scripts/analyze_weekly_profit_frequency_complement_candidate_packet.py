@@ -236,8 +236,8 @@ def _render_report(payload: dict[str, Any]) -> str:
     if comparable and active_delta > 0.0 and net_delta < 0.0:
         strict_read = (
             "The candidate fixes cadence but damages economics. It should not be promoted; "
-            "the next review must repair feature parity and loss attribution before another "
-            "combined packet run."
+            "use Phase 4C loss attribution to decide whether this research lane deserves "
+            "another filter pass."
         )
     elif comparable:
         strict_read = (

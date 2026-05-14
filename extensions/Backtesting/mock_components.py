@@ -26,6 +26,7 @@ class MockDataProvider:
             col = df["timestamp"]
             if hasattr(col.dtype, "tz") and col.dt.tz is not None:
                 df["timestamp"] = col.dt.tz_convert(None)
+            df.index = pd.DatetimeIndex(df["timestamp"], name="timestamp")
         return df
 
 

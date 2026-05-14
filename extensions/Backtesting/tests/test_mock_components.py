@@ -35,7 +35,9 @@ def test_mock_data_provider_returns_df_with_timestamp_column():
     df = provider.fetch_ohlcv("BTC/USDT", "1h", limit=3)
 
     assert "timestamp" in df.columns
-    assert not isinstance(df.index, pd.DatetimeIndex) or df.index.dtype == "int64"
+    assert isinstance(df.index, pd.DatetimeIndex)
+    assert df.index.name == "timestamp"
+    assert df.index.tz is None
     assert len(df) == 3
 
 

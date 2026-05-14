@@ -384,7 +384,7 @@ def analyze_precision_attribution(
         "candidate_pool": {
             "candidate_count": len(candidates),
             "full_week_only": True,
-            "source": "diagnostic_no_1d_ema probes",
+            "source": "diagnostic_no_1d_ema probes with runtime-parity daily EMA features",
         },
         "feature_attribution": build_feature_attribution(candidates),
         "recommended": recommended,
@@ -392,6 +392,7 @@ def analyze_precision_attribution(
         "implementation_notes": [
             "This is a pre-plugin precision filter, not runtime promotion.",
             "The filter uses only candle-derived fields available to a plugin: symbol, mechanism trigger, completed 1d EMA spread, and ATR-normalized distance.",
+            "Completed 1d EMA spread is computed with the same rolling 1d snapshot semantics used by StrategyRuntime backtests.",
             "It does not use packet_state, baseline week labels, or promoted strategy outcomes as runtime inputs.",
             "Next step is a StrategyPlugin candidate plus A+B+candidate combined weekly packet evaluation.",
         ],

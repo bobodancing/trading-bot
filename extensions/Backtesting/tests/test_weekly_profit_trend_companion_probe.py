@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import pandas as pd
+
 from extensions.Backtesting.scripts.analyze_weekly_profit_trend_companion_probe import (
+    _runtime_completed_daily_gate,
     evaluate_trend_companion_probe,
     render_report,
 )
+from trader.indicators.registry import IndicatorRegistry
 
 
 def _week(
@@ -142,3 +146,33 @@ def test_trend_companion_probe_diagnostic_pass_is_not_plugin_greenlight() -> Non
     assert summary["verdict"] == "AROON_PROBE_DIAGNOSTIC_PASS_REQUIRES_CONTRACT_UPDATE"
     assert summary["trend_gate_mode"] == "diagnostic_no_1d_ema"
     assert summary["implementation_eligible"] is False
+
+
+def test_runtime_completed_daily_gate_matches_rolling_snapshot_semantics() -> None:
+    idx = pd.date_range("2026-01-01", periods=80, freq="1D", tz="UTC")
+    daily = pd.DataFrame(
+        {
+            "open": [100.0 + i for i in range(len(idx))],
+            "high": [101.0 + i for i in range(len(idx))],
+            "low": [99.0 + i for i in range(len(idx))],
+            "close": [100.0 + i for i in range(len(idx))],
+            "volume": 1000.0,
+        },
+        index=idx,
+    )
+    entry_index = pd.DatetimeIndex([pd.Timestamp("2026-03-15T08:00:00Z")])
+
+    gate = _runtime_completed_daily_gate(
+        daily,
+        entry_index,
+        trend_warmup_bars=60,
+        scan_lag_hours=1,
+    )
+
+    now_ts = pd.Timestamp("2026-03-15T09:00:00Z")
+    end = daily.index.searchsorted(now_ts, side="left")
+    visible = daily.iloc[max(0, end - 60) : end]
+    enriched = IndicatorRegistry.apply(visible, {"ema"})
+    expected = enriched.iloc[-2]
+    assert gate.iloc[0]["ema_20"] == expected["ema_20"]
+    assert gate.iloc[0]["ema_50"] == expected["ema_50"]

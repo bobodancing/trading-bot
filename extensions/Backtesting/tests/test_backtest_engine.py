@@ -327,6 +327,14 @@ def test_effective_overrides_enable_strategy_runtime_without_catalog_override():
     assert "BACKTEST_USE_PRECOMPUTED_INDICATORS" not in overrides
 
 
+def test_datetime_patch_modules_include_strategy_runtime():
+    from bot_compat import get_datetime_patch_modules
+
+    module_names = {module.__name__ for module in get_datetime_patch_modules()}
+
+    assert "trader.strategy_runtime" in module_names
+
+
 def test_dry_count_only_records_candidate_without_opening_trade(monkeypatch):
     from data_loader import BacktestDataLoader
     from funding_loader import FundingLoader

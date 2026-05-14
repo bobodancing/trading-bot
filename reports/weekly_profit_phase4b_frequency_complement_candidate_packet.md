@@ -8,7 +8,7 @@ Status: `A_B_PLUS_CANDIDATE_WEEKLY_PACKET_EVALUATED`
 
 Latest contract-grade packet state is `reopen_research` for the A+B+candidate combined run.
 
-The candidate fixes cadence but damages economics. It should not be promoted; the next review must repair feature parity and loss attribution before another combined packet run.
+The candidate fixes cadence but damages economics. It should not be promoted; use Phase 4C loss attribution to decide whether this research lane deserves another filter pass.
 
 This is a research packet over backtest artifacts. Runtime defaults remain unchanged.
 
@@ -16,13 +16,13 @@ This is a research packet over backtest artifacts. Runtime defaults remain uncha
 
 | metric | value |
 | --- | ---: |
-| entry trades | 22 |
-| exit trades | 22 |
-| active entry weeks | 13 |
-| active entry week ratio | 0.7222 |
-| after-fee positive week ratio, all weeks | 0.3333 |
-| net after fee estimate | -481.9591 |
-| worst after-fee week | -170.9537 |
+| entry trades | 21 |
+| exit trades | 21 |
+| active entry weeks | 12 |
+| active entry week ratio | 0.6667 |
+| after-fee positive week ratio, all weeks | 0.2778 |
+| net after fee estimate | -497.9958 |
+| worst after-fee week | -201.7527 |
 
 ## Latest Contract-Grade Decision
 
@@ -31,17 +31,17 @@ This is a research packet over backtest artifacts. Runtime defaults remain uncha
 | week_start | `2026-04-20` |
 | state | `reopen_research` |
 | pause triggers | `none` |
-| reopen triggers | `max_consecutive_losing_weeks_after_fee_8w, positive_week_ratio_exit_active_8w_after_fee, rolling_8w_net_after_fee_pnl` |
+| reopen triggers | `positive_week_ratio_exit_active_8w_after_fee, rolling_8w_net_after_fee_pnl` |
 | investigate triggers | `portfolio_max_drawdown_pct_review_window` |
 
 ## Baseline Packet Delta
 
 | metric | delta vs Phase 3 baseline |
 | --- | ---: |
-| active-entry week ratio 8w | 0.3750 |
-| rolling 8w entry trade count | 6 |
+| active-entry week ratio 8w | 0.2500 |
+| rolling 8w entry trade count | 5 |
 | positive all-week ratio 8w | 0.0000 |
-| rolling 8w net after-fee pnl | -468.5134 |
+| rolling 8w net after-fee pnl | -403.9335 |
 | baseline state -> candidate state | `investigate -> reopen_research` |
 
 ## Artifact

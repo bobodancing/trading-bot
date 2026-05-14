@@ -1,6 +1,6 @@
 # Weekly Profit Phase 4A Trend Companion Precision Attribution
 
-Date: 2026-05-12
+Date: 2026-05-14
 Branch: `codex/post-promotion-control-20260430`
 Verdict: `PRECISION_FILTER_FOUND_REQUIRES_PLUGIN_BACKTEST`
 
@@ -42,11 +42,11 @@ Projected active full weeks move from 7 / 16 to 12 / 16 if candidate entries sur
 
 | timestamp | symbol | mechanism | silent/zero | active | ema_spread_1d | distance_atr |
 | --- | --- | --- | ---: | ---: | ---: | ---: |
-| `2026-01-05T00:00:00Z` | `BTC/USDT` | `aroon_break_hh_4h_trending_up_frequency_companion` | `True` | `False` | -0.0279 | 1.350 |
-| `2026-01-05T12:00:00Z` | `BTC/USDT` | `aroon_break_hh_4h_trending_up_frequency_companion` | `True` | `False` | -0.0279 | 0.669 |
-| `2026-01-05T16:00:00Z` | `BTC/USDT` | `aroon_break_hh_4h_trending_up_frequency_companion` | `True` | `False` | -0.0279 | 0.345 |
-| `2026-01-28T08:00:00Z` | `BTC/USDT` | `aroon_break_hh_4h_trending_up_frequency_companion` | `True` | `False` | -0.0102 | 0.585 |
-| `2026-02-08T12:00:00Z` | `BTC/USDT` | `supertrend_flip_4h_trending_up_frequency_companion` | `True` | `False` | -0.0691 | 2.860 |
+| `2026-01-05T00:00:00Z` | `BTC/USDT` | `aroon_break_hh_4h_trending_up_frequency_companion` | `True` | `False` | -0.0282 | 1.350 |
+| `2026-01-05T12:00:00Z` | `BTC/USDT` | `aroon_break_hh_4h_trending_up_frequency_companion` | `True` | `False` | -0.0282 | 0.669 |
+| `2026-01-05T16:00:00Z` | `BTC/USDT` | `aroon_break_hh_4h_trending_up_frequency_companion` | `True` | `False` | -0.0282 | 0.345 |
+| `2026-01-28T08:00:00Z` | `BTC/USDT` | `aroon_break_hh_4h_trending_up_frequency_companion` | `True` | `False` | -0.0101 | 0.585 |
+| `2026-02-08T12:00:00Z` | `BTC/USDT` | `supertrend_flip_4h_trending_up_frequency_companion` | `True` | `False` | -0.0690 | 2.860 |
 | `2026-03-10T12:00:00Z` | `BTC/USDT` | `aroon_break_hh_4h_trending_up_frequency_companion` | `True` | `False` | -0.0652 | 0.035 |
 | `2026-03-13T08:00:00Z` | `BTC/USDT` | `aroon_break_hh_4h_trending_up_frequency_companion` | `True` | `False` | -0.0546 | 0.203 |
 | `2026-03-16T20:00:00Z` | `BTC/USDT` | `aroon_break_hh_4h_trending_up_frequency_companion` | `False` | `True` | -0.0430 | 0.357 |
@@ -67,5 +67,6 @@ The useful candidates cluster in a recovery band where completed 1d EMA spread i
 
 - This is a pre-plugin precision filter, not runtime promotion.
 - The filter uses only candle-derived fields available to a plugin: symbol, mechanism trigger, completed 1d EMA spread, and ATR-normalized distance.
+- Completed 1d EMA spread is computed with the same rolling 1d snapshot semantics used by StrategyRuntime backtests.
 - It does not use packet_state, baseline week labels, or promoted strategy outcomes as runtime inputs.
 - Next step is a StrategyPlugin candidate plus A+B+candidate combined weekly packet evaluation.

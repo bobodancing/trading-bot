@@ -20,9 +20,9 @@ The combined run is not promotion-ready: the candidate raises participation but 
 
 | metric | value |
 | --- | ---: |
-| trades | 22 |
-| net pnl | -407.1782 |
-| max drawdown pct | 6.7132 |
+| trades | 21 |
+| net pnl | -426.7498 |
+| max drawdown pct | 6.7099 |
 | run errors | 0 |
 | entry stop violations | 0 |
 
@@ -32,14 +32,14 @@ The candidate is the loss source in this run and must stay research-only.
 
 | metric | value |
 | --- | ---: |
-| realized trades | 9 |
-| net pnl | -662.1021 |
-| win rate | 0.2222 |
-| avg realized r | -0.7422 |
-| emitted intents | 53 |
-| accepted entries | 9 |
-| rejects | 44 |
-| router block rate | 0.0755 |
+| realized trades | 8 |
+| net pnl | -681.6736 |
+| win rate | 0.1250 |
+| avg realized r | -0.8875 |
+| emitted intents | 41 |
+| accepted entries | 8 |
+| rejects | 33 |
+| router block rate | 0.0976 |
 
 ## Artifact
 
