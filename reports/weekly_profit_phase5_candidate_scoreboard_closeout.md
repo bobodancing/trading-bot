@@ -119,3 +119,17 @@ Closeout judgment: this lane has useful signal, but it is not robust enough to a
 4. If attribution does not find a clean filter, park symbol expansion and move back to the operational evidence loop.
 
 The next research action should be attribution, not another candidate family.
+
+## 4E Park Addendum
+
+After the holdout failure attribution, the formal 4E lane status is:
+
+> `PARKED_UNLESS_PRE_REGISTERED_REGIME_FILTER_EXISTS`
+
+This means:
+
+- no promotion from the current 4E evidence
+- no runtime symbol expansion
+- no static symbol/side admission repair as a promotion path
+- no further 4E rerun unless the regime/window filter is pre-registered before the test
+- any new 4E filter must use runtime-available non-outcome features only and pass the same primary plus holdout hard gates
