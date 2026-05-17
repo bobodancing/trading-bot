@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pandas as pd
 
 from trader.config import Config
-from trader.runtime_observability import RuntimeFunnelRecorder
+from trader.runtime_observability import RuntimeFunnelRecorder, config_snapshot_hash
 from trader.strategies import MarketSnapshot, StrategyPlugin
 from trader.strategy_runtime import StrategyRuntime
 
@@ -62,15 +62,40 @@ def test_runtime_funnel_recorder_writes_jsonl_and_latest_summary(tmp_path):
     events = _read_jsonl(tmp_path / "strategy_runtime_funnel.jsonl")
     latest = json.loads((tmp_path / "strategy_runtime_latest.json").read_text(encoding="utf-8"))
 
+    assert {event["run_id"] for event in events} == {recorder.run_id}
     assert [event["event"] for event in events] == [
         "plugin_candidates",
         "strategy_reject",
         "strategy_entry_ready",
     ]
+    assert latest["run_id"] == recorder.run_id
+    assert latest["config_hash"] is None
     assert latest["event_counts"]["plugin_candidates"] == 1
     assert latest["plugin_zero_candidate_counts"]["slot_b_short"] == 1
     assert latest["reject_counts"]["cooldown"] == 1
     assert latest["entry_counts"]["slot_b_short"] == 1
+
+
+def test_runtime_funnel_recorder_stamps_config_hash_after_snapshot(tmp_path):
+    recorder = RuntimeFunnelRecorder(
+        jsonl_path=tmp_path / "strategy_runtime_funnel.jsonl",
+        latest_path=tmp_path / "strategy_runtime_latest.json",
+        run_id="test-run-1",
+    )
+
+    recorder.record_config_snapshot(Config)
+    recorder.record_event("scan_cycle_end", status="completed")
+
+    events = _read_jsonl(tmp_path / "strategy_runtime_funnel.jsonl")
+    latest = json.loads((tmp_path / "strategy_runtime_latest.json").read_text(encoding="utf-8"))
+    snapshot = events[0]["config"]
+    expected_hash = config_snapshot_hash(snapshot)
+
+    assert [event["run_id"] for event in events] == ["test-run-1", "test-run-1"]
+    assert events[0]["config_hash"] == expected_hash
+    assert events[1]["config_hash"] == expected_hash
+    assert latest["config_hash"] == expected_hash
+    assert latest["last_cycle"]["config_hash"] == expected_hash
 
 
 def test_strategy_runtime_records_zero_candidate_scan_cycle(tmp_path, monkeypatch):

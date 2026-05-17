@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import logging
 import os
+import uuid
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -25,6 +27,18 @@ def _json_safe(value: Any) -> Any:
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
     return str(value)
+
+
+def config_snapshot_hash(snapshot: Mapping[str, Any]) -> str:
+    """Return a stable hash for non-secret runtime config identity."""
+
+    encoded = json.dumps(
+        _json_safe(dict(snapshot)),
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 class RuntimeFunnelRecorder:
@@ -58,10 +72,20 @@ class RuntimeFunnelRecorder:
         "RISK_PER_TRADE",
     )
 
-    def __init__(self, jsonl_path: str | os.PathLike[str], latest_path: str | os.PathLike[str]):
+    def __init__(
+        self,
+        jsonl_path: str | os.PathLike[str],
+        latest_path: str | os.PathLike[str],
+        run_id: str | None = None,
+    ):
         self.jsonl_path = Path(jsonl_path)
         self.latest_path = Path(latest_path)
         self.started_at = datetime.now(timezone.utc).isoformat()
+        self.run_id = run_id or (
+            f"run-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')}-"
+            f"{uuid.uuid4().hex[:8]}"
+        )
+        self._config_hash: str | None = None
         self._event_counts: Counter[str] = Counter()
         self._reject_counts: Counter[str] = Counter()
         self._plugin_zero_candidate_counts: Counter[str] = Counter()
@@ -86,11 +110,26 @@ class RuntimeFunnelRecorder:
             for key in self.CONFIG_SNAPSHOT_KEYS
             if hasattr(config, key)
         }
-        self.record_event("config_snapshot", config=snapshot, **fields)
+        self._config_hash = config_snapshot_hash(snapshot)
+        self.record_event(
+            "config_snapshot",
+            config=snapshot,
+            config_hash=self._config_hash,
+            config_hash_algo="sha256",
+            **fields,
+        )
 
     def record_event(self, event: str, **fields: Any) -> None:
         now = datetime.now(timezone.utc).isoformat()
-        payload = _json_safe({"ts": now, "event": event, **fields})
+        payload_base: dict[str, Any] = {
+            "ts": now,
+            "event": event,
+            "run_id": self.run_id,
+        }
+        if self._config_hash is not None:
+            payload_base["config_hash"] = self._config_hash
+            payload_base["config_hash_algo"] = "sha256"
+        payload = _json_safe({**payload_base, **fields})
         try:
             self.jsonl_path.parent.mkdir(parents=True, exist_ok=True)
             with self.jsonl_path.open("a", encoding="utf-8") as handle:
@@ -121,6 +160,9 @@ class RuntimeFunnelRecorder:
         summary = {
             "generated_at": now,
             "started_at": self.started_at,
+            "run_id": self.run_id,
+            "config_hash": self._config_hash,
+            "config_hash_algo": "sha256",
             "jsonl_path": str(self.jsonl_path),
             "event_counts": dict(sorted(self._event_counts.items())),
             "reject_counts": dict(sorted(self._reject_counts.items())),

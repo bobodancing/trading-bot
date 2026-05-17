@@ -26,6 +26,7 @@ from extensions.Backtesting.weekly_profit_control import (  # noqa: E402
     build_weekly_control_packets,
 )
 from trader.config import Config  # noqa: E402
+from trader.runtime_observability import config_snapshot_hash  # noqa: E402
 
 
 SCHEMA = "strategy_runtime_weekly_control_packets.v1"
@@ -54,6 +55,13 @@ RUNTIME_CONFIG_CONTRACT_KEYS = (
     "BTC_COUNTER_TREND_MULT",
     "RISK_PER_TRADE",
     "MAX_TOTAL_RISK",
+)
+
+CONFIG_PROFILE_ALL = "all"
+CONFIG_PROFILE_PROMOTED_BASELINE = "promoted_baseline"
+CONFIG_PROFILE_CHOICES = (
+    CONFIG_PROFILE_ALL,
+    CONFIG_PROFILE_PROMOTED_BASELINE,
 )
 
 
@@ -240,6 +248,109 @@ def _config_snapshot_drift(snapshot: dict[str, Any], baseline: dict[str, Any]) -
         if json.dumps(observed, sort_keys=True) != json.dumps(expected, sort_keys=True):
             drift[key] = {"expected": expected, "observed": observed}
     return drift
+
+
+def _config_profile(snapshot: dict[str, Any], baseline: dict[str, Any]) -> str:
+    enabled = snapshot.get("ENABLED_STRATEGIES")
+    runtime_enabled = snapshot.get("STRATEGY_RUNTIME_ENABLED")
+
+    if not _config_snapshot_drift(snapshot, baseline) and all(
+        key in snapshot
+        for key in ("ENABLED_STRATEGIES", "SYMBOLS", "STRATEGY_RUNTIME_ENABLED")
+    ):
+        return CONFIG_PROFILE_PROMOTED_BASELINE
+    if enabled == ["fixture_long"]:
+        return "test_fixture_long"
+    if enabled == [] or runtime_enabled is False:
+        return "runtime_disabled_or_empty"
+    if isinstance(enabled, list) and any("symbol_universe_expansion_repair" in item for item in enabled):
+        return "research_4e_repair"
+    if isinstance(enabled, list) and any("symbol_universe_expansion" in item for item in enabled):
+        return "research_4e_expansion"
+    if isinstance(enabled, list):
+        return "research_or_nonbaseline"
+    return "unknown"
+
+
+def _scope_runtime_events(
+    events: list[dict[str, Any]],
+    *,
+    baseline: dict[str, Any],
+    run_id: str | None,
+    config_hash: str | None,
+    config_profile: str,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    if config_profile not in CONFIG_PROFILE_CHOICES:
+        raise ValueError(f"config_profile must be one of {CONFIG_PROFILE_CHOICES}, got {config_profile}")
+
+    selected: list[dict[str, Any]] = []
+    profile_counts: Counter[str] = Counter()
+    current_config_hash: str | None = None
+    current_profile: str | None = None
+    selected_without_hard_scope = 0
+    selected_config_snapshots = 0
+
+    for event in events:
+        event_name = str(event.get("event") or "unknown")
+        event_config_hash = event.get("config_hash")
+        if event_name == "config_snapshot":
+            snapshot = event.get("config") if isinstance(event.get("config"), dict) else {}
+            current_config_hash = str(event_config_hash or config_snapshot_hash(snapshot))
+            current_profile = _config_profile(snapshot, baseline)
+            profile_counts[current_profile] += 1
+            if "config_hash" not in event:
+                event = {
+                    **event,
+                    "config_hash": current_config_hash,
+                    "config_hash_algo": "sha256",
+                }
+        elif event_config_hash:
+            current_config_hash = str(event_config_hash)
+
+        event_run_id = event.get("run_id")
+        effective_hash = str(event.get("config_hash") or current_config_hash or "")
+        effective_profile = current_profile or "no_config_context"
+
+        matches = True
+        if run_id is not None:
+            matches = str(event_run_id or "") == run_id
+        if matches and config_hash is not None:
+            matches = effective_hash == config_hash
+        if matches and config_profile == CONFIG_PROFILE_PROMOTED_BASELINE:
+            matches = effective_profile == CONFIG_PROFILE_PROMOTED_BASELINE
+
+        if matches:
+            selected.append(event)
+            if event_name == "config_snapshot":
+                selected_config_snapshots += 1
+            if not event_run_id and not event.get("config_hash"):
+                selected_without_hard_scope += 1
+
+    hard_scope = run_id is not None or config_hash is not None
+    scope_mode = []
+    if run_id is not None:
+        scope_mode.append("run_id")
+    if config_hash is not None:
+        scope_mode.append("config_hash")
+    if config_profile != CONFIG_PROFILE_ALL:
+        scope_mode.append(f"config_profile:{config_profile}")
+    if not scope_mode:
+        scope_mode.append("unfiltered")
+
+    return selected, {
+        "scope_mode": "+".join(scope_mode),
+        "scope_run_id": run_id,
+        "scope_config_hash": config_hash,
+        "scope_config_profile": config_profile,
+        "scope_hard_boundary": hard_scope,
+        "scope_uses_legacy_config_context": not hard_scope and config_profile != CONFIG_PROFILE_ALL,
+        "runtime_event_count_before_scope": len(events),
+        "runtime_event_count_after_scope": len(selected),
+        "runtime_event_count_dropped_by_scope": len(events) - len(selected),
+        "selected_event_without_run_or_config_hash_count": selected_without_hard_scope,
+        "selected_config_snapshot_count": selected_config_snapshots,
+        "config_profile_counts": dict(sorted(profile_counts.items())),
+    }
 
 
 def _increment_counter_field(detail: dict[str, Any], field: str, key: str) -> None:
@@ -556,6 +667,9 @@ def build_runtime_weekly_control_payload(
     db_path: Path | None = None,
     positions_path: Path | None = None,
     scanner_report_path: Path | None = None,
+    run_id: str | None = None,
+    config_hash: str | None = None,
+    config_profile: str = CONFIG_PROFILE_ALL,
     as_of: str | None = None,
     weeks: int = DEFAULT_WEEKS,
     completed_only: bool = False,
@@ -583,8 +697,15 @@ def build_runtime_weekly_control_payload(
 
     events, event_quality = _read_runtime_events(resolved_events_path)
     baseline = _runtime_baseline()
-    event_apply_quality = _apply_runtime_events(
+    scoped_events, scope_quality = _scope_runtime_events(
         events,
+        baseline=baseline,
+        run_id=run_id,
+        config_hash=config_hash,
+        config_profile=config_profile,
+    )
+    event_apply_quality = _apply_runtime_events(
+        scoped_events,
         week_rows=week_rows_by_date,
         runtime_details=runtime_details_by_date,
         baseline=baseline,
@@ -631,6 +752,13 @@ def build_runtime_weekly_control_payload(
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "contract": "weekly_profit_kpi_contract.v1",
         "source_type": "runtime_observability",
+        "evidence_scope": {
+            "run_id": run_id,
+            "config_hash": config_hash,
+            "config_profile": config_profile,
+            "mode": scope_quality["scope_mode"],
+            "hard_boundary": scope_quality["scope_hard_boundary"],
+        },
         "review_window": {
             "week_boundary": "UTC ISO weeks anchored on Monday",
             "as_of_date": as_of_date.isoformat(),
@@ -653,6 +781,7 @@ def build_runtime_weekly_control_payload(
         "runtime_baseline": baseline,
         "source_quality": {
             **event_quality,
+            **scope_quality,
             **event_apply_quality,
             **db_quality,
             **db_apply_quality,
@@ -768,6 +897,7 @@ def render_report(payload: dict[str, Any]) -> str:
         "## Sources",
         "",
         f"- Runtime observability JSONL: `{quality['runtime_events_path']}`",
+        f"- Evidence scope: `{quality.get('scope_mode')}`",
         f"- performance.db: `{quality['performance_db_path']}`",
         f"- positions.json: `{quality['positions_path']}`",
         f"- runtime scanner report: `{scanner.get('scanner_report_path')}`",
@@ -778,6 +908,9 @@ def render_report(payload: dict[str, Any]) -> str:
         "| item | value |",
         "| --- | ---: |",
         f"| runtime events | {quality.get('runtime_event_count', 0)} |",
+        f"| runtime events after scope | {quality.get('runtime_event_count_after_scope', 0)} |",
+        f"| runtime events dropped by scope | {quality.get('runtime_event_count_dropped_by_scope', 0)} |",
+        f"| selected config snapshots | {quality.get('selected_config_snapshot_count', 0)} |",
         f"| malformed runtime events | {quality.get('malformed_runtime_event_count', 0)} |",
         f"| runtime events outside review | {quality.get('runtime_events_outside_review_window', 0)} |",
         f"| performance db trades | {quality.get('performance_db_trade_count', 0)} |",
@@ -886,6 +1019,13 @@ def main() -> None:
     parser.add_argument("--db", type=Path, default=None)
     parser.add_argument("--positions", type=Path, default=None)
     parser.add_argument("--scanner-report", type=Path, default=None)
+    parser.add_argument("--run-id", default=None)
+    parser.add_argument("--config-hash", default=None)
+    parser.add_argument(
+        "--config-profile",
+        choices=CONFIG_PROFILE_CHOICES,
+        default=CONFIG_PROFILE_ALL,
+    )
     parser.add_argument("--json-out", type=Path, default=DEFAULT_JSON)
     parser.add_argument("--csv-out", type=Path, default=DEFAULT_CSV)
     parser.add_argument("--report-out", type=Path, default=DEFAULT_REPORT)
@@ -901,6 +1041,9 @@ def main() -> None:
         db_path=args.db,
         positions_path=args.positions,
         scanner_report_path=args.scanner_report,
+        run_id=args.run_id,
+        config_hash=args.config_hash,
+        config_profile=args.config_profile,
         json_path=args.json_out,
         csv_path=args.csv_out,
         report_path=args.report_out,

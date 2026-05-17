@@ -2,7 +2,9 @@ import json
 import sqlite3
 from pathlib import Path
 
+from trader.config import Config
 from tools.runtime_weekly_control_packet import (
+    RUNTIME_CONFIG_CONTRACT_KEYS,
     build_runtime_weekly_control_payload,
     csv_rows,
     write_runtime_weekly_control_packet,
@@ -80,6 +82,14 @@ def _trade(**overrides):
     }
     row.update(overrides)
     return row
+
+
+def _baseline_config():
+    return {
+        key: getattr(Config, key)
+        for key in RUNTIME_CONFIG_CONTRACT_KEYS
+        if hasattr(Config, key)
+    }
 
 
 def test_runtime_packet_merges_observability_db_positions_and_scanner(tmp_path):
@@ -206,6 +216,63 @@ def test_runtime_packet_merges_observability_db_positions_and_scanner(tmp_path):
     }
     assert latest_detail["unprotected_position_symbols"] == ["ETH/USDT"]
     assert payload["source_quality"]["scanner_diagnostics"]["symbol_count"] == 2
+
+
+def test_runtime_packet_can_scope_to_promoted_baseline_profile(tmp_path):
+    events_path = tmp_path / "strategy_runtime_funnel.jsonl"
+    fixture_config = {
+        **_baseline_config(),
+        "ENABLED_STRATEGIES": ["fixture_long"],
+        "SYMBOLS": ["BTC/USDT"],
+        "REGIME_ARBITER_ENABLED": False,
+    }
+    _write_jsonl(
+        events_path,
+        [
+            {
+                "ts": "2026-05-12T00:00:00+00:00",
+                "event": "config_snapshot",
+                "config": _baseline_config(),
+            },
+            {
+                "ts": "2026-05-12T01:00:00+00:00",
+                "event": "execution_filled",
+                "strategy_id": Config.ENABLED_STRATEGIES[0],
+            },
+            {
+                "ts": "2026-05-12T02:00:00+00:00",
+                "event": "config_snapshot",
+                "config": fixture_config,
+            },
+            {
+                "ts": "2026-05-12T03:00:00+00:00",
+                "event": "execution_failure",
+                "strategy_id": "fixture_long",
+                "reason": "post_fill_stop_violation",
+            },
+        ],
+    )
+
+    payload = build_runtime_weekly_control_payload(
+        events_path=events_path,
+        db_path=tmp_path / "missing.db",
+        positions_path=tmp_path / "missing_positions.json",
+        scanner_report_path=tmp_path / "missing_scanner.json",
+        as_of="2026-05-17",
+        weeks=1,
+        config_profile="promoted_baseline",
+    )
+
+    packet = payload["latest_packet"]
+    assert payload["evidence_scope"]["mode"] == "config_profile:promoted_baseline"
+    assert payload["source_quality"]["runtime_event_count_before_scope"] == 4
+    assert payload["source_quality"]["runtime_event_count_after_scope"] == 2
+    assert payload["source_quality"]["runtime_event_count_dropped_by_scope"] == 2
+    assert payload["source_quality"]["selected_config_snapshot_count"] == 1
+    assert packet["weekly_inputs"]["entry_trades"] == 1
+    assert packet["kpis"]["execution_attempt_count_weekly"] == 1
+    assert packet["kpis"]["execution_failure_count_weekly"] == 0
+    assert packet["decision"]["state"] == "continue"
 
 
 def test_runtime_packet_uses_db_entry_fallback_when_execution_fills_are_absent(tmp_path):
