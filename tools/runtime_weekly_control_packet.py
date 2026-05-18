@@ -250,13 +250,17 @@ def _config_snapshot_drift(snapshot: dict[str, Any], baseline: dict[str, Any]) -
     return drift
 
 
+def _config_snapshot_has_complete_contract(snapshot: dict[str, Any], baseline: dict[str, Any]) -> bool:
+    return all(key in snapshot for key in baseline)
+
+
 def _config_profile(snapshot: dict[str, Any], baseline: dict[str, Any]) -> str:
     enabled = snapshot.get("ENABLED_STRATEGIES")
     runtime_enabled = snapshot.get("STRATEGY_RUNTIME_ENABLED")
 
-    if not _config_snapshot_drift(snapshot, baseline) and all(
-        key in snapshot
-        for key in ("ENABLED_STRATEGIES", "SYMBOLS", "STRATEGY_RUNTIME_ENABLED")
+    if (
+        _config_snapshot_has_complete_contract(snapshot, baseline)
+        and not _config_snapshot_drift(snapshot, baseline)
     ):
         return CONFIG_PROFILE_PROMOTED_BASELINE
     if enabled == ["fixture_long"]:

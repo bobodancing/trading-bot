@@ -220,6 +220,8 @@ def test_runtime_packet_merges_observability_db_positions_and_scanner(tmp_path):
 
 def test_runtime_packet_can_scope_to_promoted_baseline_profile(tmp_path):
     events_path = tmp_path / "strategy_runtime_funnel.jsonl"
+    incomplete_baseline_config = _baseline_config()
+    incomplete_baseline_config.pop("MACRO_OVERLAY_ENABLED", None)
     fixture_config = {
         **_baseline_config(),
         "ENABLED_STRATEGIES": ["fixture_long"],
@@ -238,6 +240,16 @@ def test_runtime_packet_can_scope_to_promoted_baseline_profile(tmp_path):
                 "ts": "2026-05-12T01:00:00+00:00",
                 "event": "execution_filled",
                 "strategy_id": Config.ENABLED_STRATEGIES[0],
+            },
+            {
+                "ts": "2026-05-12T01:30:00+00:00",
+                "event": "config_snapshot",
+                "config": incomplete_baseline_config,
+            },
+            {
+                "ts": "2026-05-12T01:45:00+00:00",
+                "event": "execution_filled",
+                "strategy_id": "incomplete_snapshot_should_drop",
             },
             {
                 "ts": "2026-05-12T02:00:00+00:00",
@@ -265,9 +277,9 @@ def test_runtime_packet_can_scope_to_promoted_baseline_profile(tmp_path):
 
     packet = payload["latest_packet"]
     assert payload["evidence_scope"]["mode"] == "config_profile:promoted_baseline"
-    assert payload["source_quality"]["runtime_event_count_before_scope"] == 4
+    assert payload["source_quality"]["runtime_event_count_before_scope"] == 6
     assert payload["source_quality"]["runtime_event_count_after_scope"] == 2
-    assert payload["source_quality"]["runtime_event_count_dropped_by_scope"] == 2
+    assert payload["source_quality"]["runtime_event_count_dropped_by_scope"] == 4
     assert payload["source_quality"]["selected_config_snapshot_count"] == 1
     assert packet["weekly_inputs"]["entry_trades"] == 1
     assert packet["kpis"]["execution_attempt_count_weekly"] == 1
