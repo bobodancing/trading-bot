@@ -7,6 +7,7 @@
 # Runtime generated
 .log/
 hot_symbols.json
+runtime_scanner.json
 scanner_results.db
 positions.json
 
