@@ -4,6 +4,7 @@ The scanner package now has two separate roles:
 
 - `runtime_scanner.py`: current runtime diagnostics for the promoted StrategyRuntime portfolio.
 - `universe_scanner.py`: production eligibility filter that writes `scanner_universe.json`.
+- `shadow_universe_scanner.py`: Scanner V3 research-only shadow universe diagnostics.
 - `market_scanner.py`: legacy 2B research scanner, retained for historical/research use.
 
 ## Runtime Scanner
@@ -76,6 +77,31 @@ does not calculate alpha scores or strategy expectancy.
 dynamic universe scope. The current promoted Slot A plus both Slot B legs keep
 fixed scope, so weekly-profit readiness work remains on the BTC/ETH fixed-symbol
 baseline.
+
+## Scanner V3 Shadow Universe
+
+Generate a one-shot Scanner V3 shadow packet:
+
+```bash
+python -m scanner.shadow_universe_scanner --write-report
+```
+
+Default outputs:
+
+```text
+scanner_shadow_universe.json
+scanner_shadow_universe.csv
+reports/scanner_v3_shadow_universe_packet.md
+```
+
+The shadow scanner is research-only. It ranks liquid, data-ready linear USDT
+perpetuals and tags their asset class (`COIN`, `COMMODITY`, `EQUITY`, etc.)
+instead of using asset class as a hard alpha gate. It runs Slot B Donchian
+LONG/SHORT predicate diagnostics against the observed funnel, while keeping
+promoted BTC/ETH baseline diagnostics and the fixed SOL/BNB/XRP/ADA/LINK
+watchlist separate. It does not feed `StrategyRuntime`, write `hot_symbols.json`,
+change `Config.SYMBOLS`, enable scanner-universe runtime consumption, size
+orders, or place orders.
 
 ## Legacy 2B Scanner
 

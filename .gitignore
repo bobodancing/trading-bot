@@ -8,6 +8,8 @@
 .log/
 hot_symbols.json
 runtime_scanner.json
+scanner_shadow_universe.json
+scanner_shadow_universe.csv
 scanner_results.db
 positions.json
 performance.db
