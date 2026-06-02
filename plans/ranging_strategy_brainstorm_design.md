@@ -573,7 +573,7 @@ Codex modifies:
 
 ```
 trader/strategies/plugins/_catalog.py        # +3 entries, enabled: False
-CLAUDE.md                                    # "Current known plugin entries" +3 lines
+docs/codex_handoff.md                        # update only if current work queue changes
 ```
 
 ### 5.2 Catalog entries (exact content for `_catalog.py`)

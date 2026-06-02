@@ -37,7 +37,7 @@ integration, production/testnet state change, or Phase 4/5 activation.
 
 ## 1. Why Reorder
 
-CLAUDE.md "Current Next Work" 的順序是 codex 在 per-lane research 紀律下排的：
+Earlier agent handoff "Current Next Work" 的順序是 codex 在 per-lane research 紀律下排的：
 MACD 結構研究持續推進、Donchian frozen-read、然後 `bb_fade_squeeze_1h` rescue、再
 `rsi2_pullback_1h` 二輪 churn。這個順序適合「把每條 ranging detection 機制都跑一遍」
 的研究邏輯。
@@ -230,7 +230,7 @@ config_overrides（依當下 winning Slot A 機制決定 plugin id）：
 - 同 symbol 同 candle 兩支同時 emit intent 的計數（central RiskPlan 如何處理）
 - portfolio 級 max_dd_pct（不是兩支各自最大值的較大者，要看真實 equity curve）
 
-**BTC_TREND_FILTER 現況註記**：CLAUDE.md runtime baseline 載明
+**BTC_TREND_FILTER 現況註記**：`docs/codex_handoff.md` runtime baseline 載明
 `BTC_TREND_FILTER_ENABLED = True` 與 `BTC_COUNTER_TREND_MULT = 0.0`，但 2026-04-29
 code review 確認 StrategyRuntime entry path 目前只走 regime arbiter/router 與 central
 RiskPlan，沒有把 BTC trend filter 接成顯式 reject 或 sizing multiplier。Phase 3.2 report
@@ -282,9 +282,9 @@ entries」，不得把缺席的 filter 誤讀成 Slot B 壓制。
 - 若有，依 [reports/bb_fade_squeeze_1h_gate_attribution.md](../reports/bb_fade_squeeze_1h_gate_attribution.md)
   重新定義 squeeze gate（不要動 4h ADX gate）
 
-## 4. What Changes from CLAUDE.md "Current Next Work"
+## 4. What Changes from Earlier "Current Next Work"
 
-**這份 plan 只改 research 順序，不改 runtime baseline**。CLAUDE.md 的下列段落維持不動，
+**這份 plan 只改 research 順序，不改 runtime baseline**。Current governance 的下列段落維持不動，
 任何 runtime config 變更仍需走 [plans/cartridge_promotion_checklist.md](cartridge_promotion_checklist.md)
 §6 兩 commit 流程：
 
@@ -294,12 +294,12 @@ entries」，不得把缺席的 filter 誤讀成 Slot B 壓制。
 - Frozen Contract 段（plugin / runtime 邊界、central RiskPlan、persistence schema）
 - Safety Boundaries 段（不 promote、不開 STRATEGY_RUNTIME_ENABLED、不改 router policy）
 
-CLAUDE.md "Current Next Work" 不要在這份 plan 落地之前修改。當 codex 實際開始 Phase 1
-工作時，由 codex 同步更新 "Current Next Work" 段反映進度，避免兩處 source of truth 不一致。
+不要另外維護一份會跟 roadmap 衝突的 "Current Next Work"。當 codex 實際開始 Phase 1
+工作時，只更新 active roadmap / handoff 需要同步的部分，避免兩處 source of truth 不一致。
 
 差異對照：
 
-| CLAUDE.md 現行條目 | 新計畫對應 |
+| 舊 handoff 現行條目 | 新計畫對應 |
 | --- | --- |
 | MACD 家族繼續 | Phase 1（更具體：先跑 squeeze_release_unconfirmed） |
 | Donchian frozen-read | **解凍**；Phase 2.0 詮釋 + 2.1 / 2.2 / 2.3 補完 |
@@ -406,7 +406,7 @@ sequence that already ran:
 
 1. 先讀這份 plan
 2. 從 Phase 1.1 開始（squeeze_release_unconfirmed pinned cell candidate review）
-3. 每完成一個 sub-phase 寫對應 report，並 update CLAUDE.md "Current Next Work" 反映進度
+3. 每完成一個 sub-phase 寫對應 report，並視需要更新 active roadmap / handoff 反映進度
 4. 遇到 Decision gate 失敗 / 樣本不足以結論的狀況，**停下來等 Ruei 拍板**，不要自行
    橫向擴展研究範圍
 

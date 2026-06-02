@@ -67,7 +67,8 @@ no `off-regime entry suppression` line, the cartridge is treated as
   invariant gates.
 - `trader/strategies/plugins/HOWTO.md` Locked spec is filled for timeframe, symbol scope, indicators, params, entry rule, and stop rule.
 - Plugin is registered in `trader/strategies/plugins/_catalog.py`; `enabled: False` is acceptable before promotion.
-- `CLAUDE.md` Current known plugin entries has one entry for the plugin.
+- Active governance docs (`docs/codex_handoff.md` and the current roadmap) do
+  not contradict the plugin's intended research/promoted status.
 - Latest candidate review verdict is `KEEP_RESEARCH_ONLY`, not `NEEDS_SECOND_PASS`.
 
 ## 6. Promotion Two Steps

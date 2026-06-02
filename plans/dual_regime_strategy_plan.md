@@ -317,7 +317,7 @@ metadata = {
 },
 ```
 
-**重要：`enabled: False`** — catalog presence 不是 runtime promotion。遵守 CLAUDE.md safety boundary。
+**重要：`enabled: False`** — catalog presence 不是 runtime promotion。遵守 current governance safety boundary。
 
 ---
 

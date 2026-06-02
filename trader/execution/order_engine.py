@@ -33,6 +33,7 @@ class OrderExecutionEngine:
         futures_client: BinanceFuturesClient,
         precision_handler: PrecisionHandler,
         hedge_mode: bool = False,
+        allow_live_leverage_set: bool = False,
     ):
         """
         Args:
@@ -44,11 +45,18 @@ class OrderExecutionEngine:
         self.futures_client = futures_client
         self.precision_handler = precision_handler
         self.hedge_mode: bool = bool(hedge_mode)
+        self.allow_live_leverage_set: bool = bool(allow_live_leverage_set)
 
     # ==================== 槓桿設置 ====================
 
     def set_leverage(self, symbol: str) -> bool:
         """設置槓桿"""
+        if not Config.SANDBOX_MODE and not self.allow_live_leverage_set:
+            logger.warning(
+                "Live leverage set skipped for %s; explicit approval flag is required",
+                symbol,
+            )
+            return False
         symbol_id = symbol.replace('/', '')
         result = self.futures_client.signed_request_json('POST', '/fapi/v1/leverage', {
             'symbol': symbol_id, 'leverage': Config.LEVERAGE
@@ -59,7 +67,14 @@ class OrderExecutionEngine:
 
     def create_order(self, symbol: str, side: str, quantity: float) -> dict:
         """下市價單（自動先設置槓桿）"""
-        self.set_leverage(symbol)
+        if Config.SANDBOX_MODE or self.allow_live_leverage_set:
+            self.set_leverage(symbol)
+        else:
+            logger.info(
+                "Skipping implicit leverage set before live order for %s; "
+                "explicit approval flag is required",
+                symbol,
+            )
         formatted = self.precision_handler.format_quantity(symbol, quantity)
         params = {
             'symbol': symbol.replace('/', ''),

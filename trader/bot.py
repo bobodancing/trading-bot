@@ -1,5 +1,6 @@
 """Primary StrategyRuntime bot process."""
 
+import argparse
 import sys
 import os
 import time
@@ -65,8 +66,9 @@ _trade_log = trade_log
 class TradingBot:
     """Primary trading bot runtime."""
 
-    def __init__(self):
+    def __init__(self, allow_live_leverage_set: bool = False):
         Config.validate()
+        self.allow_live_leverage_set = bool(allow_live_leverage_set)
         self.exchange = self._init_exchange()
         self.data_provider = MarketDataProvider(
             self.exchange,
@@ -82,7 +84,10 @@ class TradingBot:
         self.risk_manager.futures_client = self.futures_client
         # All live orders go through the execution engine.
         self.execution_engine = OrderExecutionEngine(
-            self.exchange, self.futures_client, self.precision_handler
+            self.exchange,
+            self.futures_client,
+            self.precision_handler,
+            allow_live_leverage_set=self.allow_live_leverage_set,
         )
 
         # Active PositionManager records keyed by symbol.
@@ -181,6 +186,13 @@ class TradingBot:
 
             if Config.TRADING_MODE == 'future':
                 for symbol in Config.SYMBOLS:
+                    if not Config.SANDBOX_MODE and not self.allow_live_leverage_set:
+                        logger.info(
+                            "Live startup leverage set skipped for %s; "
+                            "explicit approval flag is required",
+                            symbol,
+                        )
+                        continue
                     try:
                         exchange.set_leverage(Config.LEVERAGE, symbol)
                     except Exception:
@@ -196,14 +208,22 @@ class TradingBot:
         """Log concise StrategyRuntime startup context."""
         observer = getattr(self, "runtime_observer", None)
         latest_path = self._short_path(observer.latest_path) if observer is not None else "off"
+        endpoint_class = "demo/testnet" if Config.SANDBOX_MODE else "live"
         logger.info("%s starting", RUNTIME_LABEL)
         logger.info(
-            "  account: mode=%s direction=%s sandbox=%s dry_run=%s leverage=%sx",
+            "  account: mode=%s direction=%s sandbox=%s dry_run=%s endpoint=%s leverage=%sx",
             Config.TRADING_MODE,
             Config.TRADING_DIRECTION,
             Config.SANDBOX_MODE,
             Config.DRY_RUN,
+            endpoint_class,
             Config.LEVERAGE,
+        )
+        logger.info(
+            "  safety: scanner_feed=%s router_policy=%s live_leverage_set_allowed=%s",
+            bool(Config.USE_SCANNER_SYMBOLS or Config.SCANNER_UNIVERSE_ENABLED),
+            Config.STRATEGY_ROUTER_POLICY,
+            self.allow_live_leverage_set,
         )
         logger.info(
             "  runtime: enabled=%s side=%s arbiter=%s router=%s btc_trend_filter=%s mode=%s",
@@ -1322,17 +1342,49 @@ def _configure_utf8_stdio() -> None:
             pass
 
 
+def build_arg_parser() -> argparse.ArgumentParser:
+    """Build the runtime CLI with explicit mode selection."""
+    parser = argparse.ArgumentParser(description='Trading Bot')
+    mode_group = parser.add_mutually_exclusive_group()
+    mode_group.add_argument('--dry-run', action='store_true', help='Dry run mode')
+    mode_group.add_argument(
+        '--live',
+        action='store_true',
+        help='Use live Binance Futures endpoint for this process only',
+    )
+    parser.add_argument('--debug', action='store_true', help='Debug mode')
+    parser.add_argument(
+        '--allow-live-leverage-set',
+        action='store_true',
+        help='Allow explicit live leverage mutation for this process',
+    )
+    return parser
+
+
+def parse_runtime_args(argv=None):
+    """Parse runtime args and reject ambiguous live-safety combinations."""
+    parser = build_arg_parser()
+    args = parser.parse_args(argv)
+    if args.allow_live_leverage_set and not args.live:
+        parser.error("--allow-live-leverage-set requires --live")
+    return args
+
+
+def apply_runtime_mode_args(args) -> None:
+    """Apply process-local runtime mode without changing Config defaults."""
+    if args.live:
+        Config.SANDBOX_MODE = False  # type: ignore[assignment]
+        Config.DRY_RUN = False  # type: ignore[assignment]
+    elif args.dry_run:
+        Config.DRY_RUN = True  # type: ignore[assignment]
+
+
 # ==================== Entry Point ====================
 if __name__ == "__main__":
-    import argparse
-
     # Convert SIGTERM into KeyboardInterrupt so systemd stop flushes positions.
     signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))
 
-    parser = argparse.ArgumentParser(description='Trading Bot')
-    parser.add_argument('--dry-run', action='store_true', help='Dry run mode')
-    parser.add_argument('--debug', action='store_true', help='Debug mode')
-    args = parser.parse_args()
+    args = parse_runtime_args()
 
     _configure_utf8_stdio()
 
@@ -1411,10 +1463,9 @@ if __name__ == "__main__":
         # Defaults live in trader/config.py; load_secrets only pulls credentials.
         secrets_path = str(Path(__file__).parent.parent / "secrets.json")
         Config.load_secrets(secrets_path)
-        if args.dry_run:
-            Config.DRY_RUN = True  # type: ignore[assignment]
+        apply_runtime_mode_args(args)
 
-        bot = TradingBot()
+        bot = TradingBot(allow_live_leverage_set=args.allow_live_leverage_set)
         bot.run()
     except Exception as e:
         logger.error(f"TradingBot crashed: {e}")

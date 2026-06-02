@@ -762,7 +762,7 @@ turning it into a parallel alpha factory.
 - Volume-derived mechanisms（OBV, VWAP, MFI, accumulation/distribution）— Ruei 未開放
 - Cross-asset / pair-trade mechanisms（BTC↔ETH lead-lag, relative strength）— Ruei 未開放
 - 新 symbol 擴展（SOL, BNB 等）— Ruei locked BTC/ETH only
-- 15m timeframe 候選 — engine 不支援（CLAUDE.md §5 gate）
+- 15m timeframe 候選 — engine 不支援（current governance / handoff gate）
 - 任何要求 mutate `Config` defaults / 改 `STRATEGY_RUNTIME_ENABLED` / 改 `STRATEGY_ROUTER_POLICY`
   / 改 BTC_TREND_FILTER 設定的 candidate
 - ADX-only ranging detection（δ refuted）
